@@ -1,0 +1,76 @@
+[package]
+name = "mcprouter"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+[lints.rust]
+# dead_code = "allow"
+# unused_imports = "allow"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "mcprouter_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-log = "0.2"
+anyhow = "1.0"
+thiserror = "1.0"
+dirs = "5.0"
+regex = "1.10"
+if-addrs = "0.11"
+# MCP SDK
+rmcp = { version = "0.8.1", features = [
+    "client",
+    "server",
+    "transport-child-process",
+    "transport-io",
+    "transport-sse-client-reqwest",
+    "transport-sse-server",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+    "transport-streamable-http-server",
+] }
+process-wrap = "8.2"
+axum = "0.8.6"
+hyper = "1.7.0"
+tower = "0.5.2"
+tower-http = "0.6.6"
+tauri-plugin-clipboard-manager = "2.3.0"
+tauri-plugin-os = "2"
+tauri-plugin-log = "2.7.0"
+tauri-plugin-autostart = "2.0.0"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+log = "0.4.28"
+scopeguard = "1.2.0"
+tauri-plugin-shell = "2.3.1"
+base64 = "0.22.1"
+tracing-appender = "0.2.3"
+rand = "0.8"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
+
+[dev-dependencies]
+tempfile = "3.8"
