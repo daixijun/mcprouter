@@ -19,7 +19,7 @@ impl ToolRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO tools (id, name, server_id, description, enabled, created_at, updated_at)
+            INSERT INTO mcp_tools (id, name, server_id, description, enabled, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
@@ -34,7 +34,7 @@ impl ToolRepository {
         .await
         .map_err(|e| McpError::DatabaseError(e.to_string()))?;
 
-        info!("Tool created with ID: {}", tool_id);
+        info!("Created tool: {} for server: {}", tool.name, tool.server_id);
         Ok(tool_id)
     }
 
@@ -44,15 +44,17 @@ impl ToolRepository {
 
         let db = get_database().await?;
 
-        let rows = sqlx::query("SELECT * FROM tools WHERE server_id = ? ORDER BY name")
+        let rows = sqlx::query("SELECT * FROM mcp_tools WHERE server_id = ? ORDER BY created_at")
             .bind(server_id)
             .fetch_all(&db)
             .await
             .map_err(|e| McpError::DatabaseError(e.to_string()))?;
 
-        let tools: Result<Vec<_>> = rows.into_iter().map(|row| Self::row_to_tool(row)).collect();
+        let tools: Vec<ToolRow> = rows
+            .into_iter()
+            .filter_map(|row| Self::row_to_tool(&row).ok())
+            .collect();
 
-        let tools = tools?;
         debug!("Retrieved {} tools for server: {}", tools.len(), server_id);
         Ok(tools)
     }
@@ -63,7 +65,7 @@ impl ToolRepository {
 
         let db = get_database().await?;
 
-        let row = sqlx::query("SELECT * FROM tools WHERE server_id = ? AND name = ?")
+        let row = sqlx::query("SELECT * FROM mcp_tools WHERE server_id = ? AND name = ?")
             .bind(server_id)
             .bind(name)
             .fetch_optional(&db)
@@ -72,12 +74,12 @@ impl ToolRepository {
 
         match row {
             Some(r) => {
-                let tool = Self::row_to_tool(r)?;
-                debug!("Found tool: {} for server: {}", name, server_id);
+                let tool = Self::row_to_tool(&r)?;
+                debug!("Found tool: {}", tool.name);
                 Ok(Some(tool))
             }
             None => {
-                debug!("Tool not found: {} for server: {}", name, server_id);
+                debug!("Tool not found: {}", name);
                 Ok(None)
             }
         }
@@ -89,7 +91,7 @@ impl ToolRepository {
 
         let db = get_database().await?;
 
-        let result = sqlx::query("UPDATE tools SET enabled = ?, updated_at = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE mcp_tools SET enabled = ?, updated_at = ? WHERE id = ?")
             .bind(enabled)
             .bind(chrono::Utc::now().to_rfc3339())
             .bind(tool_id)
@@ -97,66 +99,15 @@ impl ToolRepository {
             .await
             .map_err(|e| McpError::DatabaseError(e.to_string()))?;
 
-        let toggled = result.rows_affected() > 0;
+        let was_updated = result.rows_affected() > 0;
         info!(
-            "Tool toggled: {} (affected rows: {})",
-            tool_id,
-            result.rows_affected()
+            "Tool {} toggled to enabled: {}, updated: {}",
+            tool_id, enabled, was_updated
         );
-        Ok(toggled)
+        Ok(was_updated)
     }
 
-    /// 批量切换服务器工具状态
-    pub async fn batch_toggle_server_tools(server_id: &str, enabled: bool) -> Result<i64> {
-        info!(
-            "Toggling all tools for server {} to enabled: {}",
-            server_id, enabled
-        );
-
-        let db = get_database().await?;
-
-        let result =
-            sqlx::query("UPDATE tools SET enabled = ?, updated_at = ? WHERE server_id = ?")
-                .bind(enabled)
-                .bind(chrono::Utc::now().to_rfc3339())
-                .bind(server_id)
-                .execute(&db)
-                .await
-                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
-
-        let affected = result.rows_affected() as i64;
-        info!("Batch toggled {} tools for server {}", affected, server_id);
-        Ok(affected)
-    }
-
-    /// 更新工具描述（通过 server_id + name）
-    pub async fn update_description(
-        server_id: &str,
-        name: &str,
-        description: Option<String>,
-    ) -> Result<bool> {
-        info!(
-            "Updating description for tool {} on server {}",
-            name, server_id
-        );
-
-        let db = get_database().await?;
-
-        let result = sqlx::query(
-            "UPDATE tools SET description = ?, updated_at = ? WHERE server_id = ? AND name = ?",
-        )
-        .bind(&description)
-        .bind(chrono::Utc::now().to_rfc3339())
-        .bind(server_id)
-        .bind(name)
-        .execute(&db)
-        .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
-
-        Ok(result.rows_affected() > 0)
-    }
-
-    /// 按名称切换启用状态（无ID时兜底）
+    /// 切换工具启用状态（通过名称）
     pub async fn toggle_enabled_by_name(
         server_id: &str,
         name: &str,
@@ -170,7 +121,7 @@ impl ToolRepository {
         let db = get_database().await?;
 
         let result = sqlx::query(
-            "UPDATE tools SET enabled = ?, updated_at = ? WHERE server_id = ? AND name = ?",
+            "UPDATE mcp_tools SET enabled = ?, updated_at = ? WHERE server_id = ? AND name = ?",
         )
         .bind(enabled)
         .bind(chrono::Utc::now().to_rfc3339())
@@ -180,30 +131,127 @@ impl ToolRepository {
         .await
         .map_err(|e| McpError::DatabaseError(e.to_string()))?;
 
-        Ok(result.rows_affected() > 0)
+        let was_updated = result.rows_affected() > 0;
+        info!(
+            "Tool {} on server {} toggled to enabled: {}, updated: {}",
+            name, server_id, enabled, was_updated
+        );
+        Ok(was_updated)
+    }
+
+    /// 更新工具描述（通过名称）
+    pub async fn update_description(
+        server_id: &str,
+        name: &str,
+        description: Option<String>,
+    ) -> Result<bool> {
+        debug!(
+            "Updating description for tool {} on server {}",
+            name, server_id
+        );
+
+        let db = get_database().await?;
+
+        let result = sqlx::query(
+            "UPDATE mcp_tools SET description = ?, updated_at = ? WHERE server_id = ? AND name = ?",
+        )
+        .bind(description)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(server_id)
+        .bind(name)
+        .execute(&db)
+        .await
+        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+        let was_updated = result.rows_affected() > 0;
+        debug!(
+            "Updated description for tool {} on server {}: {}",
+            name, server_id, was_updated
+        );
+        Ok(was_updated)
+    }
+
+    /// 启用服务器的所有工具
+    pub async fn enable_all_by_server_id(server_id: &str) -> Result<usize> {
+        info!("Enabling all tools for server: {}", server_id);
+
+        let db = get_database().await?;
+
+        let result =
+            sqlx::query("UPDATE mcp_tools SET enabled = 1, updated_at = ? WHERE server_id = ?")
+                .bind(chrono::Utc::now().to_rfc3339())
+                .bind(server_id)
+                .execute(&db)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+        let count = result.rows_affected() as usize;
+        info!("Enabled {} tools for server: {}", count, server_id);
+        Ok(count)
+    }
+
+    /// 禁用服务器的所有工具
+    pub async fn disable_all_by_server_id(server_id: &str) -> Result<usize> {
+        info!("Disabling all tools for server: {}", server_id);
+
+        let db = get_database().await?;
+
+        let result =
+            sqlx::query("UPDATE mcp_tools SET enabled = 0, updated_at = ? WHERE server_id = ?")
+                .bind(chrono::Utc::now().to_rfc3339())
+                .bind(server_id)
+                .execute(&db)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+        let count = result.rows_affected() as usize;
+        info!("Disabled {} tools for server: {}", count, server_id);
+        Ok(count)
+    }
+
+    /// 批量切换服务器下所有工具的启用状态
+    pub async fn batch_toggle_server_tools(server_id: &str, enabled: bool) -> Result<usize> {
+        if enabled {
+            Self::enable_all_by_server_id(server_id).await
+        } else {
+            Self::disable_all_by_server_id(server_id).await
+        }
     }
 
     /// 将数据库行转换为工具对象
-    fn row_to_tool(row: sqlx::sqlite::SqliteRow) -> Result<ToolRow> {
-        let created_at_str: String = row
-            .try_get("created_at")
-            .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
-        let updated_at_str: String = row
-            .try_get("updated_at")
-            .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
+    fn row_to_tool(row: &sqlx::sqlite::SqliteRow) -> Result<ToolRow> {
+        let id: Option<String> = row.try_get("id").ok();
+        let name: String = row.try_get("name").unwrap_or_default();
+        let server_id: String = row.try_get("server_id").unwrap_or_default();
+        let description: Option<String> = row.try_get("description").ok();
+        let enabled: bool = row.try_get("enabled").unwrap_or(false);
+        let created_at: chrono::DateTime<chrono::Utc> = row
+            .try_get::<String, _>("created_at")
+            .ok()
+            .and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            })
+            .unwrap_or_else(|| chrono::Utc::now());
+        let updated_at: chrono::DateTime<chrono::Utc> = row
+            .try_get::<String, _>("updated_at")
+            .ok()
+            .and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            })
+            .unwrap_or_else(|| chrono::Utc::now());
 
         Ok(ToolRow {
-            id: row.try_get("id").ok(),
-            name: row.try_get("name").unwrap_or_default(),
-            server_id: row.try_get("server_id").unwrap_or_default(),
-            description: row.try_get("description").ok(),
-            enabled: row.try_get("enabled").unwrap_or(true),
-            created_at: chrono::DateTime::parse_from_rfc3339(&created_at_str)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at_str)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
+            id,
+            name,
+            server_id,
+            description,
+            enabled,
+            created_at,
+            updated_at,
         })
     }
 }

@@ -160,6 +160,7 @@ export interface AppConfig {
 
 export interface ApiKeyPermissions {
   allowed_servers: string[]
+  allowed_tools: string[]
 }
 
 export interface Tool {
@@ -180,6 +181,7 @@ export interface ApiKey {
   created_at: string
   updated_at: string
   permissions?: ApiKeyPermissions
+  tool_count?: number // Number of authorized tools
 }
 
 export interface SystemSettings {

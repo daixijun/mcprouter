@@ -1161,7 +1161,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
                   addServiceMode === 'form'
                     ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}>
                 📝 表单模式
               </button>
@@ -1170,7 +1170,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
                   addServiceMode === 'json'
                     ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}>
                 📄 JSON模式
               </button>
@@ -1469,8 +1469,8 @@ X-Custom-Header: custom-value'
                 </div>
 
                 {/* JSON Example */}
-                <details className='border border-gray-200 rounded-lg p-3'>
-                  <summary className='cursor-pointer text-sm font-medium text-gray-700 hover:text-blue-600'>
+                <details className='border border-gray-200 dark:border-gray-700 rounded-lg p-3'>
+                  <summary className='cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400'>
                     💡 查看JSON配置示例
                   </summary>
                   <div className='mt-3 space-y-3'>

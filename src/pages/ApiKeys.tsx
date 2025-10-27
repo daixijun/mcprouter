@@ -21,13 +21,17 @@ const ApiKeys: React.FC = () => {
 
   // Form state for new API key
   const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyPermissions, setNewKeyPermissions] = useState<ApiKeyPermissions>({
-    allowed_servers: [],
-  })
+  const [newKeyPermissions, setNewKeyPermissions] = useState<ApiKeyPermissions>(
+    {
+      allowed_servers: [],
+      allowed_tools: [],
+    },
+  )
 
   // Form state for editing permissions
   const [editPermissions, setEditPermissions] = useState<ApiKeyPermissions>({
     allowed_servers: [],
+    allowed_tools: [],
   })
 
   useEffect(() => {
@@ -38,7 +42,21 @@ const ApiKeys: React.FC = () => {
     setLoading(true)
     try {
       const keys = await ApiService.listApiKeys()
-      setApiKeys(keys)
+
+      // Load tool counts for each API key
+      const keysWithCounts = await Promise.all(
+        keys.map(async (key) => {
+          try {
+            const toolIds = await ApiService.getApiKeyTools(key.id)
+            return { ...key, tool_count: toolIds.length }
+          } catch (error) {
+            console.error(`Failed to load tool count for key ${key.id}:`, error)
+            return key
+          }
+        }),
+      )
+
+      setApiKeys(keysWithCounts)
     } catch (error) {
       console.error('Failed to load API keys:', error)
       toastService.sendErrorNotification('加载API Key列表失败')
@@ -69,6 +87,7 @@ const ApiKeys: React.FC = () => {
       setNewKeyName('')
       setNewKeyPermissions({
         allowed_servers: [],
+        allowed_tools: [],
       })
 
       // Reload list
@@ -106,7 +125,9 @@ const ApiKeys: React.FC = () => {
     setSelectedApiKey(apiKey)
     try {
       const details = await ApiService.getApiKeyDetails(apiKey.id)
-      setEditPermissions(details.permissions ?? { allowed_servers: [] })
+      setEditPermissions(
+        details.permissions ?? { allowed_servers: [], allowed_tools: [] },
+      )
       setShowEditModal(true)
     } catch (error) {
       console.error('Failed to fetch API key permissions:', error)
@@ -214,7 +235,7 @@ const ApiKeys: React.FC = () => {
                     创建时间
                   </th>
                   <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    授权服务器
+                    授权工具
                   </th>
                   <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                     操作
@@ -245,16 +266,41 @@ const ApiKeys: React.FC = () => {
                     <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
                       {formatDate(apiKey.created_at)}
                     </td>
-                    <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
-                      {(apiKey.permissions?.allowed_servers?.length ?? 0) > 0 ? (
-                        <span className='text-blue-600 dark:text-blue-400'>
-                          {apiKey.permissions?.allowed_servers?.length ?? 0} 个服务器
-                        </span>
-                      ) : (
-                        <span className='text-gray-400 dark:text-gray-400'>
-                          未授权
-                        </span>
-                      )}
+                    <td className='px-6 py-4 text-sm'>
+                      <div className='space-y-1'>
+                        {/* Server count */}
+                        <div className='text-gray-500 dark:text-gray-400'>
+                          {(apiKey.permissions?.allowed_servers?.length ?? 0) >
+                          0 ? (
+                            <span className='text-indigo-600 dark:text-indigo-400 font-medium'>
+                              {apiKey.permissions?.allowed_servers?.length ?? 0}{' '}
+                              个服务器
+                            </span>
+                          ) : (
+                            <span className='text-gray-400 dark:text-gray-500'>
+                              0 个服务器
+                            </span>
+                          )}
+                        </div>
+                        {/* Tool count */}
+                        <div className='text-gray-500 dark:text-gray-400'>
+                          {apiKey.tool_count !== undefined ? (
+                            apiKey.tool_count > 0 ? (
+                              <span className='text-blue-600 dark:text-blue-400 font-medium'>
+                                {apiKey.tool_count} 个工具
+                              </span>
+                            ) : (
+                              <span className='text-gray-400 dark:text-gray-500'>
+                                0 个工具
+                              </span>
+                            )
+                          ) : (
+                            <span className='text-gray-400 dark:text-gray-500 text-xs'>
+                              加载中...
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
                       <button
@@ -285,11 +331,14 @@ const ApiKeys: React.FC = () => {
       </div>
 
       {/* Create API Key Modal */}
-      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} maxWidth='3xl'>
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        maxWidth='3xl'>
         <div className='p-6'>
-        <h2 className='text-xl font-bold text-gray-900 dark:text-gray-100 mb-4'>
-          创建新API Key
-        </h2>
+          <h2 className='text-xl font-bold text-gray-900 dark:text-gray-100 mb-4'>
+            创建新API Key
+          </h2>
           <div className='space-y-4'>
             <div>
               <label className='block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1'>
@@ -317,7 +366,7 @@ const ApiKeys: React.FC = () => {
             <div className='flex justify-end space-x-3 pt-4'>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className='btn-modern bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200'>
+                className='btn-modern btn-secondary-modern'>
                 取消
               </button>
               <button
@@ -363,7 +412,7 @@ const ApiKeys: React.FC = () => {
                   />
                   <button
                     onClick={() => handleCopyKey(newKeyDetails.key)}
-                    className='btn-modern bg-blue-500 hover:bg-blue-600 text-white flex items-center space-x-1'>
+                    className='btn-modern btn-primary-modern flex items-center space-x-1'>
                     {copied ? <Check size={16} /> : <Copy size={16} />}
                     <span>{copied ? '已复制' : '复制'}</span>
                   </button>
@@ -395,7 +444,10 @@ const ApiKeys: React.FC = () => {
       </Modal>
 
       {/* Edit Permissions Modal */}
-      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)}>
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        maxWidth='3xl'>
         <div className='p-6'>
           <h2 className='text-xl font-bold text-gray-900 dark:text-gray-100 mb-4'>
             编辑权限: {selectedApiKey?.name}
@@ -404,12 +456,13 @@ const ApiKeys: React.FC = () => {
             <ApiKeyPermissionSelector
               permissions={editPermissions}
               onChange={setEditPermissions}
+              apiKeyId={selectedApiKey?.id}
             />
 
             <div className='flex justify-end space-x-3 pt-4'>
               <button
                 onClick={() => setShowEditModal(false)}
-                className='btn-modern bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200'>
+                className='btn-modern btn-secondary-modern'>
                 取消
               </button>
               <button

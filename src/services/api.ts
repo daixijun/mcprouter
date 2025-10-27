@@ -194,6 +194,46 @@ export class ApiService {
     return invoke('update_api_key_permissions', { id, permissions })
   }
 
+  // Tool-level Permission Management
+  static async getApiKeyTools(apiKeyId: string): Promise<string[]> {
+    return invoke('get_api_key_tools', { api_key_id: apiKeyId })
+  }
+
+
+  static async addToolPermission(
+    apiKeyId: string,
+    toolId: string,
+  ): Promise<string> {
+    return invoke('add_tool_permission', { api_key_id: apiKeyId, tool_id: toolId })
+  }
+
+  static async removeToolPermission(
+    apiKeyId: string,
+    toolId: string,
+  ): Promise<string> {
+    return invoke('remove_tool_permission', { api_key_id: apiKeyId, tool_id: toolId })
+  }
+
+  static async grantServerToolsToApiKey(
+    apiKeyId: string,
+    serverName: string,
+  ): Promise<string> {
+    return invoke('grant_server_tools_to_api_key', {
+      api_key_id: apiKeyId,
+      server_name: serverName,
+    })
+  }
+
+  static async revokeServerToolsFromApiKey(
+    apiKeyId: string,
+    serverName: string,
+  ): Promise<string> {
+    return invoke('revoke_server_tools_from_api_key', {
+      api_key_id: apiKeyId,
+      server_name: serverName,
+    })
+  }
+
   // Removed: getApiKeyPermissions(id) — use getApiKeyDetails(id) and read `.permissions`.
 
 
@@ -211,20 +251,4 @@ export class ApiService {
     return invoke('get_tools_by_server', { name: serverName })
   }
 
-  // Cache Management
-  static async getCacheStats(): Promise<any> {
-    return invoke('get_cache_stats')
-  }
-
-  static async clearAllCache(): Promise<string> {
-    return invoke('clear_all_cache')
-  }
-
-  static async flushCache(): Promise<string> {
-    return invoke('flush_cache')
-  }
-
-  static async refreshServiceCache(serviceName: string): Promise<string> {
-    return invoke('refresh_service_cache', { service_name: serviceName })
-  }
 }

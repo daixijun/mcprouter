@@ -446,7 +446,7 @@ impl McpServerManager {
                 let tool_count = match crate::db::get_database().await {
                     Ok(db) => {
                         // Get tools count for this server from database
-                        match sqlx::query("SELECT COUNT(*) as count FROM tools WHERE server_id = (SELECT id FROM mcp_servers WHERE name = ?)")
+                        match sqlx::query("SELECT COUNT(*) as count FROM mcp_tools WHERE server_id = (SELECT id FROM mcp_servers WHERE name = ?)")
                             .bind(name)
                             .fetch_one(&db)
                             .await
@@ -548,12 +548,7 @@ impl McpServerManager {
 
     pub async fn update_version_cache(&self, name: &str, version: Option<String>) {
         let mut cache = self.version_cache.write().await;
-        cache.insert(
-            name.to_string(),
-            ServiceVersionCache {
-                version,
-            },
-        );
+        cache.insert(name.to_string(), ServiceVersionCache { version });
         tracing::debug!("Updated version cache via API for {}", name);
     }
 
@@ -587,7 +582,9 @@ impl McpServerManager {
                 );
             }
             tracing::info!("Synced version cache for {} => {}", service_name, version);
-            if let Err(e) = McpServerRepository::update_version(service_name, Some(version.clone())).await {
+            if let Err(e) =
+                McpServerRepository::update_version(service_name, Some(version.clone())).await
+            {
                 tracing::warn!("Failed to persist version for {}: {}", service_name, e);
             }
         }

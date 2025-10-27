@@ -87,24 +87,6 @@ impl DatabaseConnection {
         .await
         .map_err(|e| McpError::DatabaseError(e.to_string()))?;
 
-        // 创建 tools 表
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS tools (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                server_id TEXT NOT NULL,
-                description TEXT,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
-
         // 创建 api_keys 表
         sqlx::query(
             r#"
@@ -160,8 +142,6 @@ impl DatabaseConnection {
         let indexes = vec![
             "CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled)",
             "CREATE INDEX IF NOT EXISTS idx_mcp_servers_name ON mcp_servers(name)",
-            "CREATE INDEX IF NOT EXISTS idx_tools_server_id ON tools(server_id)",
-            "CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled)",
             "CREATE INDEX IF NOT EXISTS idx_api_keys_enabled ON api_keys(enabled)",
             "CREATE INDEX IF NOT EXISTS idx_api_keys_last_used_at ON api_keys(last_used_at)",
             "CREATE INDEX IF NOT EXISTS idx_api_key_relations_key_id ON api_key_server_relations(api_key_id)",
@@ -175,7 +155,205 @@ impl DatabaseConnection {
                 .map_err(|e| McpError::DatabaseError(e.to_string()))?;
         }
 
+        // 执行数据迁移：从 tools 表迁移到 mcp_tools 表
+        self.migrate_to_mcp_tools().await?;
+
         info!("Database schema initialized successfully");
+        Ok(())
+    }
+
+    /// 迁移 tools 表到 mcp_tools 表，并实现工具级别授权
+    async fn migrate_to_mcp_tools(&self) -> Result<()> {
+        let pool = self.get();
+
+        // 检查是否需要迁移（tools 表存在但 mcp_tools 表不存在）
+        let tables = sqlx::query("SELECT name FROM sqlite_master WHERE type='table'")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+        let table_names: Vec<String> = tables
+            .iter()
+            .filter_map(|row| row.try_get("name").ok())
+            .collect();
+
+        let has_tools = table_names.contains(&"tools".to_string());
+        let has_mcp_tools = table_names.contains(&"mcp_tools".to_string());
+
+        if has_tools && !has_mcp_tools {
+            info!("检测到 tools 表，开始迁移到 mcp_tools");
+
+            // 开启事务确保迁移的原子性
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            // 步骤 1: 重命名表
+            sqlx::query("ALTER TABLE tools RENAME TO mcp_tools")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(format!("表重命名失败: {}", e)))?;
+
+            info!("tools 表已重命名为 mcp_tools");
+
+            // 步骤 2: 删除旧的 tools 索引
+            sqlx::query("DROP INDEX IF EXISTS idx_tools_server_id")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            sqlx::query("DROP INDEX IF EXISTS idx_tools_enabled")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            // 步骤 3: 创建新的 mcp_tools 索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_mcp_tools_server_id ON mcp_tools(server_id)")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_mcp_tools_enabled ON mcp_tools(enabled)")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            // 步骤 4: 创建 api_key_tool_relations 表
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS api_key_tool_relations (
+                    id TEXT PRIMARY KEY,
+                    api_key_id TEXT NOT NULL,
+                    tool_id TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(api_key_id, tool_id)
+                )
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            // 步骤 5: 创建 api_key_tool_relations 索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_api_key_tool_relations_api_key_id ON api_key_tool_relations(api_key_id)")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_api_key_tool_relations_tool_id ON api_key_tool_relations(tool_id)")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            info!("api_key_tool_relations 表已创建");
+
+            // 步骤 6: 数据迁移 - 从 api_key_server_relations 生成工具级授权
+            let server_relations = sqlx::query("SELECT api_key_id, server_id FROM api_key_server_relations")
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            let mut migrated_count = 0;
+
+            for relation in server_relations {
+                let api_key_id: String = relation.try_get("api_key_id").unwrap_or_default();
+                let server_id: String = relation.try_get("server_id").unwrap_or_default();
+
+                // 查询该 server 下的所有工具
+                let tools = sqlx::query("SELECT id FROM mcp_tools WHERE server_id = ?")
+                    .bind(&server_id)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+                // 为每个工具创建授权记录
+                for tool_row in tools {
+                    let tool_id: String = tool_row.try_get("id").unwrap_or_default();
+                    let relation_id = uuid::Uuid::new_v4().to_string();
+
+                    sqlx::query(
+                        r#"
+                        INSERT OR IGNORE INTO api_key_tool_relations (id, api_key_id, tool_id, created_at)
+                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                        "#,
+                    )
+                    .bind(&relation_id)
+                    .bind(&api_key_id)
+                    .bind(&tool_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+                    migrated_count += 1;
+                }
+            }
+
+            // 提交事务
+            tx.commit()
+                .await
+                .map_err(|e| McpError::DatabaseError(format!("迁移事务提交失败: {}", e)))?;
+
+            info!("数据迁移完成：创建了 {} 条工具级授权记录", migrated_count);
+        } else if !has_mcp_tools {
+            // 全新安装，直接创建 mcp_tools 表
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS mcp_tools (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    server_id TEXT NOT NULL,
+                    description TEXT,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                "#,
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_mcp_tools_server_id ON mcp_tools(server_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_mcp_tools_enabled ON mcp_tools(enabled)")
+                .execute(pool)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            // 创建 api_key_tool_relations 表
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS api_key_tool_relations (
+                    id TEXT PRIMARY KEY,
+                    api_key_id TEXT NOT NULL,
+                    tool_id TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(api_key_id, tool_id)
+                )
+                "#,
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_api_key_tool_relations_api_key_id ON api_key_tool_relations(api_key_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_api_key_tool_relations_tool_id ON api_key_tool_relations(tool_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+            info!("全新安装：mcp_tools 和 api_key_tool_relations 表已创建");
+        }
+
         Ok(())
     }
 }

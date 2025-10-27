@@ -118,6 +118,9 @@ const Dashboard: React.FC = () => {
               mcprouter: {
                 type: 'http',
                 url: endpoint,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
                 description:
                   'MCP Router Aggregator - Unified access to all MCP services',
               },
@@ -135,6 +138,9 @@ const Dashboard: React.FC = () => {
                 type: 'streamableHttp',
                 baseUrl: endpoint,
                 isActive: true,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
                 description:
                   'MCP Router Aggregator - Unified access to all MCP services',
               },
@@ -150,6 +156,9 @@ const Dashboard: React.FC = () => {
             mcpServers: {
               mcprouter: {
                 url: endpoint,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
               },
             },
           },
@@ -164,6 +173,9 @@ const Dashboard: React.FC = () => {
               mcprouter: {
                 type: 'http',
                 url: endpoint,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
                 description:
                   'MCP Router Aggregator - Unified access to all MCP services',
               },
@@ -180,6 +192,9 @@ const Dashboard: React.FC = () => {
               mcprouter: {
                 type: 'http',
                 url: endpoint,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
                 description:
                   'MCP Router Aggregator - Unified access to all MCP services',
               },
@@ -196,6 +211,9 @@ const Dashboard: React.FC = () => {
               'your-service-name': {
                 type: 'http',
                 url: endpoint,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
                 description:
                   'MCP Router Aggregator - Unified access to all MCP services',
               },
@@ -211,6 +229,9 @@ const Dashboard: React.FC = () => {
               mcprouter: {
                 type: 'http',
                 url: endpoint,
+                headers: {
+                  Authorization: 'Bearer <Your-API-Key>',
+                },
                 description:
                   'MCP Router Aggregator - Unified access to all MCP services',
               },

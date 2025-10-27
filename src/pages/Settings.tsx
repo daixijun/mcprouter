@@ -451,7 +451,7 @@ const Settings: React.FC = () => {
                       })}
                     </select>
                   </div>
-                  <p className='text-xs text-gray-500 mt-1 ml-36'>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                     服务器绑定的主机地址
                   </p>
                 </div>
@@ -474,7 +474,7 @@ const Settings: React.FC = () => {
                       max='65535'
                     />
                   </div>
-                  <p className='text-xs text-gray-500 mt-1 ml-36'>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                     MCP聚合服务器监听的端口号
                   </p>
                 </div>
@@ -498,7 +498,7 @@ const Settings: React.FC = () => {
                       max='10000'
                     />
                   </div>
-                  <p className='text-xs text-gray-500 mt-1 ml-36'>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                     同时允许的最大客户端连接数
                   </p>
                 </div>
@@ -522,7 +522,7 @@ const Settings: React.FC = () => {
                       max='300'
                     />
                   </div>
-                  <p className='text-xs text-gray-500 mt-1 ml-36'>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                     客户端请求超时时间
                   </p>
                 </div>
@@ -557,7 +557,7 @@ const Settings: React.FC = () => {
                     <option value='error'>ERROR (错误)</option>
                   </select>
                 </div>
-                <p className='text-xs text-gray-500 mt-1 ml-36'>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                   系统日志记录级别
                 </p>
               </div>
@@ -577,17 +577,17 @@ const Settings: React.FC = () => {
                     placeholder='mcprouter.log'
                   />
                 </div>
-                <p className='text-xs text-gray-500 mt-1 ml-36'>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                   日志文件名（留空使用默认名称）
                 </p>
               </div>
             </div>
 
             <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mt-4'>
-              <p className='text-sm text-blue-800'>
+              <p className='text-sm text-blue-800 dark:text-blue-200'>
                 💡 <strong>日志输出位置：</strong>
               </p>
-              <ul className='text-sm text-blue-700 mt-2 space-y-1 ml-4'>
+              <ul className='text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1 ml-4'>
                 <li>• 终端：日志会实时输出到应用运行的终端窗口</li>
                 <li>• 日志文件：自动保存到系统日志目录</li>
                 <li className='text-xs mt-2 opacity-75'>
@@ -622,7 +622,7 @@ const Settings: React.FC = () => {
               </div>
 
               <div>
-                <label className='block text-sm font-medium text-gray-700 mb-2'>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
                   允许的主机地址
                 </label>
                 <div className='space-y-2'>
@@ -640,18 +640,18 @@ const Settings: React.FC = () => {
                       />
                       <button
                         onClick={() => removeAllowedHost(index)}
-                        className='btn-modern bg-red-500 hover:bg-red-600 text-white px-3 py-1'>
+                        className='btn-modern btn-danger-modern px-3 py-1'>
                         删除
                       </button>
                     </div>
                   ))}
                   <button
                     onClick={addAllowedHost}
-                    className='btn-modern bg-blue-500 hover:bg-blue-600 text-white px-4 py-2'>
+                    className='btn-modern btn-primary-modern px-4 py-2'>
                     ➕ 添加主机
                   </button>
                 </div>
-                <p className='text-xs text-gray-500 mt-1'>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
                   允许访问MCP Router的主机地址列表
                 </p>
               </div>
@@ -690,7 +690,7 @@ const Settings: React.FC = () => {
                       placeholder='例如：https://pypi.tuna.tsinghua.edu.cn/simple'
                     />
                   </div>
-                  <p className='text-xs text-gray-500 mt-1 ml-36'>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                     设置环境变量 `UV_INDEX_URL`，影响 uv/uvx 包索引来源
                   </p>
                 </div>
@@ -716,7 +716,7 @@ const Settings: React.FC = () => {
                       placeholder='例如：https://registry.npmmirror.com'
                     />
                   </div>
-                  <p className='text-xs text-gray-500 mt-1 ml-36'>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1 ml-36'>
                     设置环境变量 `NPM_CONFIG_REGISTRY`，影响 npx/npm 包源
                   </p>
                 </div>
@@ -748,7 +748,7 @@ const Settings: React.FC = () => {
                       <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
                         🚀 开机自动启动
                       </label>
-                      <p className='text-xs text-gray-500 mt-1'>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
                         启用后，MCP Router 将在系统启动时自动运行
                       </p>
                     </div>
@@ -774,7 +774,7 @@ const Settings: React.FC = () => {
                       <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
                         📱 启用系统托盘
                       </label>
-                      <p className='text-xs text-gray-500 mt-1'>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
                         关闭主窗口后最小化到系统托盘，并通过托盘菜单访问常用功能
                       </p>
                     </div>
@@ -802,7 +802,7 @@ const Settings: React.FC = () => {
                       <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
                         🪟 关闭时最小化到托盘
                       </label>
-                      <p className='text-xs text-gray-500 mt-1'>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
                         启用后，点击窗口关闭按钮不会退出应用，只会隐藏到托盘
                       </p>
                     </div>
@@ -837,7 +837,7 @@ const Settings: React.FC = () => {
                       <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
                         🟨 启动时最小化到托盘
                       </label>
-                      <p className='text-xs text-gray-500 mt-1'>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
                         启用后，应用启动时将直接隐藏到托盘（不显示主窗口）
                       </p>
                     </div>

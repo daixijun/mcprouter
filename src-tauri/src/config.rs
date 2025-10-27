@@ -149,12 +149,14 @@ impl Default for Settings {
 #[serde(rename_all = "snake_case")]
 pub struct ApiKeyPermissions {
     pub allowed_servers: Vec<String>,
+    pub allowed_tools: Vec<String>,
 }
 
 impl Default for ApiKeyPermissions {
     fn default() -> Self {
         Self {
             allowed_servers: Vec::new(),
+            allowed_tools: Vec::new(),
         }
     }
 }

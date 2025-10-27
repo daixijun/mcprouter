@@ -33,6 +33,7 @@ use tokio::sync::RwLock;
 struct RequestPermissions {
     permissions: ApiKeyPermissions,
     session_id: String,
+    api_key_id: String, // 添加 API Key ID 用于工具级别权限检查
 }
 
 // Session data with timestamp for cleanup management
@@ -582,28 +583,29 @@ impl ServerHandler for AggregatorHandler {
         let tool_name = parts[1];
 
         // Try to extract permissions from RequestContext extensions first
-        let permissions = if let Some(req_perms) = context.extensions.get::<RequestPermissions>() {
+        let req_perms_opt = if let Some(req_perms) = context.extensions.get::<RequestPermissions>()
+        {
             tracing::info!(
                 "Found permissions in RequestContext extensions for session_id: {} (tool call)",
                 req_perms.session_id
             );
-            Some(req_perms.permissions.clone())
+            Some(req_perms.clone())
         } else {
             tracing::debug!(
                 "No permissions in RequestContext extensions for tool call, trying session storage"
             );
-            // Fallback to session-based permission retrieval
-            self.get_permissions().await
+            None
         };
-        if let Some(perms) = permissions {
+
+        if let Some(req_perms) = req_perms_opt {
             tracing::info!(
                 "Checking permissions for tool: {}/{}",
                 server_name,
                 tool_name
             );
 
-            // Check server permission
-            if !Self::check_server_permission(&perms, server_name) {
+            // Check server permission (保留向后兼容性)
+            if !Self::check_server_permission(&req_perms.permissions, server_name) {
                 tracing::warn!("Permission denied for server: {}", server_name);
                 return Err(RmcpError {
                     code: ErrorCode(-32603),
@@ -612,8 +614,8 @@ impl ServerHandler for AggregatorHandler {
                 });
             }
 
-            // Check tool permission
-            if !Self::check_tool_permission(&perms, server_name, tool_name) {
+            // Check tool-level permission (新的工具级别授权)
+            if !Self::check_tool_permission(&req_perms.api_key_id, server_name, tool_name).await {
                 tracing::warn!("Permission denied for tool: {}/{}", server_name, tool_name);
                 return Err(RmcpError {
                     code: ErrorCode(-32603),
@@ -686,20 +688,79 @@ impl AggregatorHandler {
     /// Validate if an API key has permission to call a specific tool on a server
     ///
     /// # Permission Logic
-    /// - Checks only if the server itself is accessible
-    /// - When server is allowed, all tools on that server are allowed
-    fn check_tool_permission(
-        permissions: &ApiKeyPermissions,
-        server_name: &str,
-        _tool_name: &str,
-    ) -> bool {
-        // First check if the server is allowed
-        if !Self::check_server_permission(permissions, server_name) {
-            tracing::trace!("Tool access denied: server '{}' not allowed", server_name);
-            return false;
+    /// - Checks if the API key has been granted permission to access this specific tool
+    /// - Uses tool-level authorization from api_key_tool_relations table
+    ///
+    /// # Arguments
+    /// * `api_key_id` - The API key ID to check
+    /// * `server_name` - The name of the MCP server
+    /// * `tool_name` - The name of the tool to call
+    ///
+    /// # Returns
+    /// `true` if access is allowed, `false` otherwise
+    async fn check_tool_permission(api_key_id: &str, server_name: &str, tool_name: &str) -> bool {
+        use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
+        use crate::db::repositories::mcp_server_repository::McpServerRepository;
+        use crate::db::repositories::tool_repository::ToolRepository;
+
+        tracing::trace!(
+            "Checking tool-level permission for API Key {} on {}/{}",
+            api_key_id,
+            server_name,
+            tool_name
+        );
+
+        // 首先获取 Server ID
+        let server = match McpServerRepository::get_by_name(server_name).await {
+            Ok(Some(s)) => s,
+            Ok(None) => {
+                tracing::warn!("Server not found: {}", server_name);
+                return false;
+            }
+            Err(e) => {
+                tracing::error!("Failed to get server {}: {}", server_name, e);
+                return false;
+            }
+        };
+
+        // 然后获取 Tool
+        let tool =
+            match ToolRepository::get_by_name(&server.id.unwrap_or_default(), tool_name).await {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    tracing::warn!("Tool not found: {}/{}", server_name, tool_name);
+                    return false;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get tool {}/{}: {}", server_name, tool_name, e);
+                    return false;
+                }
+            };
+
+        let tool_id = match tool.id {
+            Some(id) => id,
+            None => {
+                tracing::error!("Tool {} has no ID", tool_name);
+                return false;
+            }
+        };
+
+        // 检查工具级别的权限
+        match ApiKeyToolRepository::has_tool_permission(api_key_id, &tool_id).await {
+            Ok(has_permission) => {
+                tracing::trace!(
+                    "Tool permission check result for {}/{}: {}",
+                    server_name,
+                    tool_name,
+                    has_permission
+                );
+                has_permission
+            }
+            Err(e) => {
+                tracing::error!("Failed to check tool permission: {}", e);
+                false
+            }
         }
-        // Tool-level restrictions removed: allow all tools on allowed servers
-        true
     }
 
     /// Collect all tools from managed MCP servers
@@ -802,13 +863,8 @@ impl AggregatorHandler {
                         tools.len(),
                         service_name
                     );
-                    // Prefix and permission-check remain unchanged
+                    // Tool-level permission check will be enforced during call_tool
                     for t in tools.into_iter() {
-                        if let Some(ref perms) = permissions {
-                            if !Self::check_tool_permission(perms, service_name, &t.name) {
-                                continue;
-                            }
-                        }
                         let mut tool = t.clone();
                         tool.name = format!("{}/{}", service_name, t.name).into();
                         all_tools.push(tool);
@@ -922,7 +978,7 @@ async fn api_key_auth_middleware(
     next: Next,
 ) -> std::result::Result<Response, StatusCode> {
     use crate::db::repositories::api_key_repository::ApiKeyRepository;
-    use crate::db::repositories::api_key_server_repository::ApiKeyServerRepository;
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
     use crate::db::repositories::mcp_server_repository::McpServerRepository;
 
     // Read global auth switch from configuration
@@ -986,19 +1042,41 @@ async fn api_key_auth_middleware(
         }
     };
 
-    // Get server permissions
-    let allowed_server_ids =
-        match ApiKeyServerRepository::get_servers_by_api_key(&verified_key.id).await {
-            Ok(servers) => servers,
-            Err(e) => {
-                tracing::error!("Failed to get server permissions: {}", e);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
+    // 从工具级别权限推导出授权的服务器列表
+    let tool_ids = match ApiKeyToolRepository::get_tools_by_api_key(&verified_key.id).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!("Failed to get tool permissions: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
 
-    // Convert server IDs to names
+    // 收集所有不重复的 Server
+    use sqlx::Row;
+    use std::collections::HashSet;
+    let mut server_ids = HashSet::<String>::new();
+    for tool_id in &tool_ids {
+        // 从 mcp_tools 表查询工具信息以获取 server_id
+        if let Ok(rows) = sqlx::query("SELECT server_id FROM mcp_tools WHERE id = ?")
+            .bind(tool_id)
+            .fetch_all(
+                &crate::db::get_database()
+                    .await
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            )
+            .await
+        {
+            for row in rows {
+                if let Ok(server_id) = row.try_get::<String, _>("server_id") {
+                    server_ids.insert(server_id);
+                }
+            }
+        }
+    }
+
+    // 将 Server ID 转换为 Server 名称
     let mut allowed_server_names = Vec::new();
-    for server_id in &allowed_server_ids {
+    for server_id in &server_ids {
         if let Ok(Some(server)) = McpServerRepository::get_by_id(server_id).await {
             allowed_server_names.push(server.name);
         }
@@ -1007,6 +1085,7 @@ async fn api_key_auth_middleware(
     // Create permissions object for compatibility
     let permissions = crate::config::ApiKeyPermissions {
         allowed_servers: allowed_server_names.clone(),
+        allowed_tools: tool_ids.clone(),
     };
 
     tracing::info!(
@@ -1036,6 +1115,7 @@ async fn api_key_auth_middleware(
     let request_permissions = RequestPermissions {
         permissions: permissions.clone(),
         session_id: session_id.clone(),
+        api_key_id: verified_key.id.clone(),
     };
     request.extensions_mut().insert(request_permissions);
 

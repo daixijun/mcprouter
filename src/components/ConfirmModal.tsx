@@ -31,7 +31,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
           bgColor: 'bg-red-50',
           borderColor: 'border-red-200',
           titleColor: 'text-red-800',
-          buttonColor: 'btn-modern bg-red-500 hover:bg-red-600 text-white',
+          buttonColor: 'btn-modern btn-danger-modern',
         }
       case 'warning':
         return {
@@ -48,7 +48,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
           titleColor: 'text-blue-800',
-          buttonColor: 'btn-modern bg-blue-500 hover:bg-blue-600 text-white',
+          buttonColor: 'btn-modern btn-primary-modern',
         }
       default:
         return {
@@ -81,7 +81,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
           <div className='flex justify-end space-x-3'>
             <button
               onClick={onCancel}
-              className='btn-modern bg-gray-300 hover:bg-gray-400 text-gray-700 text-sm px-4 py-2'>
+              className='btn-modern btn-secondary-modern text-sm px-4 py-2'>
               {cancelText}
             </button>
             <button

@@ -362,7 +362,7 @@ const InstallConfirmModal: React.FC<InstallConfirmModalProps> = ({
             type='button'
             onClick={onClose}
             disabled={isLoading}
-            className='btn-modern'>
+            className='btn-modern btn-secondary-modern'>
             取消
           </button>
           <button

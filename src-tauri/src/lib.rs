@@ -1,5 +1,3 @@
-// MCP Router - Tauri 2.x + React
-
 mod aggregator;
 mod config;
 mod db;
@@ -1067,10 +1065,49 @@ async fn get_local_ip_addresses() -> Result<Vec<String>> {
 }
 
 // API Key Management Commands
+
+/// Helper function: 从工具级别权限推导出授权的服务器列表
+async fn get_allowed_servers_from_tools(api_key_id: &str) -> Result<Vec<String>> {
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
+    use crate::db::repositories::mcp_server_repository::McpServerRepository;
+    use std::collections::HashSet;
+
+    // 获取所有授权的工具 ID
+    let tool_ids = ApiKeyToolRepository::get_tools_by_api_key(api_key_id).await?;
+
+    // 收集所有不重复的 Server
+    use sqlx::Row;
+    let mut server_ids = HashSet::<String>::new();
+    for tool_id in tool_ids {
+        // 从 mcp_tools 表查询工具信息以获取 server_id
+        if let Ok(rows) = sqlx::query("SELECT server_id FROM mcp_tools WHERE id = ?")
+            .bind(&tool_id)
+            .fetch_all(&crate::db::get_database().await?)
+            .await
+        {
+            for row in rows {
+                if let Ok(server_id) = row.try_get::<String, _>("server_id") {
+                    server_ids.insert(server_id);
+                }
+            }
+        }
+    }
+
+    // 将 Server ID 转换为 Server 名称
+    let mut allowed_servers = Vec::new();
+    for server_id in server_ids {
+        if let Ok(Some(server)) = McpServerRepository::get_by_id(&server_id).await {
+            allowed_servers.push(server.name);
+        }
+    }
+
+    Ok(allowed_servers)
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn create_api_key(name: String, permissions: ApiKeyPermissions) -> Result<ApiKey> {
     use crate::db::repositories::api_key_repository::ApiKeyRepository;
-    use crate::db::repositories::api_key_server_repository::ApiKeyServerRepository;
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
     use crate::db::repositories::mcp_server_repository::McpServerRepository;
 
     // Generate a new API key
@@ -1091,12 +1128,12 @@ async fn create_api_key(name: String, permissions: ApiKeyPermissions) -> Result<
     // Create API key in database
     let api_key_row = ApiKeyRepository::create(name.clone(), key.clone()).await?;
 
-    // Add server permissions
+    // Add tool-level permissions (批量授权 Server 的所有工具)
     for server_name in &permissions.allowed_servers {
         // Get server ID from name
         if let Some(server_row) = McpServerRepository::get_by_name(server_name).await? {
             if let Some(server_id) = server_row.id {
-                ApiKeyServerRepository::add_permission(&api_key_row.id, &server_id).await?;
+                ApiKeyToolRepository::grant_server_tools(&api_key_row.id, &server_id).await?;
             }
         }
     }
@@ -1117,23 +1154,13 @@ async fn create_api_key(name: String, permissions: ApiKeyPermissions) -> Result<
 #[tauri::command(rename_all = "snake_case")]
 async fn list_api_keys() -> Result<Vec<serde_json::Value>> {
     use crate::db::repositories::api_key_repository::ApiKeyRepository;
-    use crate::db::repositories::api_key_server_repository::ApiKeyServerRepository;
-    use crate::db::repositories::mcp_server_repository::McpServerRepository;
 
     let api_keys = ApiKeyRepository::get_all().await?;
 
     let mut masked_keys = Vec::new();
     for api_key in api_keys {
-        // Get server permissions
-        let server_ids = ApiKeyServerRepository::get_servers_by_api_key(&api_key.id).await?;
-
-        // Convert server IDs to server names
-        let mut allowed_servers = Vec::new();
-        for server_id in server_ids {
-            if let Ok(Some(server)) = McpServerRepository::get_by_id(&server_id).await {
-                allowed_servers.push(server.name);
-            }
-        }
+        // 从工具权限推导出授权的服务器列表
+        let allowed_servers = get_allowed_servers_from_tools(&api_key.id).await?;
 
         // Mask the key (show first 6 and last 3 characters)
         let masked_key = if api_key.key_hash.len() > 9 {
@@ -1164,39 +1191,37 @@ async fn list_api_keys() -> Result<Vec<serde_json::Value>> {
 #[tauri::command(rename_all = "snake_case")]
 async fn get_api_key_details(id: String) -> Result<ApiKey> {
     use crate::db::repositories::api_key_repository::ApiKeyRepository;
-    use crate::db::repositories::api_key_server_repository::ApiKeyServerRepository;
-    use crate::db::repositories::mcp_server_repository::McpServerRepository;
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
 
     let api_key_row = ApiKeyRepository::get_by_id(&id)
         .await?
         .ok_or_else(|| McpError::ConfigError(format!("API key not found: {}", id)))?;
 
-    // Get server permissions
-    let server_ids = ApiKeyServerRepository::get_servers_by_api_key(&id).await?;
-    let mut allowed_servers = Vec::new();
-    for server_id in server_ids {
-        if let Ok(Some(server)) = McpServerRepository::get_by_id(&server_id).await {
-            allowed_servers.push(server.name);
-        }
-    }
+    // 获取已授权的工具 ID 列表
+    let tool_ids = ApiKeyToolRepository::get_tools_by_api_key(&id).await?;
+    // 通过工具权限推导出服务器名称列表
+    let allowed_servers = get_allowed_servers_from_tools(&id).await?;
 
     Ok(ApiKey {
         id: api_key_row.id,
         name: api_key_row.name,
-        key: "***".to_string(), // Don't return the actual key
+        key: "***".to_string(),
         enabled: api_key_row.enabled,
         created_at: api_key_row.created_at.to_rfc3339(),
-        permissions: ApiKeyPermissions { allowed_servers },
+        permissions: ApiKeyPermissions {
+            allowed_servers,
+            allowed_tools: tool_ids,
+        },
     })
 }
 
 #[tauri::command(rename_all = "snake_case")]
 async fn delete_api_key(id: String) -> Result<String> {
     use crate::db::repositories::api_key_repository::ApiKeyRepository;
-    use crate::db::repositories::api_key_server_repository::ApiKeyServerRepository;
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
 
-    // Remove all permissions first
-    ApiKeyServerRepository::remove_all_permissions(&id).await?;
+    // Remove all tool permissions first
+    ApiKeyToolRepository::remove_all_permissions(&id).await?;
 
     // Delete the API key
     let deleted = ApiKeyRepository::delete(&id).await?;
@@ -1234,7 +1259,7 @@ async fn toggle_api_key(id: String) -> Result<bool> {
 #[tauri::command(rename_all = "snake_case")]
 async fn update_api_key_permissions(id: String, permissions: ApiKeyPermissions) -> Result<String> {
     use crate::db::repositories::api_key_repository::ApiKeyRepository;
-    use crate::db::repositories::api_key_server_repository::ApiKeyServerRepository;
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
     use crate::db::repositories::mcp_server_repository::McpServerRepository;
 
     // Verify API key exists
@@ -1242,21 +1267,160 @@ async fn update_api_key_permissions(id: String, permissions: ApiKeyPermissions) 
         .await?
         .ok_or_else(|| McpError::ConfigError(format!("API key not found: {}", id)))?;
 
-    // Remove all existing permissions
-    ApiKeyServerRepository::remove_all_permissions(&id).await?;
+    // Remove all existing tool permissions
+    ApiKeyToolRepository::remove_all_permissions(&id).await?;
 
-    // Add new permissions
-    for server_name in &permissions.allowed_servers {
-        // Get server ID from name
-        if let Some(server_row) = McpServerRepository::get_by_name(server_name).await? {
-            if let Some(server_id) = server_row.id {
-                ApiKeyServerRepository::add_permission(&id, &server_id).await?;
+    // Add new permissions (tool-level)
+    let mut total_granted = 0;
+
+    // Handle allowed_tools if provided
+    if !permissions.allowed_tools.is_empty() {
+        for tool_id in &permissions.allowed_tools {
+            if let Ok(_) = ApiKeyToolRepository::add_tool_permission(&id, tool_id).await {
+                total_granted += 1;
+            }
+        }
+    } else {
+        // Fallback to server-level permissions for backward compatibility
+        for server_name in &permissions.allowed_servers {
+            // Get server ID from name
+            if let Some(server_row) = McpServerRepository::get_by_name(server_name).await? {
+                if let Some(server_id) = server_row.id {
+                    // 批量授权该 Server 的所有工具
+                    let granted_count =
+                        ApiKeyToolRepository::grant_server_tools(&id, &server_id).await?;
+                    total_granted += granted_count;
+                }
             }
         }
     }
 
-    tracing::info!("Updated permissions for API key: {}", id);
-    Ok(format!("Permissions updated for API key '{}'", id))
+    tracing::info!(
+        "Updated permissions for API key: {}, granted {} tools",
+        id,
+        total_granted
+    );
+    Ok(format!(
+        "Permissions updated for API key '{}': granted {} tools",
+        id, total_granted
+    ))
+}
+
+// Tool-level Permission Management Commands
+
+#[tauri::command(rename_all = "snake_case")]
+async fn get_api_key_tools(api_key_id: String) -> Result<Vec<String>> {
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
+
+    let tool_ids = ApiKeyToolRepository::get_tools_by_api_key(&api_key_id).await?;
+    Ok(tool_ids)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn add_tool_permission(api_key_id: String, tool_id: String) -> Result<String> {
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
+
+    ApiKeyToolRepository::add_tool_permission(&api_key_id, &tool_id).await?;
+    tracing::info!("Added tool permission: {} -> {}", api_key_id, tool_id);
+    Ok(format!("Tool permission added"))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn remove_tool_permission(api_key_id: String, tool_id: String) -> Result<String> {
+    // First check if the tool exists
+    let db = crate::db::get_database().await?;
+    let tool_row = sqlx::query("SELECT id FROM mcp_tools WHERE id = ?")
+        .bind(&tool_id)
+        .fetch_optional(&db)
+        .await
+        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+    if tool_row.is_none() {
+        return Err(McpError::ConfigError(format!(
+            "Tool not found: {}",
+            tool_id
+        )));
+    }
+
+    // Remove the permission by deleting the relation
+    let result =
+        sqlx::query("DELETE FROM api_key_tool_relations WHERE api_key_id = ? AND tool_id = ?")
+            .bind(&api_key_id)
+            .bind(&tool_id)
+            .execute(&db)
+            .await
+            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+
+    if result.rows_affected() > 0 {
+        tracing::info!("Removed tool permission: {} -> {}", api_key_id, tool_id);
+        Ok(format!("Tool permission removed"))
+    } else {
+        Err(McpError::ConfigError(format!(
+            "Permission not found for tool: {}",
+            tool_id
+        )))
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn grant_server_tools_to_api_key(api_key_id: String, server_name: String) -> Result<String> {
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
+    use crate::db::repositories::mcp_server_repository::McpServerRepository;
+
+    // Get server ID from name
+    let server = McpServerRepository::get_by_name(&server_name)
+        .await?
+        .ok_or_else(|| McpError::ServiceNotFound(server_name.clone()))?;
+
+    let server_id = server
+        .id
+        .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
+
+    // Grant all tools in this server
+    let granted_count = ApiKeyToolRepository::grant_server_tools(&api_key_id, &server_id).await?;
+
+    tracing::info!(
+        "Granted {} tools from server {} to API key {}",
+        granted_count,
+        server_name,
+        api_key_id
+    );
+    Ok(format!(
+        "Granted {} tools from server '{}'",
+        granted_count, server_name
+    ))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn revoke_server_tools_from_api_key(
+    api_key_id: String,
+    server_name: String,
+) -> Result<String> {
+    use crate::db::repositories::api_key_tool_repository::ApiKeyToolRepository;
+    use crate::db::repositories::mcp_server_repository::McpServerRepository;
+
+    // Get server ID from name
+    let server = McpServerRepository::get_by_name(&server_name)
+        .await?
+        .ok_or_else(|| McpError::ServiceNotFound(server_name.clone()))?;
+
+    let server_id = server
+        .id
+        .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
+
+    // Revoke all tools in this server
+    let revoked_count = ApiKeyToolRepository::revoke_server_tools(&api_key_id, &server_id).await?;
+
+    tracing::info!(
+        "Revoked {} tools from server {} for API key {}",
+        revoked_count,
+        server_name,
+        api_key_id
+    );
+    Ok(format!(
+        "Revoked {} tools from server '{}'",
+        revoked_count, server_name
+    ))
 }
 
 fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -1704,6 +1868,12 @@ pub async fn run() {
             delete_api_key,
             toggle_api_key,
             update_api_key_permissions,
+            // Tool-level Permission Management
+            get_api_key_tools,
+            add_tool_permission,
+            remove_tool_permission,
+            grant_server_tools_to_api_key,
+            revoke_server_tools_from_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

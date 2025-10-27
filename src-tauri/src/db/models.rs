@@ -43,12 +43,13 @@ pub struct ApiKeyRow {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-/// API 密钥-服务器关联模型
+
+/// API 密钥-工具关联模型（工具级别授权）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiKeyServerRelationRow {
+pub struct ApiKeyToolRelationRow {
     pub id: Option<String>,
     pub api_key_id: String,
-    pub server_id: String,
+    pub tool_id: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -67,13 +68,13 @@ impl ApiKeyRow {
     }
 }
 
-impl ApiKeyServerRelationRow {
-    pub fn new(api_key_id: String, server_id: String) -> Self {
+impl ApiKeyToolRelationRow {
+    pub fn new(api_key_id: String, tool_id: String) -> Self {
         let now = Utc::now();
         Self {
             id: Some(uuid::Uuid::new_v4().to_string()),
             api_key_id,
-            server_id,
+            tool_id,
             created_at: now,
         }
     }
