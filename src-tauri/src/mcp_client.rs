@@ -1,5 +1,6 @@
 use crate::config::{AppConfig, McpServerConfig, ServiceTransport};
 use crate::error::{McpError, Result};
+use crate::SERVICE_MANAGER;
 use rmcp::model::ClientInfo;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -15,8 +16,7 @@ use rmcp::{
     transport::{SseClientTransport, StreamableHttpClientTransport, TokioChildProcess},
 };
 
-// Access global service manager for config
-use super::SERVICE_MANAGER;
+// Access global service manager for config via state manager
 
 // Define enum for different service types
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub enum McpService {
 pub struct ConnectionStatus {
     pub is_connected: bool,
     pub last_connected: Option<chrono::DateTime<chrono::Utc>>,
-    // last_error field removed as it was never read
+    pub error_message: Option<String>,
     // connection_attempts, health_check_time fields removed as they were never read
 }
 
@@ -204,6 +204,7 @@ impl McpClientManager {
             status: ConnectionStatus {
                 is_connected: true,
                 last_connected: Some(chrono::Utc::now()),
+                error_message: None,
             },
             cached_version: version,
         })
@@ -254,6 +255,7 @@ impl McpClientManager {
             status: ConnectionStatus {
                 is_connected: true,
                 last_connected: Some(chrono::Utc::now()),
+                error_message: None,
             },
             cached_version: version,
         })
@@ -303,6 +305,7 @@ impl McpClientManager {
             status: ConnectionStatus {
                 is_connected: true,
                 last_connected: Some(chrono::Utc::now()),
+                error_message: None,
             },
             cached_version: version,
         })
@@ -537,6 +540,21 @@ impl McpClientManager {
         self.connections.read().await.contains_key(service_id)
     }
 
+    pub async fn get_connection_status(&self, service_id: &str) -> (String, Option<String>) {
+        if let Some(connection) = self.connections.read().await.get(service_id) {
+            if connection.status.is_connected {
+                ("connected".to_string(), None)
+            } else {
+                (
+                    "disconnected".to_string(),
+                    connection.status.error_message.clone(),
+                )
+            }
+        } else {
+            ("disconnected".to_string(), None)
+        }
+    }
+
     pub async fn get_connection(&self, service_id: &str) -> Option<McpConnection> {
         self.connections.read().await.get(service_id).cloned()
     }
@@ -626,7 +644,7 @@ impl McpClientManager {
     /// Get service configuration from service manager
     async fn get_service_config(&self, service_name: &str) -> Option<McpServerConfig> {
         // Access the service manager to get the config
-        let services = crate::SERVICE_MANAGER.get_mcp_servers().await;
+        let services = SERVICE_MANAGER.get_mcp_servers().await;
         let services_read = services.read().await;
         services_read.get(service_name).cloned()
     }

@@ -1,11 +1,28 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { ApiService } from '../services/api'
-import toastService from '../services/toastService'
-import type { MarketplaceService, MarketplaceServiceListItem } from '../types'
+import {
+  App,
+  Badge,
+  Card,
+  Col,
+  Flex,
+  Input,
+  Row,
+  Space,
+  Spin,
+  Typography,
+} from 'antd'
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import InstallConfirmModal from '../components/InstallConfirmModal'
 import ServiceDetail from '../components/ServiceDetail'
+import { useErrorContext } from '../contexts/ErrorContext'
+import { MarketplaceApi } from '../services/marketplace-service'
+import type { MarketplaceService, MarketplaceServiceListItem } from '../types'
 
-const Marketplace: React.FC = () => {
+const { Title, Text, Paragraph } = Typography
+
+const Marketplace: React.FC = memo(() => {
+  const { addError } = useErrorContext()
+  const { message } = App.useApp()
+
   const [searchQuery, setSearchQuery] = useState('')
   const [services, setServices] = useState<MarketplaceServiceListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -48,14 +65,156 @@ const Marketplace: React.FC = () => {
   const isLoadingRef = useRef(false)
   const hasMoreRef = useRef(true)
 
+  // 防抖相关 refs
+  const debounceTimerRef = useRef<number | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // 防抖搜索处理函数
+  const handleSearchChange = useCallback((value: string) => {
+    // 清除之前的防抖定时器
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current)
+    }
+
+    // 取消之前的请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 设置新的防抖定时器（500ms 延迟）
+    debounceTimerRef.current = window.setTimeout(() => {
+      setSearchQuery(value)
+    }, 500)
+  }, [])
+
+  // 组件卸载时清理
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current)
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
+
   // Keep refs in sync with state
   useEffect(() => {
     hasMoreRef.current = hasMore
   }, [hasMore])
 
+  // Removed: loadPopularServices and related popular services feature
+
+  const loadInitialPlatformCounts = useCallback(async () => {
+    setLoading(true)
+    try {
+      const result = await MarketplaceApi.listMarketplaceServices(
+        '',
+        1,
+        page_size,
+      )
+      setServices(result.services)
+      setModelScopePagination({
+        page: 2,
+        hasMore: result.has_more,
+      })
+      setHasMore(result.has_more)
+      hasMoreRef.current = result.has_more
+    } catch (error) {
+      console.error('Failed to load initial services:', error)
+      addError('加载服务失败，请检查网络连接或稍后重试。')
+    } finally {
+      setLoading(false)
+    }
+  }, [addError])
+
+  const searchServices = useCallback(
+    async (isReset = false) => {
+      // Prevent multiple simultaneous requests
+      if (isLoadingRef.current) {
+        console.log('Already loading, skipping request')
+        return
+      }
+
+      isLoadingRef.current = true
+      if (isReset) {
+        setLoading(true)
+      } else {
+        setLoadingMore(true)
+      }
+
+      // 创建新的 AbortController
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
+      console.log(`Loading services: isReset=${isReset}`)
+
+      try {
+        // Unified marketplace pagination
+        const currentPage = isReset ? 1 : modelScopePagination.page
+
+        const result = await MarketplaceApi.listMarketplaceServices(
+          searchQuery,
+          currentPage,
+          page_size,
+        )
+
+        // 检查请求是否被取消
+        if (controller.signal.aborted) {
+          console.log('Request was aborted')
+          return
+        }
+
+        console.log(
+          `Loaded ${result.services.length} services, page=${currentPage}, has_more=${result.has_more}`,
+        )
+
+        if (isReset) {
+          setServices(result.services)
+        } else {
+          setServices((prev) => [...prev, ...result.services])
+        }
+
+        setModelScopePagination({
+          page: currentPage + 1,
+          hasMore: result.has_more,
+        })
+        setHasMore(result.has_more)
+      } catch (error) {
+        // 如果请求被取消，不显示错误
+        if (controller.signal.aborted) {
+          console.log('Request was aborted, ignoring error')
+          return
+        }
+        console.error('Failed to search services:', error)
+        addError(`搜索服务失败: ${error}`)
+      } finally {
+        setLoading(false)
+        setLoadingMore(false)
+        isLoadingRef.current = false
+        // 清理 abort controller
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null
+        }
+      }
+    },
+    [searchQuery, modelScopePagination.page, addError],
+  )
+
   useEffect(() => {
     loadInitialPlatformCounts()
-  }, [])
+  }, [loadInitialPlatformCounts])
+
+  // 使用 useRef 来避免函数依赖循环
+  const searchServicesRef = useRef(searchServices)
+  const loadInitialPlatformCountsRef = useRef(loadInitialPlatformCounts)
+
+  // 更新 ref 引用
+  useEffect(() => {
+    searchServicesRef.current = searchServices
+    loadInitialPlatformCountsRef.current = loadInitialPlatformCounts
+  }, [searchServices, loadInitialPlatformCounts])
 
   useEffect(() => {
     // Reset pagination when filters change
@@ -69,89 +228,15 @@ const Marketplace: React.FC = () => {
 
     // Only trigger search if there's a search query, otherwise reload initial data
     if (searchQuery.trim()) {
-      searchServices(true)
+      searchServicesRef.current(true)
     } else {
       // When search is cleared, reload initial data
-      loadInitialPlatformCounts()
+      loadInitialPlatformCountsRef.current()
     }
   }, [searchQuery])
 
-  // Removed: loadPopularServices and related popular services feature
-
-  async function loadInitialPlatformCounts() {
-    setLoading(true)
-    try {
-      const result = await ApiService.listMarketplaceServices('', 1, page_size)
-      setServices(result.services)
-      setModelScopePagination({
-        page: 2,
-        hasMore: result.has_more,
-      })
-      setHasMore(result.has_more)
-      hasMoreRef.current = result.has_more
-    } catch (error) {
-      console.error('Failed to load initial services:', error)
-      toastService.sendErrorNotification(
-        '加载服务失败，请检查网络连接或稍后重试。',
-      )
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function searchServices(isReset = false) {
-    // Prevent multiple simultaneous requests
-    if (isLoadingRef.current) {
-      console.log('Already loading, skipping request')
-      return
-    }
-
-    isLoadingRef.current = true
-    if (isReset) {
-      setLoading(true)
-    } else {
-      setLoadingMore(true)
-    }
-
-    console.log(`Loading services: isReset=${isReset}`)
-
-    try {
-      // Unified marketplace pagination
-      const currentPage = isReset ? 1 : modelScopePagination.page
-
-      const result = await ApiService.listMarketplaceServices(
-        searchQuery,
-        currentPage,
-        page_size,
-      )
-
-      console.log(
-        `Loaded ${result.services.length} services, page=${currentPage}, has_more=${result.has_more}`,
-      )
-
-      if (isReset) {
-        setServices(result.services)
-      } else {
-        setServices((prev) => [...prev, ...result.services])
-      }
-
-      setModelScopePagination({
-        page: currentPage + 1,
-        hasMore: result.has_more,
-      })
-      setHasMore(result.has_more)
-    } catch (error) {
-      console.error('Failed to search services:', error)
-      toastService.sendErrorNotification(`搜索服务失败: ${error}`)
-    } finally {
-      setLoading(false)
-      setLoadingMore(false)
-      isLoadingRef.current = false
-    }
-  }
-
   // Scroll listener for infinite loading
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return
 
     const container = scrollContainerRef.current
@@ -174,7 +259,7 @@ const Marketplace: React.FC = () => {
       console.log('Triggering load more')
       searchServices(false)
     }
-  }
+  }, [searchServices])
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -186,256 +271,299 @@ const Marketplace: React.FC = () => {
       console.log('Removing scroll listener')
       container.removeEventListener('scroll', handleScroll)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [handleScroll])
 
-  const handleInstall = async (
-    service: MarketplaceServiceListItem | MarketplaceService,
-  ) => {
-    setPendingInstallService(service)
+  const handleInstall = useCallback(
+    async (service: MarketplaceServiceListItem | MarketplaceService) => {
+      setPendingInstallService(service)
 
-    // 使用服务详情中的env_schema，如果没有则从后端获取详情
-    let schema = 'env_schema' in service ? service.env_schema : null
+      // 使用服务详情中的env_schema，如果没有则从后端获取详情
+      let schema = 'env_schema' in service ? service.env_schema : null
 
-    // 如果列表项中没有env_schema，从后端获取服务详情
-    if (!schema) {
-      try {
-        const detailedService = await ApiService.getMcpServerDetails(service.id)
-        schema = detailedService.env_schema
-      } catch (e) {
-        console.warn('获取服务详情失败:', e)
+      // 如果列表项中没有env_schema，从后端获取服务详情
+      if (!schema) {
+        try {
+          const detailedService = await MarketplaceApi.getMcpServerDetails(
+            service.id,
+          )
+          schema = detailedService.env_schema
+        } catch (e) {
+          console.warn('获取服务详情失败:', e)
+        }
       }
-    }
 
-    setEnvSchema(schema || null)
-    setShowInstallModal(true)
-  }
+      setEnvSchema(schema || null)
+      setShowInstallModal(true)
+    },
+    [],
+  )
 
-  const handleConfirmInstall = async (envVars: Record<string, string>) => {
-    if (!pendingInstallService) return
+  const handleConfirmInstall = useCallback(
+    async (envVars: Record<string, string>) => {
+      if (!pendingInstallService) return
 
-    setIsInstalling(true)
-    try {
-      const envEntries = Object.entries(envVars)
-      await ApiService.installMarketplaceService(
-        pendingInstallService.id,
-        envEntries.length > 0 ? envEntries : undefined,
-      )
-      toastService.sendSuccessNotification(
-        `服务 "${pendingInstallService.name}" 安装成功！`,
-      )
-      setShowInstallModal(false)
-      setPendingInstallService(null)
-      setEnvSchema(null)
-    } catch (error) {
-      console.error('安装失败:', error)
-      toastService.sendErrorNotification('安装失败，请检查日志获取详细信息。')
-    } finally {
-      setIsInstalling(false)
-    }
-  }
+      setIsInstalling(true)
+      try {
+        const envEntries = Object.entries(envVars)
+        await MarketplaceApi.installMarketplaceService(
+          pendingInstallService.id,
+          envEntries.length > 0 ? envEntries : undefined,
+        )
+        message.success(`服务 "${pendingInstallService.name}" 安装成功！`)
+        setShowInstallModal(false)
+        setPendingInstallService(null)
+        setEnvSchema(null)
+      } catch (error) {
+        console.error('安装失败:', error)
+        addError('安装失败，请检查日志获取详细信息。')
+      } finally {
+        setIsInstalling(false)
+      }
+    },
+    [pendingInstallService, addError],
+  )
 
-  const handleCancelInstall = () => {
+  const handleCancelInstall = useCallback(() => {
     setShowInstallModal(false)
     setPendingInstallService(null)
     setEnvSchema(null)
-  }
+  }, [])
 
-  const handleViewDetails = async (service: MarketplaceServiceListItem) => {
-    setLoadingDetail(true)
-    setSelectedService(null) // Clear previous selection
-    setViewMode('detail') // Switch to detail view
-    try {
-      const details = await ApiService.getMcpServerDetails(service.id)
-      setSelectedService(details) // Set the full service details
-    } catch (error) {
-      console.error('Failed to load service details:', error)
-      toastService.sendErrorNotification(
-        `加载服务 "${service.name}" 详情失败，请检查网络连接或稍后重试。`,
-      )
-      setSelectedService(null) // Clear on error
-      setViewMode('list') // Back to list on error
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
+  const handleViewDetails = useCallback(
+    async (service: MarketplaceServiceListItem) => {
+      setLoadingDetail(true)
+      setSelectedService(null) // Clear previous selection
+      setViewMode('detail') // Switch to detail view
+      try {
+        const details = await MarketplaceApi.getMcpServerDetails(service.id)
+        setSelectedService(details) // Set the full service details
+      } catch (error) {
+        console.error('Failed to load service details:', error)
+        addError(
+          `加载服务 "${service.name}" 详情失败，请检查网络连接或稍后重试。`,
+        )
+        setSelectedService(null) // Clear on error
+        setViewMode('list') // Back to list on error
+      } finally {
+        setLoadingDetail(false)
+      }
+    },
+    [addError],
+  )
 
-  const handleBackToList = () => {
+  const handleBackToList = useCallback(() => {
     setViewMode('list')
     setSelectedService(null)
-  }
+  }, [])
 
-  const getPlatformBadgeColor = (platform: string) => {
+  const getPlatformBadgeColor = useCallback((platform: string) => {
     switch (platform) {
       case '魔搭社区':
-        return 'bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300'
+        return '#f43f5e'
       default:
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+        return '#6b7280'
     }
-  }
+  }, [])
 
-  const getPlatformIcon = (platform: string) => {
+  const getPlatformIcon = useCallback((platform: string) => {
     switch (platform) {
       case '魔搭社区':
         return (
           <img
             src={'https://g.alicdn.com/sail-web/maas/2.9.94/favicon/128.ico'}
             alt='魔搭社区'
-            className='inline-block w-4 h-4 mr-1 align-middle object-contain'
+            style={{
+              width: '16px',
+              height: '16px',
+              marginRight: '4px',
+              verticalAlign: 'middle',
+              objectFit: 'contain',
+            }}
             loading='lazy'
           />
         )
       default:
         return '📦'
     }
-  }
+  }, [])
 
-  const renderServiceCard = (service: MarketplaceServiceListItem) => (
-    <div
-      key={service.id}
-      onClick={() => handleViewDetails(service)}
-      className='card-glass p-6 hover:shadow-lg hover:border-blue-500 border-2 border-transparent transition-all duration-200 cursor-pointer'>
-      <div className='flex gap-4 mb-4'>
-        {/* Logo */}
-        <div className='flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center'>
-          {service.logo_url ? (
-            <img
-              src={service.logo_url}
-              alt={service.name}
-              className='w-full h-full object-cover'
-            />
-          ) : (
-            <span className='text-2xl'>📦</span>
-          )}
-        </div>
-
-        {/* Title and metadata */}
-        <div className='flex-1 min-w-0'>
-          <h4 className='font-bold text-lg text-gray-800 dark:text-gray-100 truncate'>
-            {service.name}
-          </h4>
-          <div className='flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-300'>
-            <span className='flex items-center gap-1'>
-              <span>👤</span>
-              <span className='text-xs'>{service.author}</span>
-            </span>
-            {service.license && (
-              <>
-                <span className='text-gray-400 dark:text-gray-500'>•</span>
-                <span className='flex items-center gap-1'>
-                  <span>📄</span>
-                  <span>{service.license}</span>
-                </span>
-              </>
+  const renderServiceCard = useCallback(
+    (service: MarketplaceServiceListItem) => (
+      <Card
+        key={service.id}
+        hoverable
+        onClick={() => handleViewDetails(service)}
+        style={{
+          marginBottom: '16px',
+          cursor: 'pointer',
+          transition: 'all 0.2s',
+        }}>
+        <Flex gap='middle' style={{ marginBottom: '16px' }}>
+          {/* Logo */}
+          <div
+            style={{
+              flexShrink: 0,
+              width: '48px',
+              height: '48px',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              backgroundColor: '#f5f5f5',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+            {service.logo_url ? (
+              <img
+                src={service.logo_url}
+                alt={service.name}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <span style={{ fontSize: '20px' }}>📦</span>
             )}
           </div>
-        </div>
-      </div>
 
-      <p className='text-gray-600 dark:text-gray-300 text-sm mb-4 line-clamp-2'>
-        {service.description}
-      </p>
+          {/* Title and metadata */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Title level={4} style={{ margin: 0, fontSize: '18px' }} ellipsis>
+              {service.name}
+            </Title>
+            <Flex
+              gap='small'
+              align='center'
+              style={{ marginTop: '4px', fontSize: '14px', color: '#666' }}>
+              <Flex align='center' gap='small'>
+                <span>👤</span>
+                <Text style={{ fontSize: '12px' }}>{service.author}</Text>
+              </Flex>
+              {service.license && (
+                <>
+                  <Text type='secondary'>•</Text>
+                  <Flex align='center' gap='small'>
+                    <span>📄</span>
+                    <Text>{service.license}</Text>
+                  </Flex>
+                </>
+              )}
+            </Flex>
+          </div>
+        </Flex>
 
-      <div className='flex flex-wrap gap-2 mb-4'>
-        <span
-          className={`badge-modern ${getPlatformBadgeColor(service.platform)}`}>
-          {getPlatformIcon(service.platform)} {service.platform}
-        </span>
-        {service.is_verified && (
-          <span className='badge-modern bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'>
-            ✅ 已验证
-          </span>
-        )}
-        {service.is_hosted && (
-          <span className='badge-modern bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'>
-            🖥️ 托管
-          </span>
-        )}
-      </div>
+        <Paragraph
+          type='secondary'
+          ellipsis={{ rows: 2 }}
+          style={{ marginBottom: '16px', fontSize: '14px' }}>
+          {service.description}
+        </Paragraph>
 
-      <div className='flex items-center justify-between'>
-        <div className='flex items-center space-x-3 text-sm'>
-          {typeof service.github_stars === 'number' &&
-            service.github_stars > 0 && (
-              <span className='text-yellow-500'>
-                ⭐ {service.github_stars.toLocaleString()}
-              </span>
-            )}
-          <span className='text-gray-500 dark:text-gray-400'>
-            📥 {service.downloads.toLocaleString()}
-          </span>
-        </div>
-      </div>
-    </div>
+        <Flex wrap gap='small' style={{ marginBottom: '16px' }}>
+          <Badge color={getPlatformBadgeColor(service.platform)}>
+            {getPlatformIcon(service.platform)} {service.platform}
+          </Badge>
+          {service.is_verified && <Badge color='#52c41a'>✅ 已验证</Badge>}
+          {service.is_hosted && <Badge color='#722ed1'>🖥️ 托管</Badge>}
+        </Flex>
+
+        <Flex justify='space-between' align='center'>
+          <Space size='large'>
+            {typeof service.github_stars === 'number' &&
+              service.github_stars > 0 && (
+                <Text style={{ color: '#faad14' }}>
+                  ⭐ {service.github_stars.toLocaleString()}
+                </Text>
+              )}
+            <Text type='secondary'>
+              📥 {service.downloads.toLocaleString()}
+            </Text>
+          </Space>
+        </Flex>
+      </Card>
+    ),
+    [handleViewDetails, getPlatformBadgeColor, getPlatformIcon],
   )
 
   return (
-    <div className='h-full flex flex-col overflow-hidden'>
+    <Flex vertical gap='large' style={{ height: '100%', overflowY: 'auto' }}>
       {viewMode === 'list' ? (
         // List View
-        <div
-          ref={scrollContainerRef}
-          className='flex-1 flex flex-col space-y-6 overflow-y-auto'>
-          {/* Search Bar */}
-          <div className='card-glass p-4'>
-            <input
-              type='text'
-              placeholder='🔍 搜索 MCP 服务...'
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className='input-modern w-full'
-            />
-          </div>
-
-          {/* Search Results */}
-          <div>
-            {loading ? (
-              <div className='card-glass p-12 text-center'>
-                <div className='animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-4'></div>
-                <p className='text-gray-600 dark:text-gray-300'>
-                  正在加载精彩的 MCP 服务...
-                </p>
+        <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto' }}>
+          <Flex vertical gap='large'>
+            {/* Header and Search Bar */}
+            <Flex justify='space-between' align='center'>
+              <div>
+                <Title level={2}>服务市场</Title>
+                <Text type='secondary'>发现并安装精彩的 MCP 服务</Text>
               </div>
-            ) : services.length > 0 ? (
-              <>
-                <div className='grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6'>
-                  {services.map(renderServiceCard)}
-                </div>
+            </Flex>
 
-                {/* Loading More Indicator */}
-                {loadingMore && (
-                  <div className='mt-8 text-center'>
-                    <div className='animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent mx-auto mb-2'></div>
-                    <p className='text-gray-600 dark:text-gray-300'>
-                      加载更多服务...
-                    </p>
-                  </div>
-                )}
+            <Card>
+              <Input
+                placeholder='🔍 搜索 MCP 服务...'
+                defaultValue={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                style={{ width: '100%' }}
+              />
+            </Card>
 
-                {/* No More Data Indicator */}
-                {!hasMore && services.length > 0 && (
-                  <div className='mt-8 text-center'>
-                    <p className='text-gray-500 dark:text-gray-400'>
-                      已显示全部 {services.length} 个服务
-                    </p>
-                    <p className='text-sm text-amber-600 mt-2'>
-                      ⚠️ 由于官方接口限制，最多能获取 100 条数据
-                    </p>
+            {/* Search Results */}
+            <div>
+              {loading ? (
+                <Flex
+                  justify='center'
+                  align='center'
+                  style={{ padding: '48px 16px' }}>
+                  <Spin size='large' tip='正在加载精彩的 MCP 服务...' />
+                </Flex>
+              ) : services.length > 0 ? (
+                <>
+                  <Row gutter={[16, 16]}>
+                    {services.map((service) => (
+                      <Col span={8} key={service.id}>
+                        {renderServiceCard(service)}
+                      </Col>
+                    ))}
+                  </Row>
+
+                  {/* Loading More Indicator */}
+                  {loadingMore && (
+                    <Flex justify='center' style={{ marginTop: '32px' }}>
+                      <Spin tip='加载更多服务...' />
+                    </Flex>
+                  )}
+
+                  {/* No More Data Indicator */}
+                  {!hasMore && services.length > 0 && (
+                    <Flex
+                      vertical
+                      align='center'
+                      style={{ marginTop: '32px', textAlign: 'center' }}>
+                      <Text type='secondary'>
+                        已显示全部 {services.length} 个服务
+                      </Text>
+                      <Text
+                        type='warning'
+                        style={{ marginTop: '8px', fontSize: '14px' }}>
+                        ⚠️ 由于官方接口限制，最多能获取 100 条数据
+                      </Text>
+                    </Flex>
+                  )}
+                </>
+              ) : (
+                <Flex
+                  vertical
+                  align='center'
+                  style={{ padding: '48px 16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+                    😔
                   </div>
-                )}
-              </>
-            ) : (
-              <div className='card-glass p-12 text-center'>
-                <div className='text-6xl mb-4'>😔</div>
-                <h3 className='text-xl font-semibold text-gray-700 mb-2'>
-                  未找到服务
-                </h3>
-                <p className='text-gray-500 dark:text-gray-400'>
-                  请尝试调整您的搜索词或分类筛选。
-                </p>
-              </div>
-            )}
-          </div>
+                  <Title level={4} style={{ marginBottom: '8px' }}>
+                    未找到服务
+                  </Title>
+                  <Text type='secondary'>请尝试调整您的搜索词或分类筛选。</Text>
+                </Flex>
+              )}
+            </div>
+          </Flex>
         </div>
       ) : (
         // Detail View
@@ -456,8 +584,8 @@ const Marketplace: React.FC = () => {
         envSchema={envSchema}
         isLoading={isInstalling}
       />
-    </div>
+    </Flex>
   )
-}
+})
 
 export default Marketplace

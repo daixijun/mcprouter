@@ -14,19 +14,20 @@ export interface McpServerConfig {
 export interface ServiceStatus {
   name: string
   enabled: boolean
-  is_active: boolean
+  status: 'connecting' | 'connected' | 'disconnected' | 'connecterror'
   version?: string
   start_time?: string
   last_error?: string
+  error_message?: string
 }
 
 export interface McpServerInfo {
   name: string
   enabled: boolean
-  is_active: boolean
+  status: 'connecting' | 'connected' | 'disconnected' | 'connecterror'
   version?: string
-  start_time?: string
   last_error?: string
+  error_message?: string
   transport: 'stdio' | 'sse' | 'streamablehttp'
   url?: string
   description?: string
@@ -212,3 +213,32 @@ export interface SystemSettings {
     npm_registry?: string
   }
 }
+
+export interface DashboardStats {
+  total_servers: number
+  enabled_servers: number
+  disabled_servers: number
+  connected_services: number
+  total_tools: number
+  active_clients: number
+  startup_time: string
+  aggregator?: {
+    endpoint: string
+    max_connections?: number
+    is_running?: boolean
+  }
+  os_info?: {
+    type: string
+    version: string
+    arch: string
+    platform?: string
+  }
+  connections?: {
+    active_clients: number
+    active_services: number
+    total_connections?: number
+  }
+}
+
+export type ToolCallArguments = Record<string, any> | null
+export type ToolCallResult = Record<string, any> | null

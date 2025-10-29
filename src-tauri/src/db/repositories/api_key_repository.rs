@@ -34,7 +34,7 @@ impl ApiKeyRepository {
         .bind(api_key.last_used_at.map(|dt| dt.to_rfc3339()))
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         info!("API key created: {}", name_clone);
         Ok(api_key)
@@ -49,7 +49,7 @@ impl ApiKeyRepository {
         let rows = sqlx::query("SELECT * FROM api_keys ORDER BY created_at DESC")
             .fetch_all(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let keys: Result<Vec<_>> = rows
             .into_iter()
@@ -72,7 +72,7 @@ impl ApiKeyRepository {
                 .bind(id)
                 .fetch_optional(&db)
                 .await
-                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+                .map_err(McpError::from)?;
 
         match row {
             Some(r) => {
@@ -99,7 +99,7 @@ impl ApiKeyRepository {
             .bind(&key_hash)
             .fetch_optional(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         match row {
             Some(r) => {
@@ -111,7 +111,7 @@ impl ApiKeyRepository {
                     .bind(&api_key.id)
                     .execute(&db)
                     .await
-                    .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+                    .map_err(McpError::from)?;
                 api_key.last_used_at = Some(chrono::Utc::now());
                 debug!("API key verified successfully");
                 Ok(Some(api_key))
@@ -136,7 +136,7 @@ impl ApiKeyRepository {
             .bind(id)
             .execute(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let toggled = result.rows_affected() > 0;
         info!(
@@ -157,7 +157,7 @@ impl ApiKeyRepository {
             .bind(id)
             .execute(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let deleted = result.rows_affected() > 0;
         info!(
@@ -177,7 +177,7 @@ impl ApiKeyRepository {
         let row = sqlx::query("SELECT COUNT(*) as count FROM api_keys WHERE enabled = 1")
             .fetch_one(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let count: i64 = row.get("count");
         debug!("Found {} enabled API keys", count);

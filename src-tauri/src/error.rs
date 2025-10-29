@@ -47,8 +47,20 @@ pub enum McpError {
     #[error("Permission denied: {0}")]
     PermissionError(String),
 
-    #[error("Database error: {0}")]
-    DatabaseError(String),
+    #[error("Database connection failed: {0}")]
+    DatabaseConnectionError(String),
+
+    #[error("Database query failed: {0}")]
+    DatabaseQueryError(String),
+
+    #[error("Database transaction failed: {0}")]
+    DatabaseTransactionError(String),
+
+    #[error("Database migration failed: {0}")]
+    DatabaseMigrationError(String),
+
+    #[error("Database initialization failed: {0}")]
+    DatabaseInitializationError(String),
 
     #[error("Resource not found: {0}")]
     NotFoundError(String),
@@ -70,6 +82,31 @@ pub enum McpError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+}
+
+// Convert SQLx errors to specific database errors
+impl From<sqlx::Error> for McpError {
+    fn from(err: sqlx::Error) -> Self {
+        match err {
+            sqlx::Error::Database(db_err) => {
+                McpError::DatabaseQueryError(format!("Database error: {}", db_err.message()))
+            }
+            sqlx::Error::PoolTimedOut => {
+                McpError::DatabaseConnectionError("Database connection pool timeout".to_string())
+            }
+            sqlx::Error::PoolClosed => {
+                McpError::DatabaseConnectionError("Database connection pool closed".to_string())
+            }
+            sqlx::Error::RowNotFound => McpError::NotFoundError("Record not found".to_string()),
+            sqlx::Error::ColumnDecode { .. } => {
+                McpError::DatabaseQueryError(format!("Column decode error: {}", err))
+            }
+            sqlx::Error::ColumnIndexOutOfBounds { .. } => {
+                McpError::DatabaseQueryError(format!("Column index out of bounds: {}", err))
+            }
+            _ => McpError::DatabaseQueryError(format!("Database error: {}", err)),
+        }
+    }
 }
 
 impl From<McpError> for InvokeError {

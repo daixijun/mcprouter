@@ -722,6 +722,12 @@ async fn get_dashboard_stats() -> Result<serde_json::Value> {
         .sum::<u32>();
 
     Ok(serde_json::json!({
+        "total_servers": total_services,
+        "enabled_servers": enabled_services,
+        "disabled_servers": disabled_services,
+        "connected_services": aggregator_stats.get("connected_services").and_then(|v| v.as_u64()).unwrap_or(0),
+        "total_tools": total_tools,
+        "active_clients": connections.len(),
         "startup_time": startup_time,
         "os_info": {
             "platform": tauri_plugin_os::platform().to_string(),
@@ -732,14 +738,6 @@ async fn get_dashboard_stats() -> Result<serde_json::Value> {
                 _ => format!("{:?}", tauri_plugin_os::version()).replace('"', "").replace("Semantic", ""),
             },
             "arch": tauri_plugin_os::arch().to_string(),
-        },
-        "services": {
-            "total": total_services,
-            "enabled": enabled_services,
-            "disabled": disabled_services,
-        },
-        "tools": {
-            "total_count": total_tools,
         },
         "connections": {
             "active_clients": connections.len(),
@@ -829,14 +827,30 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
                     });
                 }
                 let tray_mut = settings_mut.system_tray.as_mut().unwrap();
-                if let Some(Value::Bool(b)) = tray_obj.get("enabled") {
-                    tray_mut.enabled = Some(*b);
+
+                // Handle enabled status first
+                if let Some(Value::Bool(enabled)) = tray_obj.get("enabled") {
+                    tray_mut.enabled = Some(*enabled);
+
+                    // 如果系统托盘被禁用，自动禁用"关闭到托盘"功能
+                    if !*enabled {
+                        tray_mut.close_to_tray = Some(false);
+                        tracing::info!(
+                            "System tray disabled, automatically disabling close-to-tray feature"
+                        );
+                    }
                 }
-                if let Some(Value::Bool(b)) = tray_obj.get("close_to_tray") {
-                    tray_mut.close_to_tray = Some(*b);
+
+                // 只有在系统托盘启用时才允许设置"关闭到托盘"
+                let tray_enabled = tray_mut.enabled.unwrap_or(true);
+                if tray_enabled {
+                    if let Some(Value::Bool(close_to_tray)) = tray_obj.get("close_to_tray") {
+                        tray_mut.close_to_tray = Some(*close_to_tray);
+                    }
                 }
-                if let Some(Value::Bool(b)) = tray_obj.get("start_to_tray") {
-                    tray_mut.start_to_tray = Some(*b);
+
+                if let Some(Value::Bool(start_to_tray)) = tray_obj.get("start_to_tray") {
+                    tray_mut.start_to_tray = Some(*start_to_tray);
                 }
             }
 
@@ -932,6 +946,11 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
         tracing::info!("Server configuration changed (restarting aggregator)...");
         AGGREGATOR.trigger_shutdown().await;
         if tray_changed {
+            tracing::info!(
+                "System tray configuration changed during server restart, enabled: {}",
+                tray_new
+            );
+
             if tray_new {
                 if let Some(tray) = app.tray_by_id("main_tray") {
                     let _ = tray.set_visible(true);
@@ -940,6 +959,8 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
                     // Rebuild tray if it was not created at startup
                     if let Err(e) = build_main_tray(&app) {
                         tracing::error!("Failed to rebuild system tray: {}", e);
+                    } else {
+                        tracing::info!("System tray rebuilt and made visible");
                     }
                 }
             } else {
@@ -948,6 +969,13 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
                 }
                 tracing::info!("Tray icon hidden after aggregator restart");
             }
+
+            // 立即保存配置到文件以确保变更持久化
+            if let Err(e) = config.save() {
+                tracing::error!("Failed to save tray configuration to file: {}", e);
+            } else {
+                tracing::info!("Tray configuration saved to file");
+            }
         }
         Ok(format!(
             "Settings saved successfully. Aggregator restarted on {}:{}",
@@ -955,6 +983,8 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
         ))
     } else {
         if tray_changed {
+            tracing::info!("System tray configuration changed, enabled: {}", tray_new);
+
             if tray_new {
                 if let Some(tray) = app.tray_by_id("main_tray") {
                     let _ = tray.set_visible(true);
@@ -963,6 +993,8 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
                     // Rebuild tray if it was not created at startup
                     if let Err(e) = build_main_tray(&app) {
                         tracing::error!("Failed to rebuild system tray: {}", e);
+                    } else {
+                        tracing::info!("System tray rebuilt and made visible");
                     }
                 }
             } else {
@@ -970,6 +1002,13 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
                     let _ = tray.set_visible(false);
                 }
                 tracing::info!("Tray icon hidden");
+            }
+
+            // 立即保存配置到文件以确保变更持久化
+            if let Err(e) = config.save() {
+                tracing::error!("Failed to save tray configuration to file: {}", e);
+            } else {
+                tracing::info!("Tray configuration saved to file");
             }
         }
         Ok("Settings saved successfully".to_string())
@@ -1333,7 +1372,7 @@ async fn remove_tool_permission(api_key_id: String, tool_id: String) -> Result<S
         .bind(&tool_id)
         .fetch_optional(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
     if tool_row.is_none() {
         return Err(McpError::ConfigError(format!(
@@ -1349,7 +1388,7 @@ async fn remove_tool_permission(api_key_id: String, tool_id: String) -> Result<S
             .bind(&tool_id)
             .execute(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
     if result.rows_affected() > 0 {
         tracing::info!("Removed tool permission: {} -> {}", api_key_id, tool_id);

@@ -73,7 +73,7 @@ thread_local! {
 #[derive(Clone)]
 pub struct McpAggregator {
     mcp_server_manager: Arc<McpServerManager>,
-    config: crate::config::ServerConfig,
+    // Note: Removed static config field - we now dynamically fetch config from mcp_server_manager
     // Connection pool for MCP clients
     connection_pool: Arc<RwLock<HashMap<String, ManagedConnection>>>,
     // Shutdown signal
@@ -91,18 +91,27 @@ struct ManagedConnection {
 impl McpAggregator {
     pub fn new(
         mcp_server_manager: Arc<McpServerManager>,
-        config: crate::config::ServerConfig,
+        _config: crate::config::ServerConfig, // Note: config parameter kept for compatibility but no longer stored
     ) -> Self {
         Self {
             mcp_server_manager,
-            config,
             connection_pool: Arc::new(RwLock::new(HashMap::new())),
             shutdown_tx: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
     pub async fn start(&self) -> Result<()> {
-        let addr = format!("{}:{}", self.config.host, self.config.port);
+        // Note: We'll use the current config from the mcp_server_manager
+        // This ensures we always use the latest configuration
+        let current_config = self.mcp_server_manager.get_config().await;
+        let addr = format!(
+            "{}:{}",
+            current_config.server.host, current_config.server.port
+        );
+        tracing::info!(
+            "Aggregator starting on address: {} (from latest config)",
+            addr
+        );
 
         // Create shutdown channel
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -374,26 +383,31 @@ impl McpAggregator {
         Ok(service)
     }
 
-    // shutdown method removed as it was unused
-
     pub async fn get_statistics(&self) -> Value {
         let services = self.mcp_server_manager.list_mcp_servers().await.ok();
         let connected_services = services
             .as_ref()
-            .map(|s| s.iter().filter(|srv| srv.is_active).count())
+            .map(|s| s.iter().filter(|srv| srv.status == "connected").count())
             .unwrap_or(0);
 
         let pool = self.connection_pool.read().await;
         let active_connections = pool.len();
 
+        // Check if aggregator is running by checking if shutdown sender is set
+        let is_running = {
+            let shutdown_tx = self.shutdown_tx.lock().await;
+            shutdown_tx.is_some()
+        };
+
+        // Get current configuration dynamically from mcp_server_manager
+        let current_config = self.mcp_server_manager.get_config().await;
         json!({
+            "endpoint": format!("http://{}:{}/mcp", current_config.server.host, current_config.server.port),
+            "is_running": is_running,
             "connected_services": connected_services,
             "active_connections": active_connections,
-            "config": {
-                "port": self.config.port,
-                "max_connections": self.config.max_connections,
-                "timeout_seconds": self.config.timeout_seconds
-            }
+            "max_connections": current_config.server.max_connections,
+            "timeout_seconds": current_config.server.timeout_seconds
         })
     }
 }

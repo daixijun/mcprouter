@@ -6,7 +6,7 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import toastService from '../services/toastService'
+import { App } from 'antd'
 import type { MarketplaceService } from '../types'
 
 // Simple tab component
@@ -46,6 +46,7 @@ const ServiceDetail: React.FC<ServiceDetailProps> = ({
   onBack,
   onInstall,
 }) => {
+  const { message } = App.useApp()
   const [activeTab, setActiveTab] = useState('description')
 
   // 允许 README 渲染 code/pre，并保留类名用于高亮
@@ -66,19 +67,17 @@ const ServiceDetail: React.FC<ServiceDetailProps> = ({
       await open(url)
     } catch (error) {
       console.error('Failed to open URL:', error)
-      toastService.sendErrorNotification(
-        '打开链接失败，请检查系统默认浏览器设置。',
-      )
+      message.error('打开链接失败，请检查系统默认浏览器设置。')
     }
   }
 
   const copyText = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      toastService.sendSuccessNotification('已复制到剪贴板')
+      message.success('已复制到剪贴板')
     } catch (error) {
       console.error('Copy to clipboard failed:', error)
-      toastService.sendErrorNotification('复制失败，请稍后重试')
+      message.error('复制失败，请稍后重试')
     }
   }
 

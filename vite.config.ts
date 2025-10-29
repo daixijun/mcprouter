@@ -36,8 +36,26 @@ export default defineConfig(async () => ({
     assetsDir: 'assets',
     rollupOptions: {
       output: {
-        manualChunks: undefined,
+        manualChunks: {
+          // React core libraries
+          vendor: ['react', 'react-dom'],
+          // Tauri API
+          tauri: ['@tauri-apps/api'],
+          // UI components and icons
+          ui: ['lucide-react'],
+          // Markdown processing
+          markdown: [
+            'react-markdown',
+            'rehype-raw',
+            'rehype-sanitize',
+            'remark-gfm',
+          ],
+          // Utility libraries
+          utils: ['uuid'],
+        },
       },
     },
+    // Optimize chunks for better caching
+    chunkSizeWarningLimit: 600,
   },
 }))

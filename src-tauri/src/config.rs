@@ -1,5 +1,6 @@
 use crate::error::{McpError, Result};
 use serde::{Deserialize, Serialize, Serializer};
+use tracing;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -244,17 +245,39 @@ impl AppConfig {
     }
 
     pub fn save(&self) -> Result<()> {
+        tracing::info!("Config::save() - Starting save process");
+
         let config_dir = dirs::home_dir()
-            .ok_or_else(|| McpError::ConfigError("Could not find home directory".to_string()))?
+            .ok_or_else(|| {
+                tracing::error!("Config::save() - Could not find home directory");
+                McpError::ConfigError("Could not find home directory".to_string())
+            })?
             .join(".mcprouter");
 
+        tracing::info!("Config::save() - Config directory: {:?}", config_dir);
+
+        // Ensure directory exists
+        std::fs::create_dir_all(&config_dir).map_err(|e| {
+            tracing::error!("Config::save() - Failed to create config directory: {}", e);
+            McpError::ConfigError(format!("Failed to create config directory: {}", e))
+        })?;
+
         let config_path = config_dir.join("config.json");
-        let content = serde_json::to_string_pretty(self)
-            .map_err(|e| McpError::ConfigError(format!("Failed to serialize config: {}", e)))?;
+        tracing::info!("Config::save() - Config path: {:?}", config_path);
 
-        std::fs::write(&config_path, content)
-            .map_err(|e| McpError::ConfigError(format!("Failed to write config file: {}", e)))?;
+        tracing::info!("Config::save() - Serializing config...");
+        let content = serde_json::to_string_pretty(self).map_err(|e| {
+            tracing::error!("Config::save() - Failed to serialize config: {}", e);
+            McpError::ConfigError(format!("Failed to serialize config: {}", e))
+        })?;
 
+        tracing::info!("Config::save() - Writing {} bytes to file", content.len());
+        std::fs::write(&config_path, content).map_err(|e| {
+            tracing::error!("Config::save() - Failed to write config file: {}", e);
+            McpError::ConfigError(format!("Failed to write config file: {}", e))
+        })?;
+
+        tracing::info!("Config::save() - Save completed successfully");
         Ok(())
     }
 }

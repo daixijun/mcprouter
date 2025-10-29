@@ -51,7 +51,7 @@ impl McpServerRepository {
         .bind(server.updated_at.to_rfc3339())
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         info!("MCP server created with ID: {}", server_id);
         Ok(server_id)
@@ -66,7 +66,7 @@ impl McpServerRepository {
         let rows = sqlx::query("SELECT * FROM mcp_servers ORDER BY created_at DESC")
             .fetch_all(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let servers: Result<Vec<_>> = rows
             .into_iter()
@@ -88,7 +88,7 @@ impl McpServerRepository {
             .bind(name)
             .fetch_optional(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         match row {
             Some(r) => {
@@ -113,7 +113,7 @@ impl McpServerRepository {
             .bind(id)
             .fetch_optional(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         match row {
             Some(r) => {
@@ -139,7 +139,7 @@ impl McpServerRepository {
             .bind(name)
             .fetch_optional(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let Some(server_row) = server_row else {
             debug!("MCP server not found for deletion: {}", name);
@@ -152,14 +152,14 @@ impl McpServerRepository {
         let mut tx = db
             .begin()
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         // 1. 删除该服务器的所有工具
         let tools_deleted = sqlx::query("DELETE FROM tools WHERE server_id = ?")
             .bind(&server_id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         // 2. 删除API密钥与该服务器的关联关系
         let relations_deleted =
@@ -167,19 +167,19 @@ impl McpServerRepository {
                 .bind(&server_id)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+                .map_err(McpError::from)?;
 
         // 3. 删除服务器本身
         let server_deleted = sqlx::query("DELETE FROM mcp_servers WHERE name = ?")
             .bind(name)
             .execute(&mut *tx)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         // 提交事务
         tx.commit()
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let total_deleted = server_deleted.rows_affected() > 0;
         info!(
@@ -205,7 +205,7 @@ impl McpServerRepository {
                 .bind(name)
                 .execute(&db)
                 .await
-                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+                .map_err(McpError::from)?;
 
         let toggled = result.rows_affected() > 0;
         info!(
@@ -271,7 +271,7 @@ impl McpServerRepository {
         .bind(name)
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         info!("Updated version for server {} to {:?}", name, version);
         Ok(())

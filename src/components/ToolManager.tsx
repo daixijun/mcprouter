@@ -1,13 +1,17 @@
+import { Button, Card, Flex, Space, Switch, Typography, App } from 'antd'
+import { CheckSquare, Square } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
-import toastService from '../services/toastService'
-import { ApiService } from '../services/api'
-import type { Tool, McpServerInfo } from '../types'
+import { ToolService } from '../services/tool-service'
+import type { McpServerInfo, Tool } from '../types'
+
+const { Text } = Typography
 
 interface ToolManagerProps {
   mcpServer: McpServerInfo
 }
 
 const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
+  const { message } = App.useApp()
   const [tools, setTools] = useState<Tool[]>([])
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
@@ -20,11 +24,11 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     setLoading(true)
     try {
       // 直接从数据库获取工具列表（无需连接服务）
-      const serverTools = await ApiService.getToolsByServer(mcpServer.name)
+      const serverTools = await ToolService.getToolsByServer(mcpServer.name)
       setTools(serverTools)
     } catch (error) {
       console.error('Failed to load tools:', error)
-      toastService.sendErrorNotification('加载工具列表失败')
+      message.error('加载工具列表失败')
     } finally {
       setLoading(false)
     }
@@ -33,14 +37,47 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   const handleToggleTool = async (toolName: string, enabled: boolean) => {
     setUpdating(toolName)
     try {
-      await ApiService.toggleMcpServerTool(mcpServer.name, toolName, enabled)
-      toastService.sendSuccessNotification(`工具已${enabled ? '启用' : '禁用'}`)
+      const tool = tools.find((t) => t.name === toolName)
+      if (!tool) {
+        message.error('未找到对应工具')
+        return
+      }
+      await ToolService.toggleTool(tool.id, enabled)
+      message.success(`工具已${enabled ? '启用' : '禁用'}`)
 
       // 重新加载工具以获取最新状态
       await loadTools()
     } catch (error) {
       console.error('Failed to toggle tool:', error)
-      toastService.sendErrorNotification('切换工具状态失败')
+      message.error('切换工具状态失败')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const handleEnableAll = async () => {
+    setUpdating('all')
+    try {
+      await ToolService.enableAllTools(mcpServer.name)
+      message.success('已启用所有工具')
+      await loadTools()
+    } catch (error) {
+      console.error('Failed to enable all tools:', error)
+      message.error('启用所有工具失败')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const handleDisableAll = async () => {
+    setUpdating('all')
+    try {
+      await ToolService.disableAllTools(mcpServer.name)
+      message.success('已禁用所有工具')
+      await loadTools()
+    } catch (error) {
+      console.error('Failed to disable all tools:', error)
+      message.error('禁用所有工具失败')
     } finally {
       setUpdating(null)
     }
@@ -48,63 +85,81 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
 
   if (loading) {
     return (
-      <div className='card-glass p-4 text-center'>
-        <div className='animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent mx-auto mb-2'></div>
-        <p className='text-sm text-gray-600 dark:text-gray-300'>加载工具中...</p>
-      </div>
+      <Flex justify='center' align='center' style={{ height: '128px' }}>
+        <Button loading>加载工具中...</Button>
+      </Flex>
     )
   }
 
   if (tools.length === 0) {
     return (
-      <div className='card-glass p-4 text-center'>
-        <p className='text-sm text-gray-600 dark:text-gray-300'>该服务暂无可用工具</p>
-      </div>
+      <Card>
+        <Flex justify='center' align='center' style={{ height: '128px' }}>
+          <Text className='text-gray-500 '>该服务暂无可用工具</Text>
+        </Flex>
+      </Card>
     )
   }
 
   return (
-    <div className='card-glass p-4'>
-      <h4 className='font-medium text-sm text-gray-800 dark:text-gray-100 mb-3'>
-        工具管理 ({tools.length} 个工具)
-      </h4>
-      <div className='space-y-2'>
+    <Flex vertical gap='middle'>
+      {/* Header with batch operations */}
+      <Flex justify='space-between' align='center'>
+        <Text strong>工具管理 ({tools.length} 个工具)</Text>
+        <Space>
+          <Button
+            onClick={handleEnableAll}
+            loading={updating === 'all'}
+            size='small'
+            icon={<CheckSquare size={14} />}
+            disabled={tools.every((tool) => tool.enabled)}>
+            全部启用
+          </Button>
+          <Button
+            onClick={handleDisableAll}
+            loading={updating === 'all'}
+            size='small'
+            icon={<Square size={14} />}
+            disabled={tools.every((tool) => !tool.enabled)}>
+            全部禁用
+          </Button>
+        </Space>
+      </Flex>
+
+      {/* Tool List */}
+      <Flex vertical gap='small'>
         {tools.map((tool) => (
-          <div
-            key={tool.name}
-            className='flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors'
-          >
-            <div className='flex-1 min-w-0'>
-              <div className='font-medium text-sm text-gray-900 dark:text-gray-100 truncate'>
-                {tool.name}
+          <Card key={tool.name} size='small'>
+            <Flex justify='space-between' align='center'>
+              <div style={{ flex: 1, minWidth: 0, marginRight: '16px' }}>
+                <Text
+                  strong
+                  style={{
+                    fontSize: '14px',
+                    display: 'block',
+                    marginBottom: '4px',
+                  }}>
+                  {tool.name}
+                </Text>
+                {tool.description && (
+                  <Text style={{ fontSize: '12px', display: 'block' }}>
+                    {tool.description}
+                  </Text>
+                )}
               </div>
-              {tool.description && (
-                <div className='text-xs text-gray-600 dark:text-gray-400 truncate mt-1'>
-                  {tool.description}
-                </div>
-              )}
-            </div>
-            <div className='flex items-center ml-3'>
-              <button
-                onClick={() => handleToggleTool(tool.name, !tool.enabled)}
-                disabled={updating === tool.name}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                  tool.enabled ? 'bg-green-500' : 'bg-gray-300'
-                } ${updating === tool.name ? 'opacity-50 cursor-not-allowed' : ''}`}
-                aria-label={`Toggle ${tool.name}`}
-                title={tool.enabled ? '点击禁用' : '点击启用'}
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                    tool.enabled ? 'translate-x-5' : 'translate-x-1'
-                  } ${updating === tool.name ? 'animate-pulse' : ''}`}
-                />
-              </button>
-            </div>
-          </div>
+              <Switch
+                checked={tool.enabled}
+                onChange={(checked) => handleToggleTool(tool.name, checked)}
+                loading={updating === tool.name}
+                checkedChildren='启用'
+                unCheckedChildren='禁用'
+                size='small'
+              />
+            </Flex>
+          </Card>
         ))}
-      </div>
-    </div>
+      </Flex>
+    </Flex>
   )
 }
 

@@ -6,11 +6,10 @@ MCPRouter 是一个现代化的 MCP (Model Context Protocol) 路由器，提供�
 
 ## 技术栈
 
-- **前端**：React 19、TypeScript、Vite、TailwindCSS
+- **前端**：Ant Design v5、React 19、TypeScript、Vite、TailwindCSS
 - **后端**：Tauri 2、Rust
 - **数据库**：SQLite，支持 ACID 兼容事务
 - **UI 库**：Lucide React（图标）、React Router、React Markdown
-- **API**：Express、WebSocket (ws)
 - **构建工具**：TypeScript 5.8+、Vite 7+
 
 ## 项目约定
@@ -33,6 +32,64 @@ MCPRouter 是一个现代化的 MCP (Model Context Protocol) 路由器，提供�
 - ES 模块（`"type": "module"`）
 - React 函数式组件与 Hooks
 - Markdown 渲染使用清理器（rehype-sanitize）
+
+### React 19 兼容性规范
+
+**重要**：由于 antd v5 与 React 19 版本兼容问题，必须使用 hooks 方式使用 Notification、Message、Modal 等组件，不要直接导入。
+
+#### 正确使用方式
+
+```typescript
+import { App } from 'antd'
+
+function MyComponent() {
+  const { notification } = App.useApp()
+
+  const showNotification = () => {
+    notification.success({
+      message: '成功',
+      description: '操作完成',
+    })
+  }
+
+  return <Button onClick={showNotification}>显示通知</Button>
+}
+```
+
+#### 错误使用方式
+
+```typescript
+// ❌ 错误：直接导入组件
+import { notification, message, modal } from 'antd'
+
+function MyComponent() {
+  const showNotification = () => {
+    notification.success({
+      // 这会导致错误
+      message: '成功',
+      description: '操作完成',
+    })
+  }
+
+  return <Button onClick={showNotification}>显示通知</Button>
+}
+```
+
+#### 应用配置
+
+确保在应用根部使用 `<App>` 组件包装：
+
+```typescript
+import { App as AntdApp } from 'antd'
+
+function App() {
+  return (
+    <AntdApp>
+      <YourMainApp />
+    </AntdApp>
+  )
+}
+```
 
 ### 架构模式
 
@@ -60,7 +117,7 @@ MCPRouter 是一个现代化的 MCP (Model Context Protocol) 路由器，提供�
 
 - MCP 服务器为 AI 模型提供工具和资源
 - 每个服务器可以有多个可以独立启用/禁用的工具
-- 服务器支持 stdio 和 HTTP 两种传输方式
+- 服务器支持使用 StreamableHTTP 协议提供聚合接口
 - API 密钥控制对特定服务器的访问
 
 ### 关键实体
@@ -75,10 +132,9 @@ MCPRouter 是一个现代化的 MCP (Model Context Protocol) 路由器，提供�
 - API 密钥必须以 SHA-256 哈希形式存储以确保安全
 - 数据库操作必须维持 ACID 合规性
 - 工具和服务器状态必须在应用程序重启后持久化
-- 需要从传统的基于文件的配置迁移到 SQLite
 
 ## 外部依赖
 
-- Tauri 插件：clipboard-manager、dialog、notification、opener、shell
-- React 生态系统：react-router-dom、react-markdown、lucide-react
+- Tauri 插件：clipboard-manager、dialog、opener
+- React 生态系统：antd、react-markdown、lucide-react
 - 无外部 API 服务（独立桌面应用）

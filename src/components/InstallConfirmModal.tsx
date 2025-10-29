@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import Modal from '../components/Modal'
+import { Modal, Button, Typography } from 'antd'
 import type { MarketplaceService, MarketplaceServiceListItem } from '../types'
 
 interface EnvSchema {
@@ -172,18 +172,33 @@ const InstallConfirmModal: React.FC<InstallConfirmModalProps> = ({
       )
     : []
 
+  const { Paragraph } = Typography
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth='2xl' maxHeight='90vh'>
+    <Modal
+      open={isOpen}
+      onCancel={onClose}
+      title="确认安装服务"
+      footer={[
+        <Button key="cancel" onClick={onClose} disabled={isLoading}>
+          取消
+        </Button>,
+        <Button
+          key="confirm"
+          type="primary"
+          onClick={handleConfirm}
+          disabled={!canSubmit() || isLoading}
+          loading={isLoading}
+        >
+          确认安装
+        </Button>
+      ]}
+      width={800}
+    >
       <div className='space-y-6'>
-        {/* 头部 */}
-        <div>
-          <h2 className='text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2'>
-            确认安装服务
-          </h2>
-          <p className='text-gray-600 dark:text-gray-300'>
-            请检查以下服务信息并配置必要的环境变量
-          </p>
-        </div>
+        <Paragraph className='text-gray-600 dark:text-gray-300 !mb-6'>
+          请检查以下服务信息并配置必要的环境变量
+        </Paragraph>
 
         {/* 服务信息 */}
         <div className='bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3'>
@@ -355,27 +370,6 @@ const InstallConfirmModal: React.FC<InstallConfirmModalProps> = ({
             </div>
           </div>
         )}
-
-        {/* 操作按钮 */}
-        <div className='flex justify-end gap-3 pt-4 border-t'>
-          <button
-            type='button'
-            onClick={onClose}
-            disabled={isLoading}
-            className='btn-modern btn-secondary-modern'>
-            取消
-          </button>
-          <button
-            type='button'
-            onClick={handleConfirm}
-            disabled={!canSubmit() || isLoading}
-            className='btn-modern btn-primary-modern flex items-center gap-2'>
-            {isLoading && (
-              <div className='animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent'></div>
-            )}
-            确认安装
-          </button>
-        </div>
       </div>
     </Modal>
   )

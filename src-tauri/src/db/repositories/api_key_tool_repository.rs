@@ -20,7 +20,7 @@ impl ApiKeyToolRepository {
         .bind(tool_id)
         .fetch_one(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         let count: i64 = row.get("count");
         let has_permission = count > 0;
@@ -43,7 +43,7 @@ impl ApiKeyToolRepository {
         .bind(api_key_id)
         .fetch_all(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         let tool_ids: Vec<String> = rows
             .into_iter()
@@ -86,7 +86,7 @@ impl ApiKeyToolRepository {
         .bind(relation.created_at.to_rfc3339())
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         info!("工具权限已添加: {} -> {}", api_key_id, tool_id);
         Ok(())
@@ -106,7 +106,7 @@ impl ApiKeyToolRepository {
             .bind(server_id)
             .fetch_all(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let mut granted_count = 0;
 
@@ -143,7 +143,7 @@ impl ApiKeyToolRepository {
             .bind(server_id)
             .fetch_all(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let tool_ids: Vec<String> = tools
             .into_iter()
@@ -172,7 +172,7 @@ impl ApiKeyToolRepository {
         let result = query
             .execute(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let removed = result.rows_affected() as usize;
         info!(
@@ -192,7 +192,7 @@ impl ApiKeyToolRepository {
             .bind(api_key_id)
             .execute(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let removed = result.rows_affected() as i64;
         info!(

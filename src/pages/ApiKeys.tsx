@@ -1,20 +1,41 @@
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import {
+  Badge,
+  Button,
+  Card,
+  Flex,
+  Input,
+  Modal,
+  Popconfirm,
+  Space,
+  Table,
+  Typography,
+  App,
+} from 'antd'
 import { Check, Copy, Key, Plus, Trash2 } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import ApiKeyPermissionSelector from '../components/ApiKeyPermissionSelector'
-import ConfirmModal from '../components/ConfirmModal'
-import Modal from '../components/Modal'
-import { ApiService } from '../services/api'
-import toastService from '../services/toastService'
+import { useErrorContext } from '../contexts/ErrorContext'
+import { ApiKeyService } from '../services/api-key-service'
 import type { ApiKey, ApiKeyPermissions } from '../types'
 
-const ApiKeys: React.FC = () => {
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
+const { Title, Text } = Typography
+
+// 类型定义
+interface ApiKeyWithCount extends ApiKey {
+  tool_count?: number
+}
+
+const ApiKeys: React.FC = memo(() => {
+  const { addError } = useErrorContext()
+  const { message } = App.useApp()
+
+  // State
+  const [apiKeys, setApiKeys] = useState<ApiKeyWithCount[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedApiKey, setSelectedApiKey] = useState<ApiKey | null>(null)
   const [newKeyDetails, setNewKeyDetails] = useState<ApiKey | null>(null)
   const [copied, setCopied] = useState(false)
@@ -34,20 +55,17 @@ const ApiKeys: React.FC = () => {
     allowed_tools: [],
   })
 
-  useEffect(() => {
-    loadApiKeys()
-  }, [])
-
-  const loadApiKeys = async () => {
+  // Data fetching
+  const loadApiKeys = useCallback(async () => {
     setLoading(true)
     try {
-      const keys = await ApiService.listApiKeys()
+      const keys = await ApiKeyService.listApiKeys()
 
       // Load tool counts for each API key
       const keysWithCounts = await Promise.all(
         keys.map(async (key) => {
           try {
-            const toolIds = await ApiService.getApiKeyTools(key.id)
+            const toolIds = await ApiKeyService.getApiKeyTools(key.id)
             return { ...key, tool_count: toolIds.length }
           } catch (error) {
             console.error(`Failed to load tool count for key ${key.id}:`, error)
@@ -59,24 +77,29 @@ const ApiKeys: React.FC = () => {
       setApiKeys(keysWithCounts)
     } catch (error) {
       console.error('Failed to load API keys:', error)
-      toastService.sendErrorNotification('加载API Key列表失败')
+      addError('加载API Key列表失败')
     } finally {
       setLoading(false)
     }
-  }
+  }, [addError])
 
-  const handleCreateApiKey = async () => {
+  useEffect(() => {
+    loadApiKeys()
+  }, [loadApiKeys])
+
+  // Action handlers
+  const handleCreateApiKey = useCallback(async () => {
     if (!newKeyName.trim()) {
-      toastService.sendErrorNotification('请输入API Key名称')
+      addError('请输入API Key名称')
       return
     }
 
     try {
-      const createdKey = await ApiService.createApiKey(
+      const createdKey = await ApiKeyService.createApiKey(
         newKeyName,
         newKeyPermissions,
       )
-      toastService.sendSuccessNotification('API Key创建成功')
+      message.success('API Key创建成功')
 
       // Show the full key in details modal
       setNewKeyDetails(createdKey)
@@ -94,80 +117,88 @@ const ApiKeys: React.FC = () => {
       loadApiKeys()
     } catch (error) {
       console.error('Failed to create API key:', error)
-      toastService.sendErrorNotification('创建API Key失败')
+      addError('创建API Key失败')
     }
-  }
+  }, [newKeyName, newKeyPermissions, loadApiKeys, addError])
 
-  const handleCopyKey = async (key: string) => {
-    try {
-      await writeText(key)
-      setCopied(true)
-      toastService.sendSuccessNotification('API Key已复制到剪贴板')
-      setTimeout(() => setCopied(false), 2000)
-    } catch (error) {
-      console.error('Failed to copy key:', error)
-      toastService.sendErrorNotification('复制失败')
-    }
-  }
+  const handleCopyKey = useCallback(
+    async (key: string) => {
+      try {
+        await writeText(key)
+        setCopied(true)
+        message.success('API Key已复制到剪贴板')
+        setTimeout(() => setCopied(false), 2000)
+      } catch (error) {
+        console.error('Failed to copy key:', error)
+        addError('复制失败')
+      }
+    },
+    [addError],
+  )
 
-  const handleToggleKey = async (id: string) => {
-    try {
-      await ApiService.toggleApiKey(id)
-      toastService.sendSuccessNotification('API Key状态已更新')
-      loadApiKeys()
-    } catch (error) {
-      console.error('Failed to toggle API key:', error)
-      toastService.sendErrorNotification('更新失败')
-    }
-  }
+  const handleToggleKey = useCallback(
+    async (id: string) => {
+      try {
+        await ApiKeyService.toggleApiKey(id)
+        message.success('API Key状态已更新')
+        loadApiKeys()
+      } catch (error) {
+        console.error('Failed to toggle API key:', error)
+        addError('更新失败')
+      }
+    },
+    [loadApiKeys, addError],
+  )
 
-  const handleEditPermissions = async (apiKey: ApiKey) => {
-    setSelectedApiKey(apiKey)
-    try {
-      const details = await ApiService.getApiKeyDetails(apiKey.id)
-      setEditPermissions(
-        details.permissions ?? { allowed_servers: [], allowed_tools: [] },
-      )
-      setShowEditModal(true)
-    } catch (error) {
-      console.error('Failed to fetch API key permissions:', error)
-      toastService.sendErrorNotification('获取权限信息失败')
-    }
-  }
+  const handleEditPermissions = useCallback(
+    async (apiKey: ApiKey) => {
+      setSelectedApiKey(apiKey)
+      try {
+        const details = await ApiKeyService.getApiKeyDetails(apiKey.id)
+        setEditPermissions(
+          details.permissions ?? { allowed_servers: [], allowed_tools: [] },
+        )
+        setShowEditModal(true)
+      } catch (error) {
+        console.error('Failed to fetch API key permissions:', error)
+        addError('获取权限信息失败')
+      }
+    },
+    [addError],
+  )
 
-  const handleSavePermissions = async () => {
+  const handleSavePermissions = useCallback(async () => {
     if (!selectedApiKey) return
 
     try {
-      await ApiService.updateApiKeyPermissions(
+      await ApiKeyService.updateApiKeyPermissions(
         selectedApiKey.id,
         editPermissions,
       )
-      toastService.sendSuccessNotification('权限更新成功')
+      message.success('权限更新成功')
       setShowEditModal(false)
       loadApiKeys()
     } catch (error) {
       console.error('Failed to update permissions:', error)
-      toastService.sendErrorNotification('更新权限失败')
+      addError('更新权限失败')
     }
-  }
+  }, [selectedApiKey, editPermissions, loadApiKeys, addError])
 
-  const handleDeleteKey = async () => {
+  const handleDeleteKey = useCallback(async () => {
     if (!selectedApiKey) return
 
     try {
-      await ApiService.deleteApiKey(selectedApiKey.id)
-      toastService.sendSuccessNotification('API Key已删除')
-      setShowDeleteModal(false)
+      await ApiKeyService.deleteApiKey(selectedApiKey.id)
+      message.success('API Key已删除')
       setSelectedApiKey(null)
       loadApiKeys()
     } catch (error) {
       console.error('Failed to delete API key:', error)
-      toastService.sendErrorNotification('删除失败')
+      addError('删除失败')
     }
-  }
+  }, [selectedApiKey, loadApiKeys, addError])
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -175,319 +206,284 @@ const ApiKeys: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit',
     })
-  }
+  }, [])
 
   if (loading) {
     return (
-      <div className='flex items-center justify-center h-64'>
-        <div className='animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent'></div>
-      </div>
+      <Flex justify='center' align='center' style={{ height: '256px' }}>
+        <Button loading>加载 API Keys...</Button>
+      </Flex>
     )
   }
 
   return (
-    <div className='h-full flex flex-col space-y-4 compact-container overflow-y-auto'>
+    <Flex vertical gap='large' style={{ height: '100%', overflowY: 'auto' }}>
       {/* Header */}
-      <div className='flex items-center justify-between'>
+      <Flex justify='space-between' align='center'>
         <div>
-          <h2 className='text-2xl font-bold text-gray-800 dark:text-gray-100'>
-            API Keys
-          </h2>
-          <p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
-            管理用于访问MCP Router的API密钥
-          </p>
+          <Title level={2}>API Keys</Title>
+          <Text type='secondary'>管理用于访问MCP Router的API密钥</Text>
         </div>
-        <button
+        <Button
           onClick={() => setShowCreateModal(true)}
-          className='btn-modern btn-primary-modern flex items-center space-x-2'>
-          <Plus size={16} />
-          <span>创建API Key</span>
-        </button>
-      </div>
+          icon={<Plus size={16} />}
+          type='primary'>
+          创建API Key
+        </Button>
+      </Flex>
 
       {/* API Keys Table */}
-      <div className='card-glass'>
+      <Card>
         {apiKeys.length === 0 ? (
-          <div className='text-center py-12'>
-            <Key className='mx-auto h-12 w-12 text-gray-400 dark:text-gray-500' />
-            <h3 className='mt-2 text-sm font-medium text-gray-900 dark:text-gray-100'>
+          <Flex
+            vertical
+            align='center'
+            style={{ textAlign: 'center', padding: '48px 16px' }}>
+            <Key className='w-12 h-12 text-gray-400 mb-2' />
+            <Title level={4} style={{ marginBottom: '4px' }}>
               暂无API Keys
-            </h3>
-            <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+            </Title>
+            <Text type='secondary'>
               点击"创建API Key"按钮添加您的第一个API密钥
-            </p>
-          </div>
+            </Text>
+          </Flex>
         ) : (
-          <div className='overflow-x-auto'>
-            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-              <thead className='bg-gray-50 dark:bg-gray-800'>
-                <tr>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    名称
-                  </th>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    Key
-                  </th>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    状态
-                  </th>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    创建时间
-                  </th>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    授权工具
-                  </th>
-                  <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className='bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700'>
-                {apiKeys.map((apiKey) => (
-                  <tr
-                    key={apiKey.id}
-                    className='hover:bg-gray-50 dark:hover:bg-gray-800'>
-                    <td className='px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100'>
-                      {apiKey.name}
-                    </td>
-                    <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono'>
-                      {apiKey.key}
-                    </td>
-                    <td className='px-6 py-4 whitespace-nowrap'>
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          apiKey.enabled
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                        {apiKey.enabled ? '启用' : '禁用'}
-                      </span>
-                    </td>
-                    <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
-                      {formatDate(apiKey.created_at)}
-                    </td>
-                    <td className='px-6 py-4 text-sm'>
-                      <div className='space-y-1'>
-                        {/* Server count */}
-                        <div className='text-gray-500 dark:text-gray-400'>
-                          {(apiKey.permissions?.allowed_servers?.length ?? 0) >
-                          0 ? (
-                            <span className='text-indigo-600 dark:text-indigo-400 font-medium'>
-                              {apiKey.permissions?.allowed_servers?.length ?? 0}{' '}
-                              个服务器
-                            </span>
-                          ) : (
-                            <span className='text-gray-400 dark:text-gray-500'>
-                              0 个服务器
-                            </span>
-                          )}
-                        </div>
-                        {/* Tool count */}
-                        <div className='text-gray-500 dark:text-gray-400'>
-                          {apiKey.tool_count !== undefined ? (
-                            apiKey.tool_count > 0 ? (
-                              <span className='text-blue-600 dark:text-blue-400 font-medium'>
-                                {apiKey.tool_count} 个工具
-                              </span>
-                            ) : (
-                              <span className='text-gray-400 dark:text-gray-500'>
-                                0 个工具
-                              </span>
-                            )
-                          ) : (
-                            <span className='text-gray-400 dark:text-gray-500 text-xs'>
-                              加载中...
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
-                      <button
-                        onClick={() => handleToggleKey(apiKey.id)}
-                        className='text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300'>
-                        {apiKey.enabled ? '禁用' : '启用'}
-                      </button>
-                      <button
-                        onClick={() => handleEditPermissions(apiKey)}
-                        className='text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300'>
-                        编辑权限
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedApiKey(apiKey)
-                          setShowDeleteModal(true)
-                        }}
-                        className='text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300'>
-                        <Trash2 size={16} className='inline' />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table
+            dataSource={apiKeys}
+            rowKey='id'
+            pagination={false}
+            columns={[
+              {
+                title: '名称',
+                dataIndex: 'name',
+                key: 'name',
+                render: (text) => <Text strong>{text}</Text>,
+              },
+              {
+                title: 'Key',
+                dataIndex: 'key',
+                key: 'key',
+                render: (text) => (
+                  <Text code style={{ fontSize: '14px' }}>
+                    {text}
+                  </Text>
+                ),
+              },
+              {
+                title: '状态',
+                dataIndex: 'enabled',
+                key: 'enabled',
+                render: (enabled) => (
+                  <Badge color={enabled ? 'green' : 'default'}>
+                    {enabled ? '启用' : '禁用'}
+                  </Badge>
+                ),
+              },
+              {
+                title: '创建时间',
+                dataIndex: 'created_at',
+                key: 'created_at',
+                render: (date) => (
+                  <Text type='secondary'>{formatDate(date)}</Text>
+                ),
+              },
+              {
+                title: '授权工具',
+                key: 'permissions',
+                render: (_, record) => (
+                  <Flex vertical gap='small'>
+                    <div>
+                      {(record.permissions?.allowed_servers?.length ?? 0) >
+                      0 ? (
+                        <Text className='text-primary-600 '>
+                          {record.permissions?.allowed_servers?.length ?? 0}{' '}
+                          个服务器
+                        </Text>
+                      ) : (
+                        <Text type='secondary'>0 个服务器</Text>
+                      )}
+                    </div>
+                    <div>
+                      {record.tool_count !== undefined ? (
+                        record.tool_count > 0 ? (
+                          <Text className='text-primary-600 '>
+                            {record.tool_count} 个工具
+                          </Text>
+                        ) : (
+                          <Text type='secondary'>0 个工具</Text>
+                        )
+                      ) : (
+                        <Text type='secondary' style={{ fontSize: '12px' }}>
+                          加载中...
+                        </Text>
+                      )}
+                    </div>
+                  </Flex>
+                ),
+              },
+              {
+                title: '操作',
+                key: 'actions',
+                render: (_, record) => (
+                  <Space>
+                    <Button
+                      onClick={() => handleToggleKey(record.id)}
+                      type='text'
+                      size='small'>
+                      {record.enabled ? '禁用' : '启用'}
+                    </Button>
+                    <Button
+                      onClick={() => handleEditPermissions(record)}
+                      type='text'
+                      size='small'>
+                      编辑权限
+                    </Button>
+                    <Popconfirm
+                      title='删除API Key'
+                      description={`确定要删除 "${record.name}" 吗?此操作无法撤销。`}
+                      okText='删除'
+                      cancelText='取消'
+                      okType='danger'
+                      onConfirm={() => {
+                        setSelectedApiKey(record)
+                        handleDeleteKey()
+                      }}>
+                      <Button
+                        type='text'
+                        size='small'
+                        danger
+                        icon={<Trash2 size={16} />}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                ),
+              },
+            ]}
+          />
         )}
-      </div>
+      </Card>
 
       {/* Create API Key Modal */}
       <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        maxWidth='3xl'>
-        <div className='p-6'>
-          <h2 className='text-xl font-bold text-gray-900 dark:text-gray-100 mb-4'>
-            创建新API Key
-          </h2>
-          <div className='space-y-4'>
-            <div>
-              <label className='block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1'>
-                名称 <span className='text-red-500'>*</span>
-              </label>
-              <input
-                type='text'
-                value={newKeyName}
-                onChange={(e) => setNewKeyName(e.target.value)}
-                placeholder='例如: Production API Key'
-                className='input-modern w-full'
-              />
-            </div>
+        title='创建新API Key'
+        open={showCreateModal}
+        onCancel={() => setShowCreateModal(false)}
+        footer={[
+          <Button key='cancel' onClick={() => setShowCreateModal(false)}>
+            取消
+          </Button>,
+          <Button key='create' type='primary' onClick={handleCreateApiKey}>
+            创建
+          </Button>,
+        ]}
+        width={768}>
+        <Flex vertical gap='middle'>
+          <div>
+            <Text strong>
+              名称 <Text type='danger'>*</Text>
+            </Text>
+            <Input
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              placeholder='例如: Production API Key'
+              style={{ marginTop: '4px' }}
+            />
+          </div>
 
-            <div>
-              <label className='block text-sm font-medium text-gray-900 dark:text-gray-300 mb-2'>
-                权限配置
-              </label>
+          <div>
+            <Text strong>权限配置</Text>
+            <div style={{ marginTop: '4px' }}>
               <ApiKeyPermissionSelector
                 permissions={newKeyPermissions}
                 onChange={setNewKeyPermissions}
               />
             </div>
-
-            <div className='flex justify-end space-x-3 pt-4'>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className='btn-modern btn-secondary-modern'>
-                取消
-              </button>
-              <button
-                onClick={handleCreateApiKey}
-                className='btn-modern btn-primary-modern'>
-                创建
-              </button>
-            </div>
           </div>
-        </div>
+        </Flex>
       </Modal>
 
       {/* API Key Details Modal (shows full key after creation) */}
       <Modal
-        isOpen={showDetailsModal}
-        onClose={() => {
+        title='API Key 创建成功'
+        open={showDetailsModal}
+        onCancel={() => {
           setShowDetailsModal(false)
           setNewKeyDetails(null)
-        }}>
+        }}
+        footer={[
+          <Button
+            key='close'
+            type='primary'
+            onClick={() => {
+              setShowDetailsModal(false)
+              setNewKeyDetails(null)
+            }}>
+            关闭
+          </Button>,
+        ]}
+        width={640}>
         {newKeyDetails && (
-          <div className='p-6'>
-            <h2 className='text-xl font-bold text-gray-900 dark:text-gray-100 mb-4'>
-              API Key 创建成功
-            </h2>
-            <div className='space-y-4'>
-              <div className='bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4'>
-                <p className='text-sm text-yellow-800 dark:text-yellow-200'>
-                  <strong>重要提示:</strong> 这是唯一一次显示完整API
-                  Key的机会,请妥善保存!
-                </p>
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-900 dark:text-gray-300 mb-2'>
-                  API Key
-                </label>
-                <div className='flex items-center space-x-2'>
-                  <input
-                    type='text'
-                    value={newKeyDetails.key}
-                    readOnly
-                    className='input-modern flex-1 font-mono text-sm'
-                  />
-                  <button
-                    onClick={() => handleCopyKey(newKeyDetails.key)}
-                    className='btn-modern btn-primary-modern flex items-center space-x-1'>
-                    {copied ? <Check size={16} /> : <Copy size={16} />}
-                    <span>{copied ? '已复制' : '复制'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1'>
-                  名称
-                </label>
-                <p className='text-sm text-gray-600 dark:text-gray-400'>
-                  {newKeyDetails.name}
-                </p>
-              </div>
-
-              <div className='flex justify-end pt-4'>
-                <button
-                  onClick={() => {
-                    setShowDetailsModal(false)
-                    setNewKeyDetails(null)
-                  }}
-                  className='btn-modern btn-primary-modern'>
-                  关闭
-                </button>
-              </div>
+          <Flex vertical gap='middle'>
+            <div className='bg-amber-50  border border-amber-200  rounded-lg p-4'>
+              <Text className='text-amber-800  text-sm'>
+                <Text strong>重要提示:</Text> 这是唯一一次显示完整API
+                Key的机会,请妥善保存!
+              </Text>
             </div>
-          </div>
+
+            <div>
+              <Text strong>API Key</Text>
+              <Flex gap='small' style={{ marginTop: '4px' }}>
+                <Input
+                  value={newKeyDetails.key}
+                  readOnly
+                  style={{ flex: 1, fontFamily: 'monospace', fontSize: '14px' }}
+                />
+                <Button
+                  onClick={() => handleCopyKey(newKeyDetails.key)}
+                  icon={copied ? <Check size={16} /> : <Copy size={16} />}
+                  type='primary'
+                  size='small'>
+                  {copied ? '已复制' : '复制'}
+                </Button>
+              </Flex>
+            </div>
+
+            <div>
+              <Text strong>名称</Text>
+              <Text
+                type='secondary'
+                style={{ display: 'block', marginTop: '4px' }}>
+                {newKeyDetails.name}
+              </Text>
+            </div>
+          </Flex>
         )}
       </Modal>
 
       {/* Edit Permissions Modal */}
       <Modal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        maxWidth='3xl'>
-        <div className='p-6'>
-          <h2 className='text-xl font-bold text-gray-900 dark:text-gray-100 mb-4'>
-            编辑权限: {selectedApiKey?.name}
-          </h2>
-          <div className='space-y-4'>
-            <ApiKeyPermissionSelector
-              permissions={editPermissions}
-              onChange={setEditPermissions}
-              apiKeyId={selectedApiKey?.id}
-            />
-
-            <div className='flex justify-end space-x-3 pt-4'>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className='btn-modern btn-secondary-modern'>
-                取消
-              </button>
-              <button
-                onClick={handleSavePermissions}
-                className='btn-modern btn-primary-modern'>
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
+        title={`编辑权限: ${selectedApiKey?.name}`}
+        open={showEditModal}
+        onCancel={() => setShowEditModal(false)}
+        footer={[
+          <Button key='cancel' onClick={() => setShowEditModal(false)}>
+            取消
+          </Button>,
+          <Button key='save' type='primary' onClick={handleSavePermissions}>
+            保存
+          </Button>,
+        ]}
+        width={768}>
+        <ApiKeyPermissionSelector
+          permissions={editPermissions}
+          onChange={setEditPermissions}
+          apiKeyId={selectedApiKey?.id}
+        />
       </Modal>
-
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        onCancel={() => setShowDeleteModal(false)}
-        onConfirm={handleDeleteKey}
-        title='删除API Key'
-        message={`确定要删除 "${selectedApiKey?.name}" 吗?此操作无法撤销。`}
-        confirmText='删除'
-        cancelText='取消'
-        type='danger'
-      />
-    </div>
+    </Flex>
   )
-}
+})
 
 export default ApiKeys

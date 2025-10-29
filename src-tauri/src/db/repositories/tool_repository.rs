@@ -32,7 +32,7 @@ impl ToolRepository {
         .bind(tool.updated_at.to_rfc3339())
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         info!("Created tool: {} for server: {}", tool.name, tool.server_id);
         Ok(tool_id)
@@ -48,7 +48,7 @@ impl ToolRepository {
             .bind(server_id)
             .fetch_all(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let tools: Vec<ToolRow> = rows
             .into_iter()
@@ -70,7 +70,7 @@ impl ToolRepository {
             .bind(name)
             .fetch_optional(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         match row {
             Some(r) => {
@@ -97,7 +97,7 @@ impl ToolRepository {
             .bind(tool_id)
             .execute(&db)
             .await
-            .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+            .map_err(McpError::from)?;
 
         let was_updated = result.rows_affected() > 0;
         info!(
@@ -129,7 +129,7 @@ impl ToolRepository {
         .bind(name)
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         let was_updated = result.rows_affected() > 0;
         info!(
@@ -161,7 +161,7 @@ impl ToolRepository {
         .bind(name)
         .execute(&db)
         .await
-        .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+        .map_err(McpError::from)?;
 
         let was_updated = result.rows_affected() > 0;
         debug!(
@@ -183,7 +183,7 @@ impl ToolRepository {
                 .bind(server_id)
                 .execute(&db)
                 .await
-                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+                .map_err(McpError::from)?;
 
         let count = result.rows_affected() as usize;
         info!("Enabled {} tools for server: {}", count, server_id);
@@ -202,7 +202,7 @@ impl ToolRepository {
                 .bind(server_id)
                 .execute(&db)
                 .await
-                .map_err(|e| McpError::DatabaseError(e.to_string()))?;
+                .map_err(McpError::from)?;
 
         let count = result.rows_affected() as usize;
         info!("Disabled {} tools for server: {}", count, server_id);

@@ -23,7 +23,8 @@
       "mcp__sequentialthinking__sequentialthinking",
       "Bash(curl -s \"https://www.modelscope.cn/openapi/v1/mcp/servers/@modelcontextprotocol/fetch\")",
       "Bash(npx tsc:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(npm run build)"
     ],
     "deny": [],
     "ask": []
