@@ -225,7 +225,7 @@ const Dashboard: React.FC = memo(() => {
       },
       custom: {
         mcpServers: {
-          'your-service-name': {
+          mcprouter: {
             type: 'http',
             url: endpoint,
             headers: {
@@ -245,25 +245,6 @@ const Dashboard: React.FC = memo(() => {
       2,
     )
   }, [dashboardStats?.aggregator?.endpoint, selectedClient])
-
-  // Get config path - 使用 useMemo 优化
-  const getConfigPath = useCallback(() => {
-    const descriptions = {
-      'claude-desktop': '将以下配置添加到 Claude Desktop 的配置文件中：',
-      'cherry-studio': '将以下配置添加到 CherryStudio 的配置文件中：',
-      cursor: '将以下配置添加到 Cursor 的配置文件中：',
-      continue: '将以下配置添加到 Continue 的配置文件中：',
-      windsurf: '将以下配置添加到 Windsurf 的配置文件中：',
-      custom: '将以下配置添加到你的客户端配置文件中：',
-    }
-
-    return {
-      description:
-        descriptions[selectedClient as keyof typeof descriptions] ||
-        descriptions['custom'],
-      path: getClientConfigPath(selectedClient, dashboardStats),
-    }
-  }, [selectedClient, dashboardStats])
 
   // Copy configuration to clipboard - 使用 useCallback 优化
   const copyToClipboard = useCallback(async () => {
@@ -288,7 +269,7 @@ const Dashboard: React.FC = memo(() => {
   }
 
   return (
-    <Flex vertical gap='middle' style={{ height: '100%', overflowY: 'auto' }}>
+    <Flex vertical gap='small' style={{ height: '100%', overflowY: 'auto' }}>
       {/* Statistics Cards - Compact Layout */}
       <Row gutter={[8, 8]}>
         <Col span={4}>
@@ -352,7 +333,6 @@ const Dashboard: React.FC = memo(() => {
         clientTypes={clientTypes}
         selectedClient={selectedClient}
         onClientChange={setSelectedClient}
-        configPath={getConfigPath()}
         configContent={generateClientConfig()}
         onCopyConfig={copyToClipboard}
         copied={copied}
@@ -420,7 +400,6 @@ interface ClientConfigurationCardProps {
   clientTypes: ClientType[]
   selectedClient: string
   onClientChange: (client: string) => void
-  configPath: { description: string; path: string }
   configContent: string
   onCopyConfig: () => void
   copied: boolean
@@ -431,7 +410,6 @@ const ClientConfigurationCard: React.FC<ClientConfigurationCardProps> = memo(
     clientTypes,
     selectedClient,
     onClientChange,
-    configPath,
     configContent,
     onCopyConfig,
     copied,
@@ -447,7 +425,7 @@ const ClientConfigurationCard: React.FC<ClientConfigurationCardProps> = memo(
           {copied ? '已复制' : '复制配置'}
         </Button>
       }>
-      <Flex vertical gap='middle'>
+      <Flex vertical>
         {/* Client Tabs */}
         <Tabs
           activeKey={selectedClient}
@@ -462,59 +440,24 @@ const ClientConfigurationCard: React.FC<ClientConfigurationCardProps> = memo(
             ),
             children: null,
           }))}
-          style={{ marginBottom: '16px' }}
         />
 
-        {/* Configuration Path */}
-        <div
-          className=' '
-          style={{
-            marginBottom: '16px',
-            padding: '12px',
-            backgroundColor: '#e6f7ff',
-            borderRadius: '6px',
-            border: '1px solid #91d5ff',
-          }}>
-          <Text
-            className='text-primary-600 '
-            style={{ fontSize: '12px', display: 'block', fontWeight: 500 }}>
-            {configPath.description}
-          </Text>
-          <Text
-            code
-            className='text-primary-600 '
-            style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
-            {configPath.path}
-          </Text>
-        </div>
-
         {/* Configuration Content */}
-        <div
+        <pre
           style={{
-            backgroundColor: 'var(--ant-color-bg-container)',
-            borderRadius: '8px',
-            padding: '16px',
-            overflowX: 'auto',
-            border: '1px solid var(--ant-color-border)',
-            boxShadow:
-              '0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02)',
+            fontSize: '12px',
+            color: 'var(--ant-color-text)',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+            margin: 0,
+            border: '2px solid var(--ant-color-border)',
+            borderRadius: '6px',
+            padding: '12px',
+            backgroundColor: 'var(--ant-color-bg-elevated)',
+            boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.1)',
           }}>
-          <pre
-            style={{
-              fontSize: '12px',
-              color: 'var(--ant-color-text)',
-              fontFamily: 'monospace',
-              whiteSpace: 'pre-wrap',
-              margin: 0,
-              border: '2px solid var(--ant-color-border)',
-              borderRadius: '6px',
-              padding: '12px',
-              backgroundColor: 'var(--ant-color-bg-elevated)',
-              boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.1)',
-            }}>
-            {configContent}
-          </pre>
-        </div>
+          {configContent}
+        </pre>
       </Flex>
     </Card>
   ),
@@ -608,69 +551,5 @@ const InfoRow: React.FC<InfoRowProps> = memo(({ label, value }) => (
     </Text>
   </Flex>
 ))
-
-// 辅助函数
-function getClientConfigPath(
-  client: string,
-  stats: DashboardStats | null,
-): string {
-  const platform =
-    stats?.os_info?.platform?.toLowerCase() ||
-    (typeof navigator !== 'undefined'
-      ? navigator.userAgent.toLowerCase()
-      : 'linux')
-  const isWin = platform.includes('win')
-  const isMac = platform.includes('mac') || platform.includes('darwin')
-
-  const paths = {
-    claude: isWin
-      ? '%APPDATA%/Claude/claude_desktop_config.json'
-      : isMac
-      ? '~/Library/Application Support/Claude/claude_desktop_config.json'
-      : '~/.config/claude/claude_desktop_config.json',
-    cherry: isWin
-      ? '%APPDATA%/CherryStudio/cherry_studio_config.json'
-      : isMac
-      ? '~/Library/Application Support/CherryStudio/cherry_studio_config.json'
-      : '~/.config/cherrystudio/cherry_studio_config.json',
-    cursor: isWin
-      ? '%APPDATA%/Cursor/cursor_config.json'
-      : isMac
-      ? '~/Library/Application Support/Cursor/cursor_config.json'
-      : '~/.config/cursor/cursor_config.json',
-    continue: isWin
-      ? '%APPDATA%/Continue/continue_config.json'
-      : isMac
-      ? '~/Library/Application Support/Continue/continue_config.json'
-      : '~/.config/continue/continue_config.json',
-    windsurf: isWin
-      ? '%APPDATA%/Windsurf/windsurf_config.json'
-      : isMac
-      ? '~/Library/Application Support/Windsurf/windsurf_config.json'
-      : '~/.config/windsurf/windsurf_config.json',
-    custom: isWin
-      ? '%APPDATA%/YourClient/config.json'
-      : isMac
-      ? '~/Library/Application Support/YourClient/config.json'
-      : '~/.config/yourclient/config.json',
-  }
-
-  switch (client) {
-    case 'claude-desktop':
-      return paths.claude
-    case 'cherry-studio':
-      return paths.cherry
-    case 'cursor':
-      return paths.cursor
-    case 'continue':
-      return paths.continue
-    case 'windsurf':
-      return paths.windsurf
-    case 'custom':
-      return paths.custom
-    default:
-      return paths.claude
-  }
-}
 
 export default Dashboard

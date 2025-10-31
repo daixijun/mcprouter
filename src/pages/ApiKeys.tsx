@@ -17,7 +17,7 @@ import { memo, useCallback, useEffect, useState } from 'react'
 import ApiKeyPermissionSelector from '../components/ApiKeyPermissionSelector'
 import { useErrorContext } from '../contexts/ErrorContext'
 import { ApiKeyService } from '../services/api-key-service'
-import type { ApiKey, ApiKeyPermissions, ApiKeyListItem } from '../types'
+import type { ApiKey, ApiKeyListItem, ApiKeyPermissions } from '../types'
 
 const { Title, Text } = Typography
 
@@ -264,9 +264,7 @@ const ApiKeys: React.FC = memo(() => {
               title: '创建时间',
               dataIndex: 'created_at',
               key: 'created_at',
-              render: (date) => (
-                <Text type='secondary'>{formatDate(date)}</Text>
-              ),
+              render: (date) => <Text>{formatDate(date)}</Text>,
             },
             {
               title: '授权服务器',
