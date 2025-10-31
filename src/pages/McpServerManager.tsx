@@ -1,4 +1,5 @@
 import {
+  App,
   Button,
   Flex,
   Input,
@@ -11,7 +12,6 @@ import {
   Tag,
   Tooltip,
   Typography,
-  App,
   type TableProps,
 } from 'antd'
 import {
@@ -52,7 +52,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const [newServiceConfig, setNewServiceConfig] = useState({
     name: '',
     description: '',
-    transport: 'stdio' as 'stdio' | 'sse' | 'streamablehttp',
+    transport: 'stdio' as 'stdio' | 'sse' | 'http',
     command: '',
     args: '',
     url: '',
@@ -91,11 +91,11 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       const newState = await McpServerService.toggleMcpServer(serverName)
 
+      message.success(`服务器 "${serverName}" 已${newState ? '启用' : '禁用'}`)
+
       // 后端已经等待操作完成，现在重新加载服务列表
       await fetchMcpServers()
       onServiceChange?.()
-
-      message.success(`服务器 "${serverName}" 已${newState ? '启用' : '禁用'}`)
     } catch (error) {
       console.error('Failed to toggle server:', error)
 
@@ -125,6 +125,9 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         placement: 'topRight',
         duration: 5,
       })
+
+      // 失败后也要刷新列表，以显示最新的失败状态
+      await fetchMcpServers()
     } finally {
       // 从 toggling 集合中移除
       setTogglingServers((prev) => {
@@ -241,8 +244,48 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     if (!editingService) return
 
     try {
-      // For now, we don't have an update API, so this would need to be implemented
-      message.error('更新服务功能暂未实现')
+      // Parse environment variables and headers
+      const env_vars = newServiceConfig.env
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => {
+          const [key, value] = line.split('=')
+          return [key.trim(), value?.trim() || ''] as [string, string]
+        })
+
+      const headers = newServiceConfig.headers
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => {
+          const [key, value] = line.split('=')
+          return [key.trim(), value?.trim() || ''] as [string, string]
+        })
+
+      // Prepare command and args based on transport type
+      const isStdio = newServiceConfig.transport === 'stdio'
+      const command = isStdio ? newServiceConfig.command : null
+      const args = isStdio
+        ? newServiceConfig.args.split(' ').filter((arg) => arg.trim())
+        : null
+
+      await McpServerService.updateMcpServer(
+        newServiceConfig.name,
+        command,
+        args,
+        newServiceConfig.transport,
+        newServiceConfig.url || null,
+        newServiceConfig.description || null,
+        env_vars.length > 0 ? env_vars : null,
+        headers.length > 0 ? headers : null,
+        editingService.enabled,
+      )
+
+      message.success('服务已更新')
+      setShowEditService(false)
+      setEditingService(null)
+      resetForm()
+      onServiceChange?.()
+      await fetchMcpServers()
     } catch (error) {
       console.error('Failed to update service:', error)
       message.error('更新服务失败')
@@ -275,6 +318,15 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       ellipsis: true,
       filterSearch: true,
       fixed: true,
+      sorter: (a, b) => a.name.localeCompare(b.name),
+      // 获取所有唯一的服务名称作为过滤器选项
+      filters: Array.from(new Set(mcpServers.map((server) => server.name))).map(
+        (name) => ({
+          text: name,
+          value: name,
+        }),
+      ),
+      onFilter: (value: any, record: McpServerInfo) => record.name === value,
       render: (text: string) => <Text strong>{text}</Text>,
     },
 
@@ -283,22 +335,47 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       dataIndex: 'transport',
       key: 'transport',
       width: 100,
-      render: (transport: string) => (
-        <Tag color='blue' style={{ fontSize: '12px' }}>
-          {transport.toUpperCase()}
-        </Tag>
-      ),
+      filters: [
+        { text: 'STDIO', value: 'stdio' },
+        { text: 'SSE', value: 'sse' },
+        { text: 'HTTP', value: 'http' },
+      ],
+      onFilter: (value: any, record: McpServerInfo) =>
+        record.transport === value,
+      render: (transport: string) => {
+        let tagColor = 'blue'
+
+        switch (transport.toLowerCase()) {
+          case 'stdio':
+            tagColor = '#52c41a'
+            break
+          case 'sse':
+            tagColor = '#1890ff'
+            break
+          case 'http':
+            tagColor = '#faad14'
+            break
+          default:
+            tagColor = '#d9d9d9'
+        }
+
+        return (
+          <Tag color={tagColor} style={{ fontSize: '12px' }}>
+            {transport.toUpperCase()}
+          </Tag>
+        )
+      },
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 80,
+      width: 90,
       filters: [
         { text: '已连接', value: 'connected' },
         { text: '连接中', value: 'connecting' },
         { text: '已断开', value: 'disconnected' },
-        { text: '连接出错', value: 'connecterror' },
+        { text: '连接失败', value: 'failed' },
       ],
       onFilter: (value, record: McpServerInfo) => record.status === value,
       render: (status: string, record: McpServerInfo) => {
@@ -316,11 +393,11 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 icon: <RotateCcw size={12} />,
                 text: '连接中',
               }
-            case 'connecterror':
+            case 'failed':
               return {
                 color: 'error',
                 icon: <AlertCircle size={12} />,
-                text: '连接出错',
+                text: '连接失败',
               }
             default:
               return {
@@ -333,16 +410,16 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
         const config = getStatusConfig(status)
         const statusElement = (
-          <Flex align='center' gap={4}>
-            {config.icon}
-            <Tag color={config.color} style={{ fontSize: '12px', margin: 0 }}>
+          <Tag color={config.color} style={{ fontSize: '12px', margin: 0 }}>
+            <Flex align='center' gap={4}>
+              {config.icon}
               {config.text}
-            </Tag>
-          </Flex>
+            </Flex>
+          </Tag>
         )
 
-        // 如果是连接出错状态且有错误信息，添加 Tooltip
-        if (status === 'connecterror' && record.error_message) {
+        // 如果是连接失败状态且有错误信息，显示错误详情 Tooltip
+        if (status === 'failed' && record.error_message) {
           return (
             <Tooltip title={record.error_message} placement='topLeft'>
               {statusElement}
@@ -485,9 +562,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         {/* Add Service Button */}
         <Flex justify='flex-end'>
           <Space>
-            <Button
-              icon={<RotateCcw size={16} />}
-              onClick={fetchMcpServers}>
+            <Button icon={<RotateCcw size={16} />} onClick={fetchMcpServers}>
               刷新
             </Button>
             <Button
@@ -615,7 +690,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                   options={[
                     { value: 'stdio', label: 'STDIO (标准输入输出)' },
                     { value: 'sse', label: 'SSE (服务器发送事件)' },
-                    { value: 'streamablehttp', label: 'Streamable HTTP' },
+                    { value: 'http', label: 'HTTP' },
                   ]}
                   style={{ marginTop: '4px', width: '100%' }}
                 />
@@ -685,7 +760,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
               )}
 
               {(newServiceConfig.transport === 'sse' ||
-                newServiceConfig.transport === 'streamablehttp') && (
+                newServiceConfig.transport === 'http') && (
                 <>
                   <div>
                     <Text strong>
@@ -889,7 +964,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           )}
 
           {(newServiceConfig.transport === 'sse' ||
-            newServiceConfig.transport === 'streamablehttp') && (
+            newServiceConfig.transport === 'http') && (
             <>
               <div>
                 <Text strong>服务 URL</Text>
@@ -939,7 +1014,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       {/* Tools Modal */}
       <Modal
-        title='管理工具'
+        title='管理 MCP 服务器工具'
         open={showToolsModal}
         onCancel={() => {
           setShowToolsModal(false)

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { ApiKey, ApiKeyPermissions } from '../types'
+import type { ApiKey, ApiKeyPermissions, ApiKeyListItem } from '../types'
 
 export class ApiKeyService {
   // API Key Management
@@ -10,7 +10,7 @@ export class ApiKeyService {
     return invoke('create_api_key', { name, permissions })
   }
 
-  static async listApiKeys(): Promise<ApiKey[]> {
+  static async listApiKeys(): Promise<ApiKeyListItem[]> {
     return invoke('list_api_keys')
   }
 
@@ -24,13 +24,6 @@ export class ApiKeyService {
 
   static async toggleApiKey(id: string): Promise<boolean> {
     return invoke('toggle_api_key', { id })
-  }
-
-  static async updateApiKeyPermissions(
-    id: string,
-    permissions: ApiKeyPermissions,
-  ): Promise<string> {
-    return invoke('update_api_key_permissions', { id, permissions })
   }
 
   // Tool-level Permission Management

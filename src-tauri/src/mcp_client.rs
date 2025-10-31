@@ -1,8 +1,10 @@
-use crate::config::{AppConfig, McpServerConfig, ServiceTransport};
+use crate::config::AppConfig;
 use crate::error::{McpError, Result};
+use crate::types::{
+    ConnectionStatus, McpConnection, McpServerConfig, McpService, ServiceTransport,
+};
 use crate::SERVICE_MANAGER;
 use rmcp::model::ClientInfo;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -11,42 +13,12 @@ use tokio::sync::RwLock;
 
 // Import RMCP components
 use rmcp::{
-    model::{CallToolRequestParam, ListToolsResult},
+    model::ListToolsResult,
     service::ServiceExt,
     transport::{SseClientTransport, StreamableHttpClientTransport, TokioChildProcess},
 };
 
 // Access global service manager for config via state manager
-
-// Define enum for different service types
-#[derive(Debug)]
-pub enum McpService {
-    Stdio(rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>),
-    Sse(rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>),
-    Http(rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>),
-}
-
-#[derive(Debug, Clone)]
-pub struct ConnectionStatus {
-    pub is_connected: bool,
-    pub last_connected: Option<chrono::DateTime<chrono::Utc>>,
-    pub error_message: Option<String>,
-    // connection_attempts, health_check_time fields removed as they were never read
-}
-
-#[derive(Debug, Clone)]
-pub struct McpConnection {
-    pub service_id: String,
-    // transport_type field removed as it was never read
-    pub server_info: Option<Value>,
-    // Store the actual RMCP client using enum
-    pub client: Option<Arc<McpService>>,
-    // Enhanced connection state management
-    pub status: ConnectionStatus,
-    // Cached service information
-    pub cached_version: Option<String>,
-    // cached_tools_count, cached_resources_count fields removed as they were never read
-}
 
 #[derive(Clone)]
 pub struct McpClientManager {
@@ -103,7 +75,7 @@ impl McpClientManager {
         let connection = match service_config.transport {
             ServiceTransport::Stdio => self.connect_stdio_service(service_config).await?,
             ServiceTransport::Sse => self.connect_sse_service(service_config).await?,
-            ServiceTransport::StreamableHttp => self.connect_http_service(service_config).await?,
+            ServiceTransport::Http => self.connect_http_service(service_config).await?,
         };
 
         // Update connection cache
@@ -115,14 +87,7 @@ impl McpClientManager {
         Ok(connection)
     }
 
-    /// Legacy method for backward compatibility
-    pub async fn connect_mcp_server(
-        &self,
-        service_config: &McpServerConfig,
-    ) -> crate::error::Result<McpConnection> {
-        self.ensure_connection(service_config, false).await
-    }
-
+  
     async fn connect_stdio_service(
         &self,
         service_config: &McpServerConfig,
@@ -190,7 +155,7 @@ impl McpClientManager {
 
         // Get server information
         let server_info_value = service.peer_info();
-        let server_info = serde_json::to_value(&server_info_value).map_err(|e| {
+        let server_info = serde_json::to_value(server_info_value).map_err(|e| {
             McpError::SerializationError(format!("Failed to serialize server info: {}", e))
         })?;
 
@@ -241,7 +206,7 @@ impl McpClientManager {
 
         // Get server information
         let server_info_value = service.peer_info();
-        let server_info = serde_json::to_value(&server_info_value).map_err(|e| {
+        let server_info = serde_json::to_value(server_info_value).map_err(|e| {
             McpError::SerializationError(format!("Failed to serialize server info: {}", e))
         })?;
 
@@ -291,7 +256,7 @@ impl McpClientManager {
 
         // Get server information
         let server_info_value = service.peer_info();
-        let server_info = serde_json::to_value(&server_info_value).map_err(|e| {
+        let server_info = serde_json::to_value(server_info_value).map_err(|e| {
             McpError::SerializationError(format!("Failed to serialize server info: {}", e))
         })?;
 
@@ -420,116 +385,24 @@ impl McpClientManager {
         }
     }
 
-    pub async fn call_tool(
-        &self,
-        connection_id: &str,
-        tool_name: &str,
-        arguments: Option<Value>,
-    ) -> Result<Value> {
-        let connections = self.connections.read().await;
-        let connection = connections
-            .get(connection_id)
-            .ok_or_else(|| McpError::ServiceNotFound(connection_id.to_string()))?;
-
-        tracing::info!(
-            "Calling tool '{}' on connection {}",
-            tool_name,
-            connection_id
-        );
-
-        // Get the RMCP service from the connection
-        let service = connection
-            .client
-            .as_ref()
-            .ok_or_else(|| McpError::ConnectionError("Service not connected".to_string()))?;
-
-        // Match on the service type using the enum
-        match &**service {
-            McpService::Stdio(_) => {
-                self.call_tool_on_service(connection_id, tool_name, arguments.unwrap_or_default())
-                    .await
-            }
-            McpService::Sse(_) => {
-                self.call_tool_on_service(connection_id, tool_name, arguments.unwrap_or_default())
-                    .await
-            }
-            McpService::Http(_) => {
-                self.call_tool_on_service(connection_id, tool_name, arguments.unwrap_or_default())
-                    .await
-            }
-        }
-    }
-
-    pub async fn call_tool_on_service(
-        &self,
-        service_id: &str,
-        tool_name: &str,
-        arguments: Value,
-    ) -> Result<Value> {
-        let connection = self
-            .get_connection(service_id)
-            .await
-            .ok_or_else(|| McpError::ServiceNotFound(service_id.to_string()))?;
-
-        let request = CallToolRequestParam {
-            name: tool_name.to_string().into(),
-            arguments: match arguments {
-                Value::Object(map) => Some(map),
-                _ => None,
+    /// Manually set connection error for a service (used when connection fails but we want to track the error)
+    pub async fn set_connection_error(&self, service_id: &str, error_message: String) {
+        let error_connection = McpConnection {
+            service_id: service_id.to_string(),
+            server_info: None,
+            client: None,
+            status: ConnectionStatus {
+                is_connected: false,
+                last_connected: None,
+                error_message: Some(error_message),
             },
+            cached_version: None,
         };
 
-        // Get the RMCP service from the connection
-        let service = connection
-            .client
-            .as_ref()
-            .ok_or_else(|| McpError::ConnectionError("Service not connected".to_string()))?;
-
-        // Match on the service type using the enum
-        match &**service {
-            McpService::Stdio(service) => {
-                let result = service
-                    .call_tool(request)
-                    .await
-                    .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
-
-                // Convert the result to JSON
-                let result_value = serde_json::to_value(&result).map_err(|e| {
-                    McpError::SerializationError(format!("Failed to serialize tool result: {}", e))
-                })?;
-
-                tracing::info!("Tool call completed successfully");
-                Ok(result_value)
-            }
-            McpService::Sse(service) => {
-                let result = service
-                    .call_tool(request)
-                    .await
-                    .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
-
-                // Convert the result to JSON
-                let result_value = serde_json::to_value(&result).map_err(|e| {
-                    McpError::SerializationError(format!("Failed to serialize tool result: {}", e))
-                })?;
-
-                tracing::info!("Tool call completed successfully");
-                Ok(result_value)
-            }
-            McpService::Http(service) => {
-                let result = service
-                    .call_tool(request)
-                    .await
-                    .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
-
-                // Convert the result to JSON
-                let result_value = serde_json::to_value(&result).map_err(|e| {
-                    McpError::SerializationError(format!("Failed to serialize tool result: {}", e))
-                })?;
-
-                tracing::info!("Tool call completed successfully");
-                Ok(result_value)
-            }
-        }
+        self.connections
+            .write()
+            .await
+            .insert(service_id.to_string(), error_connection);
     }
 
     pub async fn get_connections(&self) -> Vec<McpConnection> {

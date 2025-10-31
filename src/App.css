@@ -351,3 +351,33 @@
     transform: translateY(-5px);
   }
 }
+
+/* Switch 组件样式覆盖 */
+.ant-switch:not(.ant-switch-checked) {
+  background-color: #ef4444 !important; /* 关闭状态：红色背景 */
+  border-color: #ef4444 !important;
+}
+
+.ant-switch.ant-switch-checked {
+  background-color: #10B981 !important; /* 开启状态：绿色背景 */
+  border-color: #10B981 !important;
+}
+
+.ant-switch-inner {
+  color: #ffffff !important; /* 文字颜色：白色 */
+}
+
+.ant-switch-handle {
+  background-color: #ffffff !important; /* 滑块颜色：白色 */
+  border: 1px solid #e5e7eb !important;
+  border-radius: 50% !important; /* 保持圆形 */
+}
+
+/* 暗色模式下的 Switch 样式调整 */
+.dark .ant-switch {
+  border-color: #374151 !important;
+}
+
+.dark .ant-switch-handle {
+  border-color: #4b5563 !important;
+}

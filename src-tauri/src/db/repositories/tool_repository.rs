@@ -233,7 +233,7 @@ impl ToolRepository {
                     .ok()
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             })
-            .unwrap_or_else(|| chrono::Utc::now());
+            .unwrap_or_else(chrono::Utc::now);
         let updated_at: chrono::DateTime<chrono::Utc> = row
             .try_get::<String, _>("updated_at")
             .ok()
@@ -242,7 +242,7 @@ impl ToolRepository {
                     .ok()
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             })
-            .unwrap_or_else(|| chrono::Utc::now());
+            .unwrap_or_else(chrono::Utc::now);
 
         Ok(ToolRow {
             id,

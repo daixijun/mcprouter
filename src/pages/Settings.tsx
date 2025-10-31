@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import {
+  App,
   Button,
   Card,
   Col,
@@ -9,9 +10,7 @@ import {
   Row,
   Select,
   Switch,
-  Tabs,
   Typography,
-  App,
 } from 'antd'
 import { memo, useCallback, useEffect, useState } from 'react'
 import { useErrorContext } from '../contexts/ErrorContext'
@@ -53,9 +52,6 @@ const Settings: React.FC = memo(() => {
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<
-    'server' | 'logging' | 'security' | 'application'
-  >('server')
   const [autostartEnabled, setAutostartEnabled] = useState(false)
   const [localIPs, setLocalIPs] = useState<string[]>([])
   const [loadingIPs, setLoadingIPs] = useState(false)
@@ -278,268 +274,234 @@ const Settings: React.FC = memo(() => {
   }
 
   return (
-    <Flex vertical gap='large' style={{ height: '100%', overflowY: 'auto' }}>
-      {/* Header */}
-      <div>
-        <Title level={2}>系统设置</Title>
-        <Text type='secondary'>配置 MCP Router 的各项参数</Text>
-      </div>
+    <Flex
+      vertical
+      gap='large'
+      style={{ height: '100%', overflowY: 'auto', padding: '24px' }}>
+      {/* Settings Content */}
+      <Flex vertical gap='large' style={{ flex: 1 }}>
+        {/* Server Settings */}
+        <Card>
+          <Title level={4}>服务器配置</Title>
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <Text strong>服务器地址</Text>
+              <Select
+                value={settings.server.host}
+                onChange={(value) => handleServerSettingChange('host', value)}
+                loading={loadingIPs}
+                style={{ width: '100%', marginTop: '4px' }}
+                placeholder='选择服务器地址'
+                options={localIPs.map((ip) => ({ value: ip, label: ip }))}
+              />
+            </Col>
+            <Col span={12}>
+              <Text strong>端口</Text>
+              <InputNumber
+                value={settings.server.port}
+                onChange={(value) =>
+                  handleServerSettingChange('port', value || 0)
+                }
+                min={1}
+                max={65535}
+                style={{ width: '100%', marginTop: '4px' }}
+              />
+            </Col>
+            <Col span={12}>
+              <Text strong>最大连接数</Text>
+              <InputNumber
+                value={settings.server.max_connections}
+                onChange={(value) =>
+                  handleServerSettingChange('max_connections', value || 0)
+                }
+                min={1}
+                max={1000}
+                style={{ width: '100%', marginTop: '4px' }}
+              />
+            </Col>
+            <Col span={12}>
+              <Text strong>超时时间（秒）</Text>
+              <InputNumber
+                value={settings.server.timeout_seconds}
+                onChange={(value) =>
+                  handleServerSettingChange('timeout_seconds', value || 0)
+                }
+                min={1}
+                max={300}
+                style={{ width: '100%', marginTop: '4px' }}
+              />
+            </Col>
+          </Row>
+        </Card>
 
-      {/* Tab Navigation */}
-      <Tabs
-        activeKey={activeTab}
-        onChange={(key) => setActiveTab(key as any)}
-        items={[
-          {
-            key: 'server',
-            label: '服务器设置',
-            children: null,
-          },
-          {
-            key: 'logging',
-            label: '日志设置',
-            children: null,
-          },
-          {
-            key: 'security',
-            label: '安全设置',
-            children: null,
-          },
-          {
-            key: 'application',
-            label: '应用设置',
-            children: null,
-          },
-        ]}
-      />
+        {/* Logging Settings */}
+        <Card>
+          <Title level={4}>日志配置</Title>
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <Text strong>日志级别</Text>
+              <Select
+                style={{ width: '100%', marginTop: '4px' }}
+                value={settings.logging.level}
+                onChange={(value) => handleLoggingSettingChange('level', value)}
+                options={[
+                  { value: 'debug', label: 'Debug' },
+                  { value: 'info', label: 'Info' },
+                  { value: 'warn', label: 'Warning' },
+                  { value: 'error', label: 'Error' },
+                ]}
+              />
+            </Col>
+            <Col span={12}>
+              <Text strong>日志文件名</Text>
+              <Input
+                value={settings.logging.file_name}
+                onChange={(e) =>
+                  handleLoggingSettingChange('file_name', e.target.value)
+                }
+                placeholder='mcp-router.log'
+                style={{ marginTop: '4px' }}
+              />
+            </Col>
+          </Row>
+        </Card>
 
-      {/* Tab Content */}
-      <Card>
-        {activeTab === 'server' && (
-          <Flex vertical gap='large'>
-            <Title level={4}>服务器配置</Title>
-            <Row gutter={[16, 16]}>
-              <Col span={12}>
-                <Text strong>服务器地址</Text>
-                <Select
-                  value={settings.server.host}
-                  onChange={(value) => handleServerSettingChange('host', value)}
-                  loading={loadingIPs}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  placeholder='选择服务器地址'
-                  options={localIPs.map((ip) => ({ value: ip, label: ip }))}
-                />
-              </Col>
-              <Col span={12}>
-                <Text strong>端口</Text>
-                <InputNumber
-                  value={settings.server.port}
-                  onChange={(value) =>
-                    handleServerSettingChange('port', value || 0)
-                  }
-                  min={1}
-                  max={65535}
-                  style={{ width: '100%', marginTop: '4px' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Text strong>最大连接数</Text>
-                <InputNumber
-                  value={settings.server.max_connections}
-                  onChange={(value) =>
-                    handleServerSettingChange('max_connections', value || 0)
-                  }
-                  min={1}
-                  max={1000}
-                  style={{ width: '100%', marginTop: '4px' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Text strong>超时时间（秒）</Text>
-                <InputNumber
-                  value={settings.server.timeout_seconds}
-                  onChange={(value) =>
-                    handleServerSettingChange('timeout_seconds', value || 0)
-                  }
-                  min={1}
-                  max={300}
-                  style={{ width: '100%', marginTop: '4px' }}
-                />
-              </Col>
-            </Row>
-          </Flex>
-        )}
-
-        {activeTab === 'logging' && (
-          <Flex vertical gap='large'>
-            <Title level={4}>日志配置</Title>
-            <Row gutter={[16, 16]}>
-              <Col span={12}>
-                <Text strong>日志级别</Text>
-                <Select
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={settings.logging.level}
-                  onChange={(value) =>
-                    handleLoggingSettingChange('level', value)
-                  }
-                  options={[
-                    { value: 'debug', label: 'Debug' },
-                    { value: 'info', label: 'Info' },
-                    { value: 'warn', label: 'Warning' },
-                    { value: 'error', label: 'Error' },
-                  ]}
-                />
-              </Col>
-              <Col span={12}>
-                <Text strong>日志文件名</Text>
-                <Input
-                  value={settings.logging.file_name}
-                  onChange={(e) =>
-                    handleLoggingSettingChange('file_name', e.target.value)
-                  }
-                  placeholder='mcp-router.log'
-                  style={{ marginTop: '4px' }}
-                />
-              </Col>
-            </Row>
-          </Flex>
-        )}
-
-        {activeTab === 'security' && (
-          <Flex vertical gap='large'>
-            <Title level={4}>安全配置</Title>
-            <Flex vertical gap='middle'>
-              <Flex justify='space-between' align='center'>
-                <div>
-                  <Text strong>身份验证</Text>
-                  <Text
-                    type='secondary'
-                    style={{
-                      fontSize: '14px',
-                      display: 'block',
-                      marginTop: '2px',
-                    }}>
-                    启用 API 密钥认证
-                  </Text>
-                </div>
-                <Switch
-                  checked={settings.security.auth}
-                  onChange={(checked) =>
-                    handleSecuritySettingChange('auth', checked)
-                  }
-                  checkedChildren='启用'
-                  unCheckedChildren='禁用'
-                />
-              </Flex>
-
+        {/* Security Settings */}
+        <Card>
+          <Title level={4}>安全配置</Title>
+          <Flex vertical gap='middle'>
+            <Flex justify='space-between' align='center'>
               <div>
-                <Text strong>允许的主机列表</Text>
-                <TextArea
-                  placeholder='输入主机地址，每行一个地址，如:&#10;localhost&#10;127.0.0.1&#10;192.168.1.100'
-                  value={settings.security.allowed_hosts.join('\n')}
-                  onChange={(e) => handleHostsChange(e.target.value)}
-                  style={{ marginTop: '8px' }}
-                  rows={3}
-                />
+                <Text strong>身份验证</Text>
                 <Text
                   type='secondary'
                   style={{
-                    fontSize: '12px',
-                    marginTop: '4px',
+                    fontSize: '14px',
                     display: 'block',
+                    marginTop: '2px',
                   }}>
-                  每行输入一个主机地址
+                  启用 API 密钥认证
                 </Text>
               </div>
+              <Switch
+                checked={settings.security.auth}
+                onChange={(checked) =>
+                  handleSecuritySettingChange('auth', checked)
+                }
+                checkedChildren='启用'
+                unCheckedChildren='禁用'
+              />
             </Flex>
-          </Flex>
-        )}
 
-        {activeTab === 'application' && (
+            <div>
+              <Text strong>允许的主机列表</Text>
+              <TextArea
+                placeholder='输入主机地址，每行一个地址，如:&#10;localhost&#10;127.0.0.1&#10;192.168.1.100'
+                value={settings.security.allowed_hosts.join('\n')}
+                onChange={(e) => handleHostsChange(e.target.value)}
+                style={{ marginTop: '8px' }}
+                rows={3}
+              />
+              <Text
+                type='secondary'
+                style={{
+                  fontSize: '12px',
+                  marginTop: '4px',
+                  display: 'block',
+                }}>
+                每行输入一个主机地址
+              </Text>
+            </div>
+          </Flex>
+        </Card>
+
+        {/* Application Settings */}
+        <Card>
+          <Title level={4}>应用配置</Title>
           <Flex vertical gap='large'>
-            <Title level={4}>应用配置</Title>
-            <Flex vertical gap='large'>
-              <div>
-                <Title level={5}>系统托盘</Title>
-                <Flex vertical gap='middle'>
-                  <Flex justify='space-between' align='center'>
-                    <div>
-                      <Text strong>启用系统托盘</Text>
-                      <Text
-                        type='secondary'
-                        style={{
-                          fontSize: '14px',
-                          display: 'block',
-                          marginTop: '2px',
-                        }}>
-                        在系统托盘显示应用图标
-                      </Text>
-                    </div>
-                    <Switch
-                      checked={settings.settings?.system_tray?.enabled}
-                      onChange={(checked) =>
-                        handleSystemTraySettingChange('enabled', checked)
-                      }
-                      checkedChildren='启用'
-                      unCheckedChildren='禁用'
-                    />
-                  </Flex>
-
-                  <Flex justify='space-between' align='center'>
-                    <div>
-                      <Text
-                        strong={!settings.settings?.system_tray?.enabled}
-                        type={!settings.settings?.system_tray?.enabled ? 'secondary' : undefined}
-                      >
-                        关闭到托盘
-                      </Text>
-                      <Text
-                        type='secondary'
-                        style={{
-                          fontSize: '14px',
-                          display: 'block',
-                          marginTop: '2px',
-                        }}>
-                        关闭窗口时最小化到托盘
-                      </Text>
-                    </div>
-                    <Switch
-                      checked={settings.settings?.system_tray?.close_to_tray}
-                      onChange={(checked) =>
-                        handleSystemTraySettingChange('close_to_tray', checked)
-                      }
-                      checkedChildren='启用'
-                      unCheckedChildren='禁用'
-                      disabled={!settings.settings?.system_tray?.enabled}
-                    />
-                  </Flex>
-
-                  <Flex justify='space-between' align='center'>
-                    <div>
-                      <Text strong>开机自启</Text>
-                      <Text
-                        type='secondary'
-                        style={{
-                          fontSize: '14px',
-                          display: 'block',
-                          marginTop: '2px',
-                        }}>
-                        系统启动时自动运行应用
-                      </Text>
-                    </div>
-                    <Switch
-                      checked={autostartEnabled}
-                      onChange={toggleAutostart}
-                      checkedChildren='启用'
-                      unCheckedChildren='禁用'
-                    />
-                  </Flex>
+            <div>
+              <Title level={5}>系统托盘</Title>
+              <Flex vertical gap='middle'>
+                <Flex justify='space-between' align='center'>
+                  <div>
+                    <Text strong>启用系统托盘</Text>
+                    <Text
+                      type='secondary'
+                      style={{
+                        fontSize: '14px',
+                        display: 'block',
+                        marginTop: '2px',
+                      }}>
+                      在系统托盘显示应用图标
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={settings.settings?.system_tray?.enabled}
+                    onChange={(checked) =>
+                      handleSystemTraySettingChange('enabled', checked)
+                    }
+                    checkedChildren='启用'
+                    unCheckedChildren='禁用'
+                  />
                 </Flex>
-              </div>
-            </Flex>
+
+                <Flex justify='space-between' align='center'>
+                  <div>
+                    <Text
+                      strong={!settings.settings?.system_tray?.enabled}
+                      type={
+                        !settings.settings?.system_tray?.enabled
+                          ? 'secondary'
+                          : undefined
+                      }>
+                      关闭到托盘
+                    </Text>
+                    <Text
+                      type='secondary'
+                      style={{
+                        fontSize: '14px',
+                        display: 'block',
+                        marginTop: '2px',
+                      }}>
+                      关闭窗口时最小化到托盘
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={settings.settings?.system_tray?.close_to_tray}
+                    onChange={(checked) =>
+                      handleSystemTraySettingChange('close_to_tray', checked)
+                    }
+                    checkedChildren='启用'
+                    unCheckedChildren='禁用'
+                    disabled={!settings.settings?.system_tray?.enabled}
+                  />
+                </Flex>
+
+                <Flex justify='space-between' align='center'>
+                  <div>
+                    <Text strong>开机自启</Text>
+                    <Text
+                      type='secondary'
+                      style={{
+                        fontSize: '14px',
+                        display: 'block',
+                        marginTop: '2px',
+                      }}>
+                      系统启动时自动运行应用
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={autostartEnabled}
+                    onChange={toggleAutostart}
+                    checkedChildren='启用'
+                    unCheckedChildren='禁用'
+                  />
+                </Flex>
+              </Flex>
+            </div>
           </Flex>
-        )}
-      </Card>
+        </Card>
+      </Flex>
 
       {/* Bottom Save Button */}
       <div

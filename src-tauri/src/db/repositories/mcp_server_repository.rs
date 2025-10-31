@@ -57,6 +57,72 @@ impl McpServerRepository {
         Ok(server_id)
     }
 
+    /// 更新 MCP 服务器配置
+    pub async fn update(name: &str, mut server: McpServerRow) -> Result<()> {
+        info!("Updating MCP server: {}", name);
+
+        let db = get_database().await?;
+
+        // 首先获取现有服务器的ID和created_at
+        let existing = sqlx::query("SELECT id, created_at FROM mcp_servers WHERE name = ?")
+            .bind(name)
+            .fetch_optional(&db)
+            .await
+            .map_err(McpError::from)?;
+
+        let Some(existing_row) = existing else {
+            return Err(McpError::ServiceNotFound(name.to_string()));
+        };
+
+        let server_id: String = existing_row.get("id");
+        let created_at: String = existing_row.get("created_at");
+
+        // 使用现有的 ID 和 created_at
+        server.id = Some(server_id);
+        server.created_at = chrono::DateTime::parse_from_rfc3339(&created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        // 更新 updated_at 为当前时间
+        server.updated_at = Utc::now();
+
+        let args_json = server
+            .args
+            .map(|args| serde_json::to_string(&args).unwrap_or_default());
+        let env_vars_json = server
+            .env_vars
+            .map(|vars| serde_json::to_string(&vars).unwrap_or_default());
+        let headers_json = server
+            .headers
+            .map(|headers| serde_json::to_string(&headers).unwrap_or_default());
+
+        let _result = sqlx::query(
+            r#"
+            UPDATE mcp_servers
+            SET description = ?, command = ?, args = ?, transport = ?, url = ?,
+                enabled = ?, env_vars = ?, headers = ?, version = ?, updated_at = ?
+            WHERE name = ?
+            "#,
+        )
+        .bind(&server.description)
+        .bind(&server.command)
+        .bind(&args_json)
+        .bind(&server.transport)
+        .bind(&server.url)
+        .bind(server.enabled)
+        .bind(&env_vars_json)
+        .bind(&headers_json)
+        .bind(&server.version)
+        .bind(server.updated_at.to_rfc3339())
+        .bind(name)
+        .execute(&db)
+        .await
+        .map_err(McpError::from)?;
+
+        info!("MCP server updated: {}", name);
+        Ok(())
+    }
+
     /// 获取所有 MCP 服务器
     pub async fn get_all() -> Result<Vec<McpServerRow>> {
         debug!("Fetching all MCP servers");
@@ -70,7 +136,7 @@ impl McpServerRepository {
 
         let servers: Result<Vec<_>> = rows
             .into_iter()
-            .map(|row| Self::row_to_server(row))
+            .map(Self::row_to_server)
             .collect();
 
         let servers = servers?;
@@ -130,19 +196,30 @@ impl McpServerRepository {
 
     /// 删除 MCP 服务器及其关联数据
     pub async fn delete(name: &str) -> Result<bool> {
-        info!("Deleting MCP server and related data: {}", name);
+        info!("Deleting MCP server and related data: '{}'", name);
 
         let db = get_database().await?;
 
         // 首先获取服务器ID
         let server_row = sqlx::query("SELECT id FROM mcp_servers WHERE name = ?")
-            .bind(name)
+            .bind(name.trim())
             .fetch_optional(&db)
             .await
             .map_err(McpError::from)?;
 
         let Some(server_row) = server_row else {
-            debug!("MCP server not found for deletion: {}", name);
+            // Debug: 查看数据库中实际存在的服务器名称
+            let existing_servers = sqlx::query("SELECT name FROM mcp_servers")
+                .fetch_all(&db)
+                .await
+                .map_err(McpError::from)?;
+
+            let server_names: Vec<String> = existing_servers
+                .iter()
+                .map(|row| row.get::<String, _>("name"))
+                .collect();
+
+            debug!("MCP server '{}' not found for deletion. Existing servers: {:?}", name, server_names);
             return Ok(false);
         };
 
@@ -155,7 +232,7 @@ impl McpServerRepository {
             .map_err(McpError::from)?;
 
         // 1. 删除该服务器的所有工具
-        let tools_deleted = sqlx::query("DELETE FROM tools WHERE server_id = ?")
+        let tools_deleted = sqlx::query("DELETE FROM mcp_tools WHERE server_id = ?")
             .bind(&server_id)
             .execute(&mut *tx)
             .await

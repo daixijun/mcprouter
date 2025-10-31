@@ -1,46 +1,20 @@
-use crate::config::{AppConfig, McpServerConfig};
+use crate::config::AppConfig;
 use crate::db::models::{McpServerRow, ToolRow};
 use crate::db::repositories::mcp_server_repository::McpServerRepository;
 use crate::db::repositories::tool_repository::ToolRepository;
 use crate::error::{McpError, Result};
 use crate::MCP_CLIENT_MANAGER;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ServiceStatus {
-    pub name: String,
-    pub enabled: bool,
-    pub status: String, // "connecting", "connected", "disconnected", "connecterror"
-    pub pid: Option<u32>,
-    pub port: Option<u16>,
-    pub version: Option<String>,
-    pub start_time: Option<chrono::DateTime<chrono::Utc>>,
-    pub error_message: Option<String>,
-}
-
-// 合并后的响应结构体，包含状态和配置信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpServerInfo {
-    pub name: String,
-    pub enabled: bool,
-    pub status: String, // "connecting", "connected", "disconnected", "connecterror"
-    pub version: Option<String>,
-    pub error_message: Option<String>,
-    pub transport: String,
-    pub url: Option<String>,
-    pub description: Option<String>,
-    pub env_vars: Option<HashMap<String, String>>,
-    pub headers: Option<HashMap<String, String>>,
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub tool_count: Option<usize>,
-}
+// Re-export types for backward compatibility
+pub use crate::types::{
+    McpServerConfig, McpServerInfo, ServiceStatus, ServiceTransport, ServiceVersionCache,
+};
 
 #[derive(Clone)]
 pub struct McpServerManager {
@@ -49,12 +23,6 @@ pub struct McpServerManager {
     startup_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     pub version_cache: Arc<RwLock<HashMap<String, ServiceVersionCache>>>,
     loading_lock: Arc<Mutex<bool>>, // Prevent concurrent loading
-}
-
-#[derive(Clone)]
-pub struct ServiceVersionCache {
-    pub version: Option<String>,
-    // last_updated field removed as it was never read
 }
 
 impl McpServerManager {
@@ -149,6 +117,10 @@ impl McpServerManager {
                     } else {
                         tracing::warn!("Service {} is unhealthy", service_name);
                         tracing::debug!("Service {} health check failed", service_name);
+
+                        // Record the health check failure as connection error
+                        let error_message = format!("Service {} health check failed", service_name);
+                        MCP_CLIENT_MANAGER.set_connection_error(&service_name, error_message).await;
                     }
                 }
 
@@ -269,26 +241,61 @@ impl McpServerManager {
         Ok(())
     }
 
-    pub async fn remove_mcp_server(&self, name: &str) -> Result<()> {
+    pub async fn update_mcp_server(&self, service_config: McpServerConfig) -> Result<()> {
         let mut services = self.mcp_servers.write().await;
 
-        if !services.contains_key(name) {
+        // Check if service exists
+        if !services.contains_key(&service_config.name) {
+            return Err(McpError::ServiceNotFound(service_config.name.clone()));
+        }
+
+        let service_name = service_config.name.clone();
+        let is_enabled = service_config.enabled;
+
+        // Convert config to database row and update in database
+        let server_row = self.config_to_db_row(&service_config)?;
+        McpServerRepository::update(&service_name, server_row).await?;
+
+        // Update in-memory configuration
+        services.insert(service_config.name.clone(), service_config.clone());
+        drop(services);
+
+        tracing::info!("Service '{}' updated successfully", service_name);
+
+        // 如果服务已启用，在后台获取工具清单
+        if is_enabled {
+            tracing::info!(
+                "Updated service is enabled, fetching tools in background: {}",
+                service_name
+            );
+            self.background_fetch_service_tools(service_name, service_config);
+        }
+
+        Ok(())
+    }
+
+    pub async fn remove_mcp_server(&self, name: &str) -> Result<()> {
+        // First, try to delete from database regardless of cache state
+        let deleted = McpServerRepository::delete(name).await?;
+
+        if !deleted {
             return Err(McpError::ServiceNotFound(name.to_string()));
         }
 
-        services.remove(name);
-
-        // Delete from database (cascade delete will handle related tools)
-        McpServerRepository::delete(name).await?;
-
-        // 记录日志
-        tracing::info!("Service removed: {}", name);
+        // Remove from memory cache if it exists
+        {
+            let mut services = self.mcp_servers.write().await;
+            services.remove(name);
+        }
 
         // 清理内存中的版本缓存
         {
             let mut version_cache = self.version_cache.write().await;
             version_cache.remove(name);
         }
+
+        // 记录日志
+        tracing::info!("Service removed: {}", name);
 
         Ok(())
     }
@@ -360,7 +367,24 @@ impl McpServerManager {
                         }
                         Err(e) => {
                             tracing::warn!("Service {} check failed: {}", name_clone, e);
-                            // Service failed to start, don't update the database
+                            // Service failed to start, but update database to enabled=true
+                            // so the UI can show "failed" status instead of "disconnected"
+                            McpServerRepository::toggle_enabled(name, true).await?;
+
+                            // Update the in-memory cache to reflect the new state
+                            {
+                                let mut services = manager.mcp_servers.write().await;
+                                if let Some(service) = services.get_mut(name) {
+                                    service.enabled = true;
+                                    tracing::info!("Updated cache: service {} enabled={}", name, service.enabled);
+                                }
+                            }
+
+                            // Set connection error so get_connection_status returns the error message
+                            // Return the raw error message without wrapping
+                            let error_message = e.to_string();
+                            MCP_CLIENT_MANAGER.set_connection_error(&name_clone, error_message).await;
+
                             return Err(e);
                         }
                     }
@@ -368,6 +392,15 @@ impl McpServerManager {
 
                 // Service successfully connected, now update the database
                 McpServerRepository::toggle_enabled(name, true).await?;
+
+                // Update the in-memory cache to reflect the new state
+                {
+                    let mut services = manager.mcp_servers.write().await;
+                    if let Some(service) = services.get_mut(name) {
+                        service.enabled = true;
+                        tracing::info!("Updated cache: service {} enabled={}", name, service.enabled);
+                    }
+                }
 
                 // Kick off background tool refresh and DB sync
                 manager.background_fetch_service_tools(name_clone, service_config_clone);
@@ -377,8 +410,37 @@ impl McpServerManager {
                 // Trying to disable the service - always succeed, just update database
                 McpServerRepository::toggle_enabled(name, false).await?;
 
-                // Wait for service to disconnect
-                let max_wait_time = std::time::Duration::from_secs(5);
+                // Update the in-memory cache to reflect the new state
+                {
+                    let mut services = self.mcp_servers.write().await;
+                    if let Some(service) = services.get_mut(name) {
+                        service.enabled = false;
+                        tracing::info!("Updated cache: service {} enabled={}", name, service.enabled);
+                    }
+                }
+
+                // Try to disconnect all active connections for this service
+                let connections = MCP_CLIENT_MANAGER.get_connections().await;
+                let mut disconnected_count = 0;
+
+                for connection in connections {
+                    // Check if this connection belongs to the service being disabled
+                    // Service IDs can be either "name" or "name_transport" format
+                    if connection.service_id == name || connection.service_id.starts_with(&format!("{}_", name)) {
+                        tracing::debug!("Disconnecting connection {} for service {}", connection.service_id, name);
+
+                        if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(&connection.service_id).await {
+                            tracing::warn!("Failed to disconnect connection {}: {}", connection.service_id, e);
+                        } else {
+                            disconnected_count += 1;
+                        }
+                    }
+                }
+
+                tracing::info!("Disconnected {} connections for service {}", disconnected_count, name);
+
+                // Wait a short time for disconnection to complete (reduced from 5s to 1s)
+                let max_wait_time = std::time::Duration::from_secs(1);
                 let start_time = std::time::Instant::now();
 
                 while start_time.elapsed() < max_wait_time {
@@ -387,11 +449,11 @@ impl McpServerManager {
                         tracing::debug!("Service {} has disconnected", name);
                         break;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
 
                 if start_time.elapsed() >= max_wait_time {
-                    tracing::warn!("Service {} did not disconnect within timeout", name);
+                    tracing::warn!("Service {} did not disconnect within timeout, but service has been disabled", name);
                 }
 
                 Ok(false)
@@ -427,17 +489,12 @@ impl McpServerManager {
             // Service is enabled, check actual connection status
             match status.as_str() {
                 "connected" => "connected".to_string(),
-                "disconnected" => {
-                    // For enabled services, check if we have a cached version to determine if it was ever connected
-                    if version_from_cache.is_some() {
-                        // Service was connected before but is now disconnected
-                        "connecterror".to_string()
-                    } else {
-                        // Service was never connected, it's just in disconnected state
-                        "disconnected".to_string()
-                    }
-                },
-                _ => status
+                // For enabled services that are not connected, they should be marked as "failed"
+                // This includes:
+                // - Services that were enabled but connection failed
+                // - Services that were connected but now disconnected
+                // - Services that have error messages
+                _ => "failed".to_string(),
             }
         };
 
@@ -501,25 +558,23 @@ impl McpServerManager {
                     version: status.version,
                     error_message: status.error_message,
                     transport: match config.transport {
-                        crate::config::ServiceTransport::Stdio => "stdio".to_string(),
-                        crate::config::ServiceTransport::Sse => "sse".to_string(),
-                        crate::config::ServiceTransport::StreamableHttp => {
-                            "streamablehttp".to_string()
-                        }
+                        ServiceTransport::Stdio => "stdio".to_string(),
+                        ServiceTransport::Sse => "sse".to_string(),
+                        ServiceTransport::Http => "http".to_string(),
                     },
                     url: config.url.clone(),
                     description: config.description.clone(),
                     env_vars: config.env_vars.clone(),
                     headers: config.headers.clone(),
                     command: match config.transport {
-                        crate::config::ServiceTransport::Stdio => config.command.clone(),
+                        ServiceTransport::Stdio => config.command.clone(),
                         _ => None,
                     },
                     args: match config.transport {
-                        crate::config::ServiceTransport::Stdio => config.args.clone(),
+                        ServiceTransport::Stdio => config.args.clone(),
                         _ => None,
                     },
-                    tool_count: tool_count,
+                    tool_count,
                 };
                 server_infos.push(server_info);
             }
@@ -566,6 +621,10 @@ impl McpServerManager {
                         service_name,
                         e
                     );
+
+                    // Record the connection error when background fetch fails
+                    let error_message = format!("Failed to fetch tools: {}", e);
+                    MCP_CLIENT_MANAGER.set_connection_error(&service_name, error_message).await;
                 }
             }
         });
@@ -589,6 +648,11 @@ impl McpServerManager {
             Ok(conn) => conn,
             Err(e) => {
                 tracing::warn!("Failed to connect to service {}: {}", service_name, e);
+
+                // Record connection error for display in UI
+                let error_message = format!("Failed to connect: {}", e);
+                MCP_CLIENT_MANAGER.set_connection_error(service_name, error_message).await;
+
                 return Err(e);
             }
         };
@@ -617,6 +681,11 @@ impl McpServerManager {
             Ok(tools) => tools,
             Err(e) => {
                 tracing::warn!("Failed to list tools for service {}: {}", service_name, e);
+
+                // Record error when failing to list tools
+                let error_message = format!("Failed to list tools: {}", e);
+                MCP_CLIENT_MANAGER.set_connection_error(service_name, error_message).await;
+
                 return Err(e);
             }
         };
@@ -768,12 +837,10 @@ impl McpServerManager {
 
     /// Convert database row to config
     fn db_row_to_config(&self, row: &McpServerRow) -> Result<McpServerConfig> {
-        use crate::config::ServiceTransport;
-
         let transport = match row.transport.to_lowercase().as_str() {
             "stdio" => ServiceTransport::Stdio,
             "sse" => ServiceTransport::Sse,
-            "streamablehttp" => ServiceTransport::StreamableHttp,
+            "http" => ServiceTransport::Http,
             _ => {
                 return Err(McpError::ConfigError(format!(
                     "Invalid transport: {}",
@@ -799,9 +866,9 @@ impl McpServerManager {
     /// Convert config to database row
     fn config_to_db_row(&self, config: &McpServerConfig) -> Result<McpServerRow> {
         let transport = match config.transport {
-            crate::config::ServiceTransport::Stdio => "stdio",
-            crate::config::ServiceTransport::Sse => "sse",
-            crate::config::ServiceTransport::StreamableHttp => "streamablehttp",
+            ServiceTransport::Stdio => "stdio",
+            ServiceTransport::Sse => "sse",
+            ServiceTransport::Http => "http",
         };
 
         Ok(McpServerRow {

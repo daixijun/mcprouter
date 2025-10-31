@@ -6,19 +6,23 @@ export class ToolService {
     return invoke('list_tools')
   }
 
-  static async toggleTool(id: string, enabled: boolean): Promise<string> {
-    return invoke('toggle_tool', { id, enabled })
+  static async toggleMcpServerTool(
+    serverName: string,
+    toolName: string,
+    enabled: boolean
+  ): Promise<string> {
+    return invoke('toggle_mcp_server_tool', { name: serverName, tool_name: toolName, enabled })
   }
 
-  static async getToolsByServer(serverName: string): Promise<Tool[]> {
+  static async listMcpServerTools(serverName: string): Promise<Tool[]> {
     return invoke('list_mcp_server_tools', { connection_id: serverName })
   }
 
-  static async enableAllTools(serverName: string): Promise<string> {
+  static async enableAllMcpServerTools(serverName: string): Promise<string> {
     return invoke('enable_all_mcp_server_tools', { name: serverName })
   }
 
-  static async disableAllTools(serverName: string): Promise<string> {
+  static async disableAllMcpServerTools(serverName: string): Promise<string> {
     return invoke('disable_all_mcp_server_tools', { name: serverName })
   }
 }

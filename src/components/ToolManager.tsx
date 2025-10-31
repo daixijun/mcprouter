@@ -1,6 +1,16 @@
-import { Button, Card, Flex, Space, Switch, Typography, App } from 'antd'
-import { CheckSquare, Square } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import {
+  App,
+  Button,
+  Card,
+  Checkbox,
+  Flex,
+  Input,
+  Space,
+  Switch,
+  Typography,
+} from 'antd'
+import { CheckSquare, Search, Square } from 'lucide-react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ToolService } from '../services/tool-service'
 import type { McpServerInfo, Tool } from '../types'
 
@@ -15,16 +25,21 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   const [tools, setTools] = useState<Tool[]>([])
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadTools()
+    // 重置搜索查询和选中状态当服务器切换时
+    setSearchQuery('')
+    setSelectedTools(new Set())
   }, [mcpServer.name])
 
   const loadTools = async () => {
     setLoading(true)
     try {
       // 直接从数据库获取工具列表（无需连接服务）
-      const serverTools = await ToolService.getToolsByServer(mcpServer.name)
+      const serverTools = await ToolService.listMcpServerTools(mcpServer.name)
       setTools(serverTools)
     } catch (error) {
       console.error('Failed to load tools:', error)
@@ -34,21 +49,153 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     }
   }
 
-  const handleToggleTool = async (toolName: string, enabled: boolean) => {
-    setUpdating(toolName)
-    try {
-      const tool = tools.find((t) => t.name === toolName)
-      if (!tool) {
-        message.error('未找到对应工具')
-        return
-      }
-      await ToolService.toggleTool(tool.id, enabled)
-      message.success(`工具已${enabled ? '启用' : '禁用'}`)
+  // 过滤工具列表
+  const filteredTools = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return tools
+    }
 
-      // 重新加载工具以获取最新状态
-      await loadTools()
+    const query = searchQuery.toLowerCase().trim()
+    return tools.filter(
+      (tool) =>
+        tool.name.toLowerCase().includes(query) ||
+        (tool.description && tool.description.toLowerCase().includes(query)),
+    )
+  }, [tools, searchQuery])
+
+  // 清理无效的选中项（当搜索或工具列表变化时）
+  useEffect(() => {
+    const validToolNames = new Set(filteredTools.map((tool) => tool.name))
+    setSelectedTools((prev) => {
+      const newSet = new Set<string>()
+      prev.forEach((name) => {
+        if (validToolNames.has(name)) {
+          newSet.add(name)
+        }
+      })
+      return newSet
+    })
+  }, [filteredTools])
+
+  // 检查是否全选
+  const isAllSelected =
+    filteredTools.length > 0 && selectedTools.size === filteredTools.length
+  // 检查是否部分选中
+  const isIndeterminate =
+    selectedTools.size > 0 && selectedTools.size < filteredTools.length
+
+  // 全选/反选
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedTools(new Set(filteredTools.map((tool) => tool.name)))
+    } else {
+      setSelectedTools(new Set())
+    }
+  }
+
+  // 单个选择
+  const handleSelectTool = (toolName: string, checked: boolean) => {
+    setSelectedTools((prev) => {
+      const newSet = new Set(prev)
+      if (checked) {
+        newSet.add(toolName)
+      } else {
+        newSet.delete(toolName)
+      }
+      return newSet
+    })
+  }
+
+  // 批量启用
+  const handleBatchEnable = async () => {
+    if (selectedTools.size === 0) {
+      message.warning('请先选择要启用的工具')
+      return
+    }
+
+    const originalTools = [...tools]
+    setUpdating('batch-enable')
+
+    // 乐观更新
+    const updatedTools = tools.map((tool) =>
+      selectedTools.has(tool.name) ? { ...tool, enabled: true } : tool,
+    )
+    setTools(updatedTools)
+
+    try {
+      // 逐个启用选中的工具
+      const promises = Array.from(selectedTools).map((toolName) =>
+        ToolService.toggleMcpServerTool(mcpServer.name, toolName, true),
+      )
+      await Promise.all(promises)
+      message.success(`已启用 ${selectedTools.size} 个工具`)
+      setSelectedTools(new Set())
+    } catch (error) {
+      console.error('Failed to enable tools:', error)
+      setTools(originalTools)
+      message.error('批量启用工具失败')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  // 批量禁用
+  const handleBatchDisable = async () => {
+    if (selectedTools.size === 0) {
+      message.warning('请先选择要禁用的工具')
+      return
+    }
+
+    const originalTools = [...tools]
+    setUpdating('batch-disable')
+
+    // 乐观更新
+    const updatedTools = tools.map((tool) =>
+      selectedTools.has(tool.name) ? { ...tool, enabled: false } : tool,
+    )
+    setTools(updatedTools)
+
+    try {
+      // 逐个禁用选中的工具
+      const promises = Array.from(selectedTools).map((toolName) =>
+        ToolService.toggleMcpServerTool(mcpServer.name, toolName, false),
+      )
+      await Promise.all(promises)
+      message.success(`已禁用 ${selectedTools.size} 个工具`)
+      setSelectedTools(new Set())
+    } catch (error) {
+      console.error('Failed to disable tools:', error)
+      setTools(originalTools)
+      message.error('批量禁用工具失败')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const handleToggleTool = async (toolName: string, enabled: boolean) => {
+    // 记录更新前的状态，以便在失败时回滚
+    const originalTools = [...tools]
+    const toolIndex = tools.findIndex((t) => t.name === toolName)
+
+    if (toolIndex === -1) {
+      message.error('未找到对应工具')
+      return
+    }
+
+    setUpdating(toolName)
+    setTools((prevTools) =>
+      prevTools.map((tool) =>
+        tool.name === toolName ? { ...tool, enabled } : tool,
+      ),
+    )
+
+    try {
+      await ToolService.toggleMcpServerTool(mcpServer.name, toolName, enabled)
+      message.success(`工具已${enabled ? '启用' : '禁用'}`)
     } catch (error) {
       console.error('Failed to toggle tool:', error)
+      // 回滚到原始状态
+      setTools(originalTools)
       message.error('切换工具状态失败')
     } finally {
       setUpdating(null)
@@ -56,13 +203,18 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   }
 
   const handleEnableAll = async () => {
+    const originalTools = [...tools]
+    const enabledTools = tools.map((tool) => ({ ...tool, enabled: true }))
+
     setUpdating('all')
+    setTools(enabledTools)
+
     try {
-      await ToolService.enableAllTools(mcpServer.name)
+      await ToolService.enableAllMcpServerTools(mcpServer.name)
       message.success('已启用所有工具')
-      await loadTools()
     } catch (error) {
       console.error('Failed to enable all tools:', error)
+      setTools(originalTools)
       message.error('启用所有工具失败')
     } finally {
       setUpdating(null)
@@ -70,13 +222,18 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   }
 
   const handleDisableAll = async () => {
+    const originalTools = [...tools]
+    const disabledTools = tools.map((tool) => ({ ...tool, enabled: false }))
+
     setUpdating('all')
+    setTools(disabledTools)
+
     try {
-      await ToolService.disableAllTools(mcpServer.name)
+      await ToolService.disableAllMcpServerTools(mcpServer.name)
       message.success('已禁用所有工具')
-      await loadTools()
     } catch (error) {
       console.error('Failed to disable all tools:', error)
+      setTools(originalTools)
       message.error('禁用所有工具失败')
     } finally {
       setUpdating(null)
@@ -91,7 +248,14 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     )
   }
 
-  if (tools.length === 0) {
+  const displayToolsCount = filteredTools.length
+  const totalToolsCount = tools.length
+
+  // 统计启用的和禁用的工具数量
+  const enabledToolsCount = filteredTools.filter((tool) => tool.enabled).length
+  const disabledToolsCount = displayToolsCount - enabledToolsCount
+
+  if (totalToolsCount === 0) {
     return (
       <Card>
         <Flex justify='center' align='center' style={{ height: '128px' }}>
@@ -101,64 +265,156 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     )
   }
 
-  return (
-    <Flex vertical gap='middle'>
-      {/* Header with batch operations */}
-      <Flex justify='space-between' align='center'>
-        <Text strong>工具管理 ({tools.length} 个工具)</Text>
-        <Space>
-          <Button
-            onClick={handleEnableAll}
-            loading={updating === 'all'}
-            size='small'
-            icon={<CheckSquare size={14} />}
-            disabled={tools.every((tool) => tool.enabled)}>
-            全部启用
-          </Button>
-          <Button
-            onClick={handleDisableAll}
-            loading={updating === 'all'}
-            size='small'
-            icon={<Square size={14} />}
-            disabled={tools.every((tool) => !tool.enabled)}>
-            全部禁用
-          </Button>
-        </Space>
-      </Flex>
 
-      {/* Tool List */}
-      <Flex vertical gap='small'>
-        {tools.map((tool) => (
-          <Card key={tool.name} size='small'>
-            <Flex justify='space-between' align='center'>
-              <div style={{ flex: 1, minWidth: 0, marginRight: '16px' }}>
-                <Text
-                  strong
-                  style={{
-                    fontSize: '14px',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}>
-                  {tool.name}
-                </Text>
-                {tool.description && (
-                  <Text style={{ fontSize: '12px', display: 'block' }}>
-                    {tool.description}
-                  </Text>
-                )}
-              </div>
-              <Switch
-                checked={tool.enabled}
-                onChange={(checked) => handleToggleTool(tool.name, checked)}
-                loading={updating === tool.name}
-                checkedChildren='启用'
-                unCheckedChildren='禁用'
+  return (
+    <Flex
+      vertical
+      gap='middle'
+      style={{ height: '100%', position: 'relative' }}>
+      {/* Sticky Header with search and batch operations */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          backgroundColor: '#ffffff',
+          padding: '16px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+        }}>
+        <Flex vertical gap='small'>
+          <Flex justify='space-between' align='center' wrap='wrap'>
+            <Text strong>
+              工具清单 ( 启用:{' '}
+              <span style={{ color: '#52c41a', fontWeight: 'bold' }}>
+                {enabledToolsCount}
+              </span>{' '}
+              | 禁用:{' '}
+              <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
+                {disabledToolsCount}
+              </span>{' '}
+              |{' '}
+              {totalToolsCount !== displayToolsCount
+                ? `符合条件: ${displayToolsCount}/${totalToolsCount}`
+                : `总计: ${totalToolsCount}`}
+              )
+            </Text>
+            <Space wrap>
+              <Button
+                onClick={handleEnableAll}
+                loading={updating === 'all'}
                 size='small'
-              />
-            </Flex>
-          </Card>
-        ))}
-      </Flex>
+                icon={<CheckSquare size={14} />}
+                disabled={
+                  filteredTools.length === 0 ||
+                  filteredTools.every((tool) => tool.enabled)
+                }>
+                全部启用
+              </Button>
+              <Button
+                onClick={handleDisableAll}
+                loading={updating === 'all'}
+                size='small'
+                icon={<Square size={14} />}
+                disabled={
+                  filteredTools.length === 0 ||
+                  filteredTools.every((tool) => !tool.enabled)
+                }>
+                全部禁用
+              </Button>
+              <Button
+                onClick={handleBatchEnable}
+                loading={updating === 'batch-enable'}
+                size='small'
+                type='primary'
+                disabled={selectedTools.size === 0}>
+                启用选中 ({selectedTools.size})
+              </Button>
+              <Button
+                onClick={handleBatchDisable}
+                loading={updating === 'batch-disable'}
+                size='small'
+                danger
+                disabled={selectedTools.size === 0}>
+                禁用选中 ({selectedTools.size})
+              </Button>
+            </Space>
+          </Flex>
+          <Input
+            placeholder='搜索工具名称或描述...'
+            prefix={<Search size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            allowClear
+            size='small'
+          />
+          {/* 全选复选框 - 移到粘性头部 */}
+          {filteredTools.length > 0 && (
+            <Checkbox
+              checked={isAllSelected}
+              indeterminate={isIndeterminate}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+              style={{ fontWeight: 500 }}>
+              全选 ({selectedTools.size} / {filteredTools.length})
+            </Checkbox>
+          )}
+        </Flex>
+      </div>
+
+      {/* Scrollable Tool List */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {displayToolsCount === 0 ? (
+          <Flex justify='center' align='center' style={{ height: '256px' }}>
+            <Text className='text-gray-500'>
+              {searchQuery.trim() ? '未找到匹配的工具' : '该服务暂无可用工具'}
+            </Text>
+          </Flex>
+        ) : (
+          <Flex vertical gap='small'>
+            {filteredTools.map((tool) => (
+              <Card key={tool.name} size='small'>
+                <Flex justify='space-between' align='center'>
+                  <Flex
+                    align='center'
+                    gap='small'
+                    style={{ flex: 1, minWidth: 0 }}>
+                    <Checkbox
+                      checked={selectedTools.has(tool.name)}
+                      onChange={(e) =>
+                        handleSelectTool(tool.name, e.target.checked)
+                      }
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        strong
+                        style={{
+                          fontSize: '14px',
+                          display: 'block',
+                          marginBottom: '4px',
+                        }}>
+                        {tool.name}
+                      </Text>
+                      {tool.description && (
+                        <Text style={{ fontSize: '12px', display: 'block' }}>
+                          {tool.description}
+                        </Text>
+                      )}
+                    </div>
+                  </Flex>
+                  <Switch
+                    checked={tool.enabled}
+                    onChange={(checked) => handleToggleTool(tool.name, checked)}
+                    loading={updating === tool.name}
+                    checkedChildren='启用'
+                    unCheckedChildren='禁用'
+                    size='small'
+                  />
+                </Flex>
+              </Card>
+            ))}
+          </Flex>
+        )}
+      </div>
     </Flex>
   )
 }

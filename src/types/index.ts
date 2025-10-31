@@ -3,7 +3,7 @@ export interface McpServerConfig {
   description?: string
   command?: string
   args?: string[]
-  transport: 'stdio' | 'sse' | 'streamablehttp'
+  transport: 'stdio' | 'sse' | 'http'
   url?: string
   enabled: boolean
   env_vars?: Record<string, string>
@@ -14,7 +14,7 @@ export interface McpServerConfig {
 export interface ServiceStatus {
   name: string
   enabled: boolean
-  status: 'connecting' | 'connected' | 'disconnected' | 'connecterror'
+  status: 'connecting' | 'connected' | 'disconnected' | 'failed'
   version?: string
   start_time?: string
   last_error?: string
@@ -24,11 +24,11 @@ export interface ServiceStatus {
 export interface McpServerInfo {
   name: string
   enabled: boolean
-  status: 'connecting' | 'connected' | 'disconnected' | 'connecterror'
+  status: 'connecting' | 'connected' | 'disconnected' | 'failed'
   version?: string
   last_error?: string
   error_message?: string
-  transport: 'stdio' | 'sse' | 'streamablehttp'
+  transport: 'stdio' | 'sse' | 'http'
   url?: string
   description?: string
   env_vars?: Record<string, string>
@@ -54,7 +54,7 @@ export interface McpServer {
   description?: string
   command: string
   args: string[]
-  transport: 'stdio' | 'sse' | 'streamablehttp'
+  transport: 'stdio' | 'sse' | 'http'
   url?: string
   status: 'running' | 'stopped' | 'starting' | 'stopping' | 'error'
   enabled: boolean
@@ -76,7 +76,7 @@ export interface MarketplaceServiceListItem {
   tags: string[]
   downloads: number
   github_stars?: number
-  transport: 'stdio' | 'sse' | 'streamablehttp'
+  transport: 'stdio' | 'sse' | 'http'
   category: string
   last_updated: string
   platform: string
@@ -183,6 +183,17 @@ export interface ApiKey {
   updated_at: string
   permissions?: ApiKeyPermissions
   tool_count?: number // Number of authorized tools
+}
+
+export interface ApiKeyListItem {
+  id: string
+  name: string
+  key: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+  authorized_server_count: number
+  authorized_tool_count: number
 }
 
 export interface SystemSettings {

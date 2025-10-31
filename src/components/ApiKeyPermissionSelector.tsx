@@ -71,7 +71,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
 
     setLoadingTools((prev) => new Set(prev).add(serverName))
     try {
-      const tools = await ToolService.getToolsByServer(serverName)
+      const tools = await ToolService.listMcpServerTools(serverName)
       setServerTools((prev) => ({ ...prev, [serverName]: tools }))
     } catch (error) {
       console.error(`Failed to load tools for ${serverName}:`, error)
@@ -134,16 +134,18 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
           const newAuthorized = new Set(authorizedToolIds)
           tools.forEach((tool) => newAuthorized.delete(tool.id))
           setAuthorizedToolIds(newAuthorized)
+          message.success(`已取消 ${serverName} 的所有工具授权`)
         } else {
           // Grant all tools from this server
           await ApiKeyService.grantServerToolsToApiKey(apiKeyId, serverName)
           // Add tools to authorized set
           const tools =
             serverTools[serverName] ||
-            (await ToolService.getToolsByServer(serverName))
+            (await ToolService.listMcpServerTools(serverName))
           const newAuthorized = new Set(authorizedToolIds)
           tools.forEach((tool) => newAuthorized.add(tool.id))
           setAuthorizedToolIds(newAuthorized)
+          message.success(`已授权 ${serverName} 的所有工具`)
         }
       } catch (error) {
         console.error('Failed to toggle server tools:', error)
@@ -166,6 +168,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
         const newAuthorized = new Set(authorizedToolIds)
         newAuthorized.delete(tool.id)
         setAuthorizedToolIds(newAuthorized)
+        message.success(`工具 "${tool.name}" 权限已移除`)
 
         // Check if we should remove server from allowed_servers
         const remainingTools = (serverTools[serverName] || []).filter(
@@ -185,6 +188,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
         const newAuthorized = new Set(authorizedToolIds)
         newAuthorized.add(tool.id)
         setAuthorizedToolIds(newAuthorized)
+        message.success(`工具 "${tool.name}" 权限已添加`)
 
         // Ensure server is in allowed_servers
         if (!isServerSelected(serverName)) {
@@ -195,7 +199,6 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
           })
         }
       }
-      message.success(isAuthorized ? '工具权限已移除' : '工具权限已添加')
     } catch (error) {
       console.error('Failed to toggle tool permission:', error)
       message.error('更新工具权限失败')
@@ -220,7 +223,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
       const toolPromises = allServerNames.map((name) =>
         serverTools[name]
           ? Promise.resolve(serverTools[name])
-          : ToolService.getToolsByServer(name),
+          : ToolService.listMcpServerTools(name),
       )
       const allToolsArrays = await Promise.all(toolPromises)
 
@@ -294,7 +297,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
       const toolPromises = allServerNames.map((name) =>
         serverTools[name]
           ? Promise.resolve(serverTools[name])
-          : ToolService.getToolsByServer(name),
+          : ToolService.listMcpServerTools(name),
       )
       const allToolsArrays = await Promise.all(toolPromises)
 
@@ -371,7 +374,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
       // Load tools if not already loaded
       const tools =
         serverTools[serverName] ||
-        (await ToolService.getToolsByServer(serverName))
+        (await ToolService.listMcpServerTools(serverName))
 
       // Update server tools cache
       if (!serverTools[serverName]) {
@@ -409,7 +412,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
       // Load tools if not already loaded
       const tools =
         serverTools[serverName] ||
-        (await ToolService.getToolsByServer(serverName))
+        (await ToolService.listMcpServerTools(serverName))
 
       // Update server tools cache
       if (!serverTools[serverName]) {
@@ -480,7 +483,7 @@ const ApiKeyPermissionSelector: React.FC<Props> = ({
       // Load tools if not already loaded
       const tools =
         serverTools[serverName] ||
-        (await ToolService.getToolsByServer(serverName))
+        (await ToolService.listMcpServerTools(serverName))
 
       // Update server tools cache
       if (!serverTools[serverName]) {

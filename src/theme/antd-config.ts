@@ -72,6 +72,11 @@ export const lightTheme: ThemeConfig = {
     Modal: {
       borderRadiusLG: 12,
     },
+    Switch: {
+      colorPrimary: '#10B981',        // 开启状态：绿色
+      colorText: '#ffffff',           // 开启状态文字：白色
+      colorBorder: '#d1d5db',         // 边框颜色
+    },
   },
 }
 
@@ -147,6 +152,11 @@ export const darkTheme: ThemeConfig = {
     Modal: {
       borderRadiusLG: 12,
       titleColor: '#ffffff', // 暗黑模式下标题使用白色
+    },
+    Switch: {
+      colorPrimary: '#10B981',        // 开启状态：绿色
+      colorText: '#ffffff',           // 开启状态文字：白色
+      colorBorder: '#374151',         // 边框颜色（暗色）
     },
   },
 }

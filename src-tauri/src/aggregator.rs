@@ -1,6 +1,6 @@
-use crate::config::ApiKeyPermissions;
 use crate::error::{McpError, Result};
 use crate::mcp_manager::{McpServerInfo, McpServerManager};
+use crate::types::{ApiKeyPermissions, ServiceTransport};
 use axum::{
     extract::Request,
     http::{HeaderMap, StatusCode},
@@ -67,7 +67,7 @@ static SESSION_PERMISSIONS: std::sync::LazyLock<Arc<RwLock<HashMap<String, Sessi
 // Thread-local storage for current session ID (this works because we set it in middleware
 // and read it in handler within the same async task chain)
 thread_local! {
-    static CURRENT_SESSION_ID: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+    static CURRENT_SESSION_ID: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 #[derive(Clone)]
@@ -91,7 +91,7 @@ struct ManagedConnection {
 impl McpAggregator {
     pub fn new(
         mcp_server_manager: Arc<McpServerManager>,
-        _config: crate::config::ServerConfig, // Note: config parameter kept for compatibility but no longer stored
+        _config: crate::types::ServerConfig, // Note: config parameter kept for compatibility but no longer stored
     ) -> Self {
         Self {
             mcp_server_manager,
@@ -107,10 +107,6 @@ impl McpAggregator {
         let addr = format!(
             "{}:{}",
             current_config.server.host, current_config.server.port
-        );
-        tracing::info!(
-            "Aggregator starting on address: {} (from latest config)",
-            addr
         );
 
         // Create shutdown channel
@@ -262,16 +258,12 @@ impl McpAggregator {
         // Create new connection based on transport type
         let service =
             match service_config.transport {
-                crate::config::ServiceTransport::StreamableHttp => {
+                ServiceTransport::Http => {
                     let url = service_config.url.as_ref().ok_or_else(|| {
                         McpError::InvalidConfiguration("URL required".to_string())
                     })?;
 
-                    tracing::info!(
-                        "Creating StreamableHttp connection to {} at {}",
-                        service_name,
-                        url
-                    );
+                    tracing::info!("Creating Http connection to {} at {}", service_name, url);
 
                     let transport = StreamableHttpClientTransport::from_uri(url.as_str());
                     let client_info = ClientInfo::default();
@@ -282,7 +274,7 @@ impl McpAggregator {
 
                     Arc::new(service) as Arc<dyn std::any::Any + Send + Sync>
                 }
-                crate::config::ServiceTransport::Sse => {
+                ServiceTransport::Sse => {
                     let url = service_config.url.as_ref().ok_or_else(|| {
                         McpError::InvalidConfiguration("URL required".to_string())
                     })?;
@@ -300,7 +292,7 @@ impl McpAggregator {
 
                     Arc::new(service) as Arc<dyn std::any::Any + Send + Sync>
                 }
-                crate::config::ServiceTransport::Stdio => {
+                ServiceTransport::Stdio => {
                     let command_str = service_config.command.as_ref().ok_or_else(|| {
                         McpError::InvalidConfiguration("STDIO service requires command".to_string())
                     })?;
@@ -996,7 +988,7 @@ async fn api_key_auth_middleware(
     use crate::db::repositories::mcp_server_repository::McpServerRepository;
 
     // Read global auth switch from configuration
-    let global_auth_required = match crate::config::AppConfig::load() {
+    let global_auth_required = match crate::types::AppConfig::load() {
         Ok(cfg) => cfg.security.as_ref().map(|s| s.auth).unwrap_or(true),
         Err(e) => {
             tracing::error!("Failed to load config for auth check: {}", e);
@@ -1031,11 +1023,7 @@ async fn api_key_auth_middleware(
     let api_key = match auth_header {
         Some(auth) => {
             // Support both "Bearer sk-..." and "sk-..." formats
-            if auth.starts_with("Bearer ") {
-                &auth[7..]
-            } else {
-                auth
-            }
+            auth.strip_prefix("Bearer ").unwrap_or(auth)
         }
         None => {
             tracing::warn!("API key authentication failed: no Authorization header");
@@ -1097,7 +1085,7 @@ async fn api_key_auth_middleware(
     }
 
     // Create permissions object for compatibility
-    let permissions = crate::config::ApiKeyPermissions {
+    let permissions = ApiKeyPermissions {
         allowed_servers: allowed_server_names.clone(),
         allowed_tools: tool_ids.clone(),
     };

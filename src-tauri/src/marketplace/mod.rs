@@ -1,5 +1,5 @@
 use crate::error::{McpError, Result};
-use crate::{MarketplaceService, MarketplaceServiceListItem};
+use crate::types::{MarketplaceService, MarketplaceServiceListItem};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

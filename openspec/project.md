@@ -19,7 +19,7 @@ MCPRouter 是一个现代化的 MCP (Model Context Protocol) 路由器，提供�
 - **语言规范**：所有的回复、任务清单、代码注释都应该使用中文
 - **服务器启动限制**：如果没有明确指定，不要运行 `pnpm tauri dev`、`pnpm tauri build`、`pnpm dev`、`pnpm preview` 等命令启动开发服务器、预览环境或编译
 - **前端检查**：前端变更后应该使用 `npx tsc --noEmit` 命令进行类型检查
-- **后端检查**：后端变更后应该使用 `cargo check` 命令进行检查
+- **后端检查**：后端变更后应该使用 `cargo clippy` 命令进行检查
 - **IDE 诊断**：如果连接了 IDE，每次任务结束之前都应该检查 IDE 中是否还存在 ISSUE 并修复
 - **代码整洁**：后端代码中不要使用 `#[allow(dead_code)]`、`#[deprecated]` 等属性抑制警告，应该清理未使用的代码块，保持代码整洁
 - **任务细分**：如果改动较多不要一次性操作，应该细分任务一步一步实现，使用 TodoWrite 工具跟踪进度
@@ -102,7 +102,7 @@ function App() {
 
 - `mcp_servers`：MCP 服务器配置及元数据
 - `api_keys`：安全的 API 密钥存储（SHA-256 哈希）
-- `tools`：每个服务器的工具级状态管理
+- `mcp_tools`：每个服务器的工具级状态管理
 - `api_key_server_relations`：权限的多对多关系
 
 ### Git 工作流

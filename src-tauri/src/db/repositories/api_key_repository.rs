@@ -51,10 +51,7 @@ impl ApiKeyRepository {
             .await
             .map_err(McpError::from)?;
 
-        let keys: Result<Vec<_>> = rows
-            .into_iter()
-            .map(|row| Self::row_to_api_key(row))
-            .collect();
+        let keys: Result<Vec<_>> = rows.into_iter().map(Self::row_to_api_key).collect();
 
         let keys = keys?;
         debug!("Retrieved {} API keys", keys.len());
@@ -122,7 +119,6 @@ impl ApiKeyRepository {
             }
         }
     }
-
 
     /// 切换 API 密钥启用状态
     pub async fn toggle_enabled(id: &str, enabled: bool) -> Result<bool> {

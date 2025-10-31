@@ -24,7 +24,9 @@
       "Bash(curl -s \"https://www.modelscope.cn/openapi/v1/mcp/servers/@modelcontextprotocol/fetch\")",
       "Bash(npx tsc:*)",
       "Bash(sed:*)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "mcp__web-search-prime__webSearchPrime",
+      "mcp__fetch__fetch"
     ],
     "deny": [],
     "ask": []

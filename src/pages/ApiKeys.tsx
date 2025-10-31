@@ -1,37 +1,32 @@
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import {
-  Badge,
+  App,
   Button,
-  Card,
   Flex,
   Input,
   Modal,
   Popconfirm,
   Space,
+  Switch,
   Table,
+  Tag,
   Typography,
-  App,
 } from 'antd'
 import { Check, Copy, Key, Plus, Trash2 } from 'lucide-react'
 import { memo, useCallback, useEffect, useState } from 'react'
 import ApiKeyPermissionSelector from '../components/ApiKeyPermissionSelector'
 import { useErrorContext } from '../contexts/ErrorContext'
 import { ApiKeyService } from '../services/api-key-service'
-import type { ApiKey, ApiKeyPermissions } from '../types'
+import type { ApiKey, ApiKeyPermissions, ApiKeyListItem } from '../types'
 
 const { Title, Text } = Typography
-
-// 类型定义
-interface ApiKeyWithCount extends ApiKey {
-  tool_count?: number
-}
 
 const ApiKeys: React.FC = memo(() => {
   const { addError } = useErrorContext()
   const { message } = App.useApp()
 
   // State
-  const [apiKeys, setApiKeys] = useState<ApiKeyWithCount[]>([])
+  const [apiKeys, setApiKeys] = useState<ApiKeyListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
@@ -39,6 +34,7 @@ const ApiKeys: React.FC = memo(() => {
   const [selectedApiKey, setSelectedApiKey] = useState<ApiKey | null>(null)
   const [newKeyDetails, setNewKeyDetails] = useState<ApiKey | null>(null)
   const [copied, setCopied] = useState(false)
+  const [togglingKeys, setTogglingKeys] = useState<Set<string>>(new Set())
 
   // Form state for new API key
   const [newKeyName, setNewKeyName] = useState('')
@@ -60,21 +56,7 @@ const ApiKeys: React.FC = memo(() => {
     setLoading(true)
     try {
       const keys = await ApiKeyService.listApiKeys()
-
-      // Load tool counts for each API key
-      const keysWithCounts = await Promise.all(
-        keys.map(async (key) => {
-          try {
-            const toolIds = await ApiKeyService.getApiKeyTools(key.id)
-            return { ...key, tool_count: toolIds.length }
-          } catch (error) {
-            console.error(`Failed to load tool count for key ${key.id}:`, error)
-            return key
-          }
-        }),
-      )
-
-      setApiKeys(keysWithCounts)
+      setApiKeys(keys)
     } catch (error) {
       console.error('Failed to load API keys:', error)
       addError('加载API Key列表失败')
@@ -138,6 +120,8 @@ const ApiKeys: React.FC = memo(() => {
 
   const handleToggleKey = useCallback(
     async (id: string) => {
+      // 添加到加载状态
+      setTogglingKeys((prev) => new Set(prev).add(id))
       try {
         await ApiKeyService.toggleApiKey(id)
         message.success('API Key状态已更新')
@@ -145,6 +129,13 @@ const ApiKeys: React.FC = memo(() => {
       } catch (error) {
         console.error('Failed to toggle API key:', error)
         addError('更新失败')
+      } finally {
+        // 从加载状态中移除
+        setTogglingKeys((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(id)
+          return newSet
+        })
       }
     },
     [loadApiKeys, addError],
@@ -167,22 +158,9 @@ const ApiKeys: React.FC = memo(() => {
     [addError],
   )
 
-  const handleSavePermissions = useCallback(async () => {
-    if (!selectedApiKey) return
-
-    try {
-      await ApiKeyService.updateApiKeyPermissions(
-        selectedApiKey.id,
-        editPermissions,
-      )
-      message.success('权限更新成功')
-      setShowEditModal(false)
-      loadApiKeys()
-    } catch (error) {
-      console.error('Failed to update permissions:', error)
-      addError('更新权限失败')
-    }
-  }, [selectedApiKey, editPermissions, loadApiKeys, addError])
+  const handleCloseEdit = useCallback(() => {
+    setShowEditModal(false)
+  }, [])
 
   const handleDeleteKey = useCallback(async () => {
     if (!selectedApiKey) return
@@ -217,13 +195,12 @@ const ApiKeys: React.FC = memo(() => {
   }
 
   return (
-    <Flex vertical gap='large' style={{ height: '100%', overflowY: 'auto' }}>
-      {/* Header */}
-      <Flex justify='space-between' align='center'>
-        <div>
-          <Title level={2}>API Keys</Title>
-          <Text type='secondary'>管理用于访问MCP Router的API密钥</Text>
-        </div>
+    <Flex
+      vertical
+      gap='large'
+      style={{ height: '100%', overflowY: 'auto', padding: '24px' }}>
+      {/* Create API Key Button */}
+      <Flex justify='flex-end'>
         <Button
           onClick={() => setShowCreateModal(true)}
           icon={<Plus size={16} />}
@@ -233,136 +210,123 @@ const ApiKeys: React.FC = memo(() => {
       </Flex>
 
       {/* API Keys Table */}
-      <Card>
-        {apiKeys.length === 0 ? (
-          <Flex
-            vertical
-            align='center'
-            style={{ textAlign: 'center', padding: '48px 16px' }}>
-            <Key className='w-12 h-12 text-gray-400 mb-2' />
-            <Title level={4} style={{ marginBottom: '4px' }}>
-              暂无API Keys
-            </Title>
-            <Text type='secondary'>
-              点击"创建API Key"按钮添加您的第一个API密钥
-            </Text>
-          </Flex>
-        ) : (
-          <Table
-            dataSource={apiKeys}
-            rowKey='id'
-            pagination={false}
-            columns={[
-              {
-                title: '名称',
-                dataIndex: 'name',
-                key: 'name',
-                render: (text) => <Text strong>{text}</Text>,
+      {apiKeys.length === 0 ? (
+        <Flex
+          vertical
+          align='center'
+          style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <Key className='w-12 h-12 text-gray-400 mb-2' />
+          <Title level={4} style={{ marginBottom: '4px' }}>
+            暂无API Keys
+          </Title>
+          <Text type='secondary'>
+            点击"创建API Key"按钮添加您的第一个API密钥
+          </Text>
+        </Flex>
+      ) : (
+        <Table
+          dataSource={apiKeys}
+          rowKey='id'
+          pagination={false}
+          columns={[
+            {
+              title: '名称',
+              dataIndex: 'name',
+              key: 'name',
+              render: (text) => <Text strong>{text}</Text>,
+            },
+            {
+              title: 'Key',
+              dataIndex: 'key',
+              key: 'key',
+              render: (text) => (
+                <Text code style={{ fontSize: '14px' }}>
+                  {text}
+                </Text>
+              ),
+            },
+            {
+              title: '状态',
+              dataIndex: 'enabled',
+              key: 'enabled',
+              render: (enabled, record) => (
+                <Switch
+                  checked={enabled}
+                  loading={togglingKeys.has(record.id)}
+                  onChange={() => handleToggleKey(record.id)}
+                  checkedChildren='启用'
+                  unCheckedChildren='禁用'
+                  size='small'
+                />
+              ),
+            },
+            {
+              title: '创建时间',
+              dataIndex: 'created_at',
+              key: 'created_at',
+              render: (date) => (
+                <Text type='secondary'>{formatDate(date)}</Text>
+              ),
+            },
+            {
+              title: '授权服务器',
+              key: 'authorized_server_count',
+              render: (_, record) => {
+                const serverCount = record.authorized_server_count
+                return serverCount > 0 ? (
+                  <Tag color='blue'>{serverCount} 个服务器</Tag>
+                ) : (
+                  <Text type='secondary'>0 个服务器</Text>
+                )
               },
-              {
-                title: 'Key',
-                dataIndex: 'key',
-                key: 'key',
-                render: (text) => (
-                  <Text code style={{ fontSize: '14px' }}>
-                    {text}
-                  </Text>
-                ),
+            },
+            {
+              title: '授权工具',
+              key: 'authorized_tool_count',
+              render: (_, record) => {
+                const toolCount = record.authorized_tool_count
+                return toolCount > 0 ? (
+                  <Tag color='green'>{toolCount} 个工具</Tag>
+                ) : (
+                  <Text type='secondary'>0 个工具</Text>
+                )
               },
-              {
-                title: '状态',
-                dataIndex: 'enabled',
-                key: 'enabled',
-                render: (enabled) => (
-                  <Badge color={enabled ? 'green' : 'default'}>
-                    {enabled ? '启用' : '禁用'}
-                  </Badge>
-                ),
-              },
-              {
-                title: '创建时间',
-                dataIndex: 'created_at',
-                key: 'created_at',
-                render: (date) => (
-                  <Text type='secondary'>{formatDate(date)}</Text>
-                ),
-              },
-              {
-                title: '授权工具',
-                key: 'permissions',
-                render: (_, record) => (
-                  <Flex vertical gap='small'>
-                    <div>
-                      {(record.permissions?.allowed_servers?.length ?? 0) >
-                      0 ? (
-                        <Text className='text-primary-600 '>
-                          {record.permissions?.allowed_servers?.length ?? 0}{' '}
-                          个服务器
-                        </Text>
-                      ) : (
-                        <Text type='secondary'>0 个服务器</Text>
-                      )}
-                    </div>
-                    <div>
-                      {record.tool_count !== undefined ? (
-                        record.tool_count > 0 ? (
-                          <Text className='text-primary-600 '>
-                            {record.tool_count} 个工具
-                          </Text>
-                        ) : (
-                          <Text type='secondary'>0 个工具</Text>
-                        )
-                      ) : (
-                        <Text type='secondary' style={{ fontSize: '12px' }}>
-                          加载中...
-                        </Text>
-                      )}
-                    </div>
-                  </Flex>
-                ),
-              },
-              {
-                title: '操作',
-                key: 'actions',
-                render: (_, record) => (
-                  <Space>
+            },
+            {
+              title: '操作',
+              key: 'actions',
+              render: (_, record) => (
+                <Space>
+                  <Button
+                    onClick={() => handleEditPermissions(record)}
+                    type='text'
+                    size='small'>
+                    编辑权限
+                  </Button>
+                  <Popconfirm
+                    title='删除API Key'
+                    description={`确定要删除 "${record.name}" 吗?此操作无法撤销。`}
+                    okText='删除'
+                    cancelText='取消'
+                    okType='danger'
+                    onConfirm={() => {
+                      setSelectedApiKey(record)
+                      handleDeleteKey()
+                    }}>
                     <Button
-                      onClick={() => handleToggleKey(record.id)}
                       type='text'
-                      size='small'>
-                      {record.enabled ? '禁用' : '启用'}
+                      size='small'
+                      danger
+                      icon={<Trash2 size={16} />}>
+                      删除
                     </Button>
-                    <Button
-                      onClick={() => handleEditPermissions(record)}
-                      type='text'
-                      size='small'>
-                      编辑权限
-                    </Button>
-                    <Popconfirm
-                      title='删除API Key'
-                      description={`确定要删除 "${record.name}" 吗?此操作无法撤销。`}
-                      okText='删除'
-                      cancelText='取消'
-                      okType='danger'
-                      onConfirm={() => {
-                        setSelectedApiKey(record)
-                        handleDeleteKey()
-                      }}>
-                      <Button
-                        type='text'
-                        size='small'
-                        danger
-                        icon={<Trash2 size={16} />}>
-                        删除
-                      </Button>
-                    </Popconfirm>
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        )}
-      </Card>
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      )}
 
       {/* Create API Key Modal */}
       <Modal
@@ -466,16 +430,16 @@ const ApiKeys: React.FC = memo(() => {
       <Modal
         title={`编辑权限: ${selectedApiKey?.name}`}
         open={showEditModal}
-        onCancel={() => setShowEditModal(false)}
+        onCancel={handleCloseEdit}
         footer={[
-          <Button key='cancel' onClick={() => setShowEditModal(false)}>
-            取消
-          </Button>,
-          <Button key='save' type='primary' onClick={handleSavePermissions}>
-            保存
+          <Button key='close' type='primary' onClick={handleCloseEdit}>
+            关闭
           </Button>,
         ]}
         width={768}>
+        <div className='mb-4 text-sm text-gray-600'>
+          提示：勾选或取消勾选即会实时更新权限
+        </div>
         <ApiKeyPermissionSelector
           permissions={editPermissions}
           onChange={setEditPermissions}

@@ -483,19 +483,15 @@ const Marketplace: React.FC = memo(() => {
   )
 
   return (
-    <Flex vertical gap='large' style={{ height: '100%', overflowY: 'auto' }}>
+    <Flex
+      vertical
+      gap='large'
+      style={{ height: '100%', overflowY: 'auto', padding: '24px' }}>
       {viewMode === 'list' ? (
         // List View
         <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto' }}>
           <Flex vertical gap='large'>
-            {/* Header and Search Bar */}
-            <Flex justify='space-between' align='center'>
-              <div>
-                <Title level={2}>服务市场</Title>
-                <Text type='secondary'>发现并安装精彩的 MCP 服务</Text>
-              </div>
-            </Flex>
-
+            {/* Search Bar */}
             <Card>
               <Input
                 placeholder='🔍 搜索 MCP 服务...'
