@@ -272,7 +272,7 @@ const Dashboard: React.FC = memo(() => {
     <Flex vertical gap='small' style={{ height: '100%', overflowY: 'auto' }}>
       {/* Statistics Cards - Compact Layout */}
       <Row gutter={[8, 8]}>
-        <Col span={4}>
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<Server style={{ width: '16px', height: '16px' }} />}
             iconColor='#1890ff'
@@ -281,7 +281,7 @@ const Dashboard: React.FC = memo(() => {
             value={stats?.total_servers || 0}
           />
         </Col>
-        <Col span={4}>
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<CheckCircle style={{ width: '16px', height: '16px' }} />}
             iconColor='#52c41a'
@@ -290,7 +290,7 @@ const Dashboard: React.FC = memo(() => {
             value={stats?.enabled_servers || 0}
           />
         </Col>
-        <Col span={4}>
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<XCircle style={{ width: '16px', height: '16px' }} />}
             iconColor='#ff4d4f'
@@ -299,7 +299,7 @@ const Dashboard: React.FC = memo(() => {
             value={stats?.disabled_servers || 0}
           />
         </Col>
-        <Col span={4}>
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<Wrench style={{ width: '16px', height: '16px' }} />}
             iconColor='#fa8c16'
@@ -308,7 +308,7 @@ const Dashboard: React.FC = memo(() => {
             value={stats?.total_tools || 0}
           />
         </Col>
-        <Col span={4}>
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<Activity style={{ width: '16px', height: '16px' }} />}
             iconColor='#722ed1'
@@ -339,14 +339,14 @@ const Dashboard: React.FC = memo(() => {
       />
 
       {/* System Information */}
-      <Row gutter={16}>
-        <Col span={12}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
           <SystemInfoCard
             stats={dashboardStats}
             calculateRunningDuration={calculateRunningDuration}
           />
         </Col>
-        <Col span={12}>
+        <Col xs={24} lg={12}>
           <AggregatorInfoCard stats={dashboardStats} />
         </Col>
       </Row>

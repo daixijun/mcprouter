@@ -1,6 +1,7 @@
 import {
   App,
   Badge,
+  Button,
   Card,
   Col,
   Flex,
@@ -61,7 +62,6 @@ const Marketplace: React.FC = memo(() => {
 
   const page_size = 100
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isLoadingRef = useRef(false)
   const hasMoreRef = useRef(true)
 
@@ -235,43 +235,11 @@ const Marketplace: React.FC = memo(() => {
     }
   }, [searchQuery])
 
-  // Scroll listener for infinite loading
-  const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current) return
-
-    const container = scrollContainerRef.current
-    const scrollTop = container.scrollTop
-    const scrollHeight = container.scrollHeight
-    const clientHeight = container.clientHeight
-
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-
-    console.log(
-      `Scroll: distance=${distanceFromBottom}, hasMore=${hasMoreRef.current}, isLoading=${isLoadingRef.current}`,
-    )
-
-    // Load more when scrolled to within 200px of bottom
-    if (
-      distanceFromBottom < 200 &&
-      !isLoadingRef.current &&
-      hasMoreRef.current
-    ) {
-      console.log('Triggering load more')
-      searchServices(false)
-    }
+  // Handle load more button click
+  const handleLoadMore = useCallback(() => {
+    console.log('Load more button clicked')
+    searchServices(false)
   }, [searchServices])
-
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    console.log('Attaching scroll listener (once on mount)')
-    container.addEventListener('scroll', handleScroll)
-    return () => {
-      console.log('Removing scroll listener')
-      container.removeEventListener('scroll', handleScroll)
-    }
-  }, [handleScroll])
 
   const handleInstall = useCallback(
     async (service: MarketplaceServiceListItem | MarketplaceService) => {
@@ -394,11 +362,14 @@ const Marketplace: React.FC = memo(() => {
         hoverable
         onClick={() => handleViewDetails(service)}
         style={{
-          marginBottom: '16px',
+          marginBottom: '5px',
           cursor: 'pointer',
           transition: 'all 0.2s',
+          height: '220px',
+          display: 'flex',
+          flexDirection: 'column',
         }}>
-        <Flex gap='middle' style={{ marginBottom: '16px' }}>
+        <Flex gap='small' style={{ marginBottom: '12px' }}>
           {/* Logo */}
           <div
             style={{
@@ -452,13 +423,18 @@ const Marketplace: React.FC = memo(() => {
         <Paragraph
           type='secondary'
           ellipsis={{ rows: 2 }}
-          style={{ marginBottom: '16px', fontSize: '14px' }}>
+          style={{ marginBottom: '12px', fontSize: '14px', flex: 1 }}>
           {service.description}
         </Paragraph>
 
-        <Flex wrap gap='small' style={{ marginBottom: '16px' }}>
+        <Flex gap='small' style={{ marginBottom: '12px' }}>
           <Badge color={getPlatformBadgeColor(service.platform)}>
-            {getPlatformIcon(service.platform)} {service.platform}
+            <Flex align='center' gap={4}>
+              {getPlatformIcon(service.platform)}
+              <Text style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
+                {service.platform}
+              </Text>
+            </Flex>
           </Badge>
           {service.is_verified && <Badge color='#52c41a'>✅ 已验证</Badge>}
           {service.is_hosted && <Badge color='#722ed1'>🖥️ 托管</Badge>}
@@ -489,7 +465,7 @@ const Marketplace: React.FC = memo(() => {
       style={{ height: '100%', overflowY: 'auto', padding: '24px' }}>
       {viewMode === 'list' ? (
         // List View
-        <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           <Flex vertical gap='large'>
             {/* Search Bar */}
             <Card>
@@ -514,16 +490,29 @@ const Marketplace: React.FC = memo(() => {
                 <>
                   <Row gutter={[16, 16]}>
                     {services.map((service) => (
-                      <Col span={8} key={service.id}>
+                      <Col
+                        xs={24}
+                        sm={24}
+                        md={12}
+                        lg={8}
+                        xl={6}
+                        xxl={6}
+                        key={service.id}>
                         {renderServiceCard(service)}
                       </Col>
                     ))}
                   </Row>
 
-                  {/* Loading More Indicator */}
-                  {loadingMore && (
+                  {/* Load More Button */}
+                  {hasMore && (
                     <Flex justify='center' style={{ marginTop: '32px' }}>
-                      <Spin tip='加载更多服务...' />
+                      <Button
+                        type='primary'
+                        size='large'
+                        onClick={handleLoadMore}
+                        loading={loadingMore}>
+                        {loadingMore ? '加载中...' : '加载更多服务'}
+                      </Button>
                     </Flex>
                   )}
 

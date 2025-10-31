@@ -317,7 +317,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       width: 250,
       ellipsis: true,
       filterSearch: true,
-      fixed: true,
+      // fixed: true,
       sorter: (a, b) => a.name.localeCompare(b.name),
       // 获取所有唯一的服务名称作为过滤器选项
       filters: Array.from(new Set(mcpServers.map((server) => server.name))).map(
@@ -502,7 +502,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: 120,
       fixed: 'right',
       render: (_, record: McpServerInfo) => (
         <Space size='small'>

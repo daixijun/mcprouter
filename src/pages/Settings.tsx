@@ -284,7 +284,7 @@ const Settings: React.FC = memo(() => {
         <Card>
           <Title level={4}>服务器配置</Title>
           <Row gutter={[16, 16]}>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Text strong>服务器地址</Text>
               <Select
                 value={settings.server.host}
@@ -295,7 +295,7 @@ const Settings: React.FC = memo(() => {
                 options={localIPs.map((ip) => ({ value: ip, label: ip }))}
               />
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Text strong>端口</Text>
               <InputNumber
                 value={settings.server.port}
@@ -307,7 +307,7 @@ const Settings: React.FC = memo(() => {
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Text strong>最大连接数</Text>
               <InputNumber
                 value={settings.server.max_connections}
@@ -319,7 +319,7 @@ const Settings: React.FC = memo(() => {
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Text strong>超时时间（秒）</Text>
               <InputNumber
                 value={settings.server.timeout_seconds}
@@ -338,7 +338,7 @@ const Settings: React.FC = memo(() => {
         <Card>
           <Title level={4}>日志配置</Title>
           <Row gutter={[16, 16]}>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Text strong>日志级别</Text>
               <Select
                 style={{ width: '100%', marginTop: '4px' }}
@@ -352,7 +352,7 @@ const Settings: React.FC = memo(() => {
                 ]}
               />
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Text strong>日志文件名</Text>
               <Input
                 value={settings.logging.file_name}
