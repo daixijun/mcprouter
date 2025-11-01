@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod db;
 mod error;
+mod http_client;
 mod marketplace;
 mod mcp_client;
 mod mcp_manager;

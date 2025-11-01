@@ -1,5 +1,6 @@
 use crate::config::AppConfig;
 use crate::error::{McpError, Result};
+use crate::http_client::HttpTransportConfig;
 use crate::types::{
     ConnectionStatus, McpConnection, McpServerConfig, McpService, ServiceTransport,
 };
@@ -15,7 +16,10 @@ use tokio::sync::RwLock;
 use rmcp::{
     model::ListToolsResult,
     service::ServiceExt,
-    transport::{SseClientTransport, StreamableHttpClientTransport, TokioChildProcess},
+    transport::{
+        streamable_http_client::StreamableHttpClientTransport,
+        SseClientTransport, TokioChildProcess,
+    },
 };
 
 // Access global service manager for config via state manager
@@ -87,7 +91,6 @@ impl McpClientManager {
         Ok(connection)
     }
 
-  
     async fn connect_stdio_service(
         &self,
         service_config: &McpServerConfig,
@@ -236,8 +239,22 @@ impl McpClientManager {
 
         tracing::info!("Connecting to HTTP service at: {}", base_url);
 
-        // Create Streamable HTTP transport using RMCP SDK with from_uri method
-        let transport = StreamableHttpClientTransport::from_uri(base_url.as_str());
+        // Create transport configuration using our custom HttpTransportConfig
+        let mut transport_config = HttpTransportConfig::new(base_url);
+
+        // Set custom headers if present
+        if let Some(headers) = &service_config.headers {
+            tracing::debug!("Using custom headers for HTTP service: {:?}", headers);
+            transport_config = transport_config.headers(headers);
+        } else {
+            tracing::debug!("No custom headers configured for HTTP service");
+        }
+
+        // Build the actual RMCP transport configuration
+        let config = transport_config.build_config()?;
+
+        // Create transport with configuration
+        let transport = StreamableHttpClientTransport::from_config(config);
 
         let client_info = ClientInfo {
             protocol_version: rmcp::model::ProtocolVersion::default(),
@@ -250,6 +267,7 @@ impl McpClientManager {
                 website_url: None,
             },
         };
+
         let service = client_info.serve(transport).await.map_err(|e| {
             McpError::ConnectionError(format!("Failed to connect to HTTP service: {}", e))
         })?;
