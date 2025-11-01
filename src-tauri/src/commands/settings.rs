@@ -117,6 +117,30 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 settings_mut.npm_registry = None;
             }
 
+            // Logging config (support top-level payload; level string and file_name string)
+            if let Some(Value::Object(logging_obj)) = settings.get("logging") {
+                // Ensure logging exists
+                if config.logging.is_none() {
+                    config.logging = Some(config_mod::LoggingSettings {
+                        level: "info".to_string(),
+                        file_name: Some("mcprouter.log".to_string()),
+                    });
+                }
+                let logging_mut = config.logging.as_mut().unwrap();
+
+                // level as string
+                if let Some(Value::String(level)) = logging_obj.get("level") {
+                    logging_mut.level = level.clone();
+                }
+
+                // file_name as string (optional)
+                if let Some(Value::String(file_name)) = logging_obj.get("file_name") {
+                    logging_mut.file_name = Some(file_name.clone());
+                } else if let Some(Value::Null) = logging_obj.get("file_name") {
+                    logging_mut.file_name = None;
+                }
+            }
+
             // Server config (support if provided at top-level payload)
             if let Some(Value::Object(server_obj)) = settings.get("server") {
                 if let Some(Value::String(host)) = server_obj.get("host") {

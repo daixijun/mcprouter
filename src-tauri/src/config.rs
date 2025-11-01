@@ -1,7 +1,8 @@
 use crate::error::{McpError, Result};
 
-// Re-export types for backward compatibility
-pub use crate::types::{AppConfig, SecuritySettings, Settings, SystemTraySettings};
+pub use crate::types::{
+    AppConfig, LoggingSettings, SecuritySettings, Settings, SystemTraySettings,
+};
 
 impl AppConfig {
     pub fn load() -> Result<Self> {

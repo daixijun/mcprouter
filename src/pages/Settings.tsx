@@ -345,6 +345,7 @@ const Settings: React.FC = memo(() => {
                 value={settings.logging.level}
                 onChange={(value) => handleLoggingSettingChange('level', value)}
                 options={[
+                  { value: 'trace', label: 'Trace' },
                   { value: 'debug', label: 'Debug' },
                   { value: 'info', label: 'Info' },
                   { value: 'warn', label: 'Warning' },

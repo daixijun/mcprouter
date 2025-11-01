@@ -138,7 +138,7 @@ export interface AppConfig {
     timeout_seconds: number
   }
   logging?: {
-    level: 'debug' | 'info' | 'warn' | 'error'
+    level: 'trace' | 'debug' | 'info' | 'warn' | 'error'
     file_name?: string
   }
   security?: {
@@ -204,7 +204,7 @@ export interface SystemSettings {
     timeout_seconds: number
   }
   logging: {
-    level: 'debug' | 'info' | 'warn' | 'error'
+    level: 'trace' | 'debug' | 'info' | 'warn' | 'error'
     file_name?: string
   }
   security: {
