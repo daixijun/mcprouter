@@ -37,7 +37,7 @@ pub struct McpServerUpdateRequest {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn add_mcp_server(request: McpServerCreateRequest) -> Result<String> {
+pub async fn add_mcp_server(app_handle: tauri::AppHandle, request: McpServerCreateRequest) -> Result<String> {
     // Convert transport string to ServiceTransport enum
     let service_transport = match request.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
@@ -97,14 +97,21 @@ pub async fn add_mcp_server(request: McpServerCreateRequest) -> Result<String> {
     };
 
     // Add service using the service manager
-    match SERVICE_MANAGER.add_mcp_server(service_config).await {
-        Ok(()) => Ok(format!("服务 '{}' 已成功添加", request.name)),
-        Err(e) => Err(e),
+    tracing::info!("调用 SERVICE_MANAGER.add_mcp_server 添加服务: {}", request.name);
+    match SERVICE_MANAGER.add_mcp_server(&app_handle, service_config).await {
+        Ok(()) => {
+            tracing::info!("服务添加成功: {}", request.name);
+            Ok(format!("服务 '{}' 已成功添加", request.name))
+        }
+        Err(e) => {
+            tracing::error!("服务添加失败: {} - {:?}", request.name, e);
+            Err(e)
+        }
     }
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn update_mcp_server(request: McpServerUpdateRequest) -> Result<String> {
+pub async fn update_mcp_server(app_handle: tauri::AppHandle, request: McpServerUpdateRequest) -> Result<String> {
     // Convert transport string to ServiceTransport enum
     let service_transport = match request.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
@@ -142,15 +149,15 @@ pub async fn update_mcp_server(request: McpServerUpdateRequest) -> Result<String
     };
 
     // Update service using the service manager
-    match SERVICE_MANAGER.update_mcp_server(service_config).await {
+    match SERVICE_MANAGER.update_mcp_server(&app_handle, service_config).await {
         Ok(()) => Ok(format!("服务 '{}' 已成功更新", request.name)),
         Err(e) => Err(e),
     }
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn remove_mcp_server(name: String) -> Result<String> {
-    match SERVICE_MANAGER.remove_mcp_server(&name).await {
+pub async fn remove_mcp_server(app_handle: tauri::AppHandle, name: String) -> Result<String> {
+    match SERVICE_MANAGER.remove_mcp_server(&app_handle, &name).await {
         Ok(()) => Ok(format!("服务 '{}' 已成功删除", name)),
         Err(e) => Err(e),
     }
@@ -168,8 +175,8 @@ pub async fn check_mcp_server_connectivity(name: String) -> Result<String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn toggle_mcp_server(name: String) -> Result<bool> {
-    match SERVICE_MANAGER.toggle_mcp_server(&name).await {
+pub async fn toggle_mcp_server(app_handle: tauri::AppHandle, name: String) -> Result<bool> {
+    match SERVICE_MANAGER.toggle_mcp_server(&app_handle, &name).await {
         Ok(new_state) => Ok(new_state),
         Err(e) => Err(e),
     }
@@ -181,7 +188,7 @@ pub async fn list_mcp_servers() -> Vec<McpServerInfo> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn delete_mcp_server(name: String) -> Result<String> {
+pub async fn delete_mcp_server(app_handle: tauri::AppHandle, name: String) -> Result<String> {
     // First disconnect any active connections
     let connections = MCP_CLIENT_MANAGER.get_connections().await;
     for connection in connections {
@@ -193,6 +200,21 @@ pub async fn delete_mcp_server(name: String) -> Result<String> {
     }
 
     // Remove the service
-    SERVICE_MANAGER.remove_mcp_server(&name).await?;
+    SERVICE_MANAGER.remove_mcp_server(&app_handle, &name).await?;
     Ok(format!("服务 '{}' 已删除", name))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_mcp_server_tools(app_handle: tauri::AppHandle, server_name: String) -> Result<Vec<String>> {
+    tracing::info!("正在获取服务器 '{}' 的工具列表", server_name);
+    match SERVICE_MANAGER.list_mcp_server_tools(&server_name, &app_handle).await {
+        Ok(tools) => {
+            tracing::info!("✅ 成功获取到 {} 个工具", tools.len());
+            Ok(tools)
+        }
+        Err(e) => {
+            tracing::error!("❌ 获取工具列表失败: {}", e);
+            Err(e)
+        }
+    }
 }

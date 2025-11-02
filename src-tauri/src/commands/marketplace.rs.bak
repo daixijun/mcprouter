@@ -21,7 +21,6 @@ pub async fn list_marketplace_services(
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn install_marketplace_service(
-    app_handle: tauri::AppHandle,
     service_id: String,
     env_vars: Option<Vec<(String, String)>>,
 ) -> Result<McpServerConfig> {
@@ -63,19 +62,24 @@ pub async fn install_marketplace_service(
     };
 
     // Persist into service manager
-    SERVICE_MANAGER.add_mcp_server(&app_handle, config.clone()).await?;
+    SERVICE_MANAGER.add_mcp_server(config.clone()).await?;
 
     // Try to connect immediately to retrieve version and persist to DB
     match MCP_CLIENT_MANAGER.ensure_connection(&config, false).await {
         Ok(connection) => {
             if let Some(version) = connection.cached_version.clone() {
-                // TODO: 后续需要更新配置文件中的版本信息
-                // McpServerRepository::update_version(&config.name, Some(version.clone())).await
-                tracing::info!(
-                    "Service {} version detected: {}",
-                    config.name,
-                    version
-                );
+                // TODO: migrate to config - use crate::db::repositories::mcp_server_repository::McpServerRepository;
+                if let Err(e) =
+                    McpServerRepository::update_version(&config.name, Some(version.clone())).await
+                {
+                    tracing::warn!("Failed to update version in DB for {}: {}", config.name, e);
+                } else {
+                    tracing::info!(
+                        "Persisted version '{}' for service {}",
+                        version,
+                        config.name
+                    );
+                }
                 // Also update in-memory cache so UI shows immediately
                 SERVICE_MANAGER
                     .update_version_cache(&config.name, Some(version.clone()))

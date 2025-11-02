@@ -1,11 +1,9 @@
-// 共享类型定义
-
-use rmcp::model::Tool as RmcpTool;
+use rust_mcp_sdk::schema::Tool as McpToolSchema;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
-// Use rmcp Tool model directly instead of custom struct
-pub type McpTool = RmcpTool;
+// Use rust-mcp-sdk Tool model directly instead of custom struct
+pub type McpTool = McpToolSchema;
 
 // ============================================================================
 // Config related types (from config.rs)
@@ -144,7 +142,6 @@ pub struct Settings {
     pub npm_registry: Option<String>,
 }
 
-
 // API Key Permission structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -153,7 +150,6 @@ pub struct ApiKeyPermissions {
     pub allowed_servers: Vec<String>,
     pub allowed_tools: Vec<String>,
 }
-
 
 // API Key structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -181,28 +177,6 @@ pub struct ServerConfig {
     pub port: u16,
     pub max_connections: usize,
     pub timeout_seconds: u64,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig {
-                host: "127.0.0.1".to_string(),
-                port: 8850,
-                max_connections: 100,
-                timeout_seconds: 30,
-            },
-            logging: Some(LoggingSettings {
-                level: "info".to_string(),
-                file_name: Some("mcprouter.log".to_string()),
-            }),
-            security: Some(SecuritySettings {
-                allowed_hosts: vec!["localhost".to_string(), "127.0.0.1".to_string()],
-                auth: true,
-            }),
-            settings: Some(Settings::default()),
-        }
-    }
 }
 
 // ============================================================================
@@ -330,11 +304,22 @@ pub struct ServiceVersionCache {
 // ============================================================================
 
 // Define enum for different service types
-#[derive(Debug)]
 pub enum McpService {
-    Stdio(rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>),
-    Sse(rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>),
-    Http(rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>),
+    // 注意：rust-mcp-sdk 使用不同的运行时模型
+    // 我们将使用 Box<dyn McpClient> 来存储客户端实例
+    Stdio(Box<dyn rust_mcp_sdk::McpClient>),
+    Sse(Box<dyn rust_mcp_sdk::McpClient>),
+    Http(Box<dyn rust_mcp_sdk::McpClient>),
+}
+
+impl std::fmt::Debug for McpService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpService::Stdio(_) => write!(f, "McpService::Stdio"),
+            McpService::Sse(_) => write!(f, "McpService::Sse"),
+            McpService::Http(_) => write!(f, "McpService::Http"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -354,4 +339,78 @@ pub struct McpConnection {
     pub status: ConnectionStatus,
     // Cached service information
     pub cached_version: Option<String>,
+}
+
+impl AppConfig {
+    /// 从文件加载配置
+    pub fn load() -> Result<Self, crate::config::ConfigError> {
+        let app_data_dir = std::path::PathBuf::from(
+            &std::env::var("APPDATA").or_else(|_| std::env::var("HOME")
+                .map(|home| format!("{}/.mcprouter", home)))
+                .unwrap_or_else(|_| ".mcprouter".to_string())
+        );
+
+        let config_path = crate::config::get_app_config_path(&app_data_dir);
+
+        if !config_path.exists() {
+            // 如果配置文件不存在，返回默认配置
+            let default_config = Self::default();
+            default_config.save()?;
+            return Ok(default_config);
+        }
+
+        let file = std::fs::File::open(&config_path)
+            .map_err(crate::config::ConfigError::Io)?;
+        let reader = std::io::BufReader::new(file);
+        let config = serde_json::from_reader(reader)
+            .map_err(crate::config::ConfigError::Json)?;
+
+        Ok(config)
+    }
+
+    /// 保存配置到文件
+    pub fn save(&self) -> Result<(), crate::config::ConfigError> {
+        let app_data_dir = std::path::PathBuf::from(
+            &std::env::var("APPDATA").or_else(|_| std::env::var("HOME")
+                .map(|home| format!("{}/.mcprouter", home)))
+                .unwrap_or_else(|_| ".mcprouter".to_string())
+        );
+
+        let config_path = crate::config::get_app_config_path(&app_data_dir);
+
+        // 使用文件管理器进行原子性写入
+        crate::config::write_json_atomic(&config_path, self)
+    }
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            server: ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 8000,
+                max_connections: 100,
+                timeout_seconds: 30,
+            },
+            logging: Some(crate::types::LoggingSettings {
+                level: "info".to_string(),
+                file_name: None,
+            }),
+            security: Some(SecuritySettings {
+                allowed_hosts: vec!["localhost".to_string(), "127.0.0.1".to_string()],
+                auth: true,
+            }),
+            settings: Some(Settings {
+                theme: Some("auto".to_string()),
+                autostart: Some(false),
+                system_tray: Some(SystemTraySettings {
+                    enabled: Some(true),
+                    close_to_tray: Some(false),
+                    start_to_tray: Some(false),
+                }),
+                uv_index_url: None,
+                npm_registry: None,
+            }),
+        }
+    }
 }

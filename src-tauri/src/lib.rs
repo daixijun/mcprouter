@@ -1,9 +1,7 @@
 mod aggregator;
 mod commands;
 mod config;
-mod db;
 mod error;
-mod http_client;
 mod marketplace;
 mod mcp_client;
 mod mcp_manager;
@@ -342,7 +340,6 @@ pub async fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(move |app| {
             // Get log directory path (same as tauri-plugin-log uses)
             let log_dir = app.path().app_log_dir().expect("Failed to get log directory");
@@ -392,24 +389,16 @@ pub async fn run() {
                 *handle_guard = Some(handle);
             });
 
-            // 4) Initialize database, then load MCP services sequentially to avoid race conditions
+            // 4) Load MCP services from configuration files
             let app_handle = app.handle().clone();
             tokio::spawn(async move {
-                match db::initialize_database(&app_handle).await {
+                tracing::info!("Loading MCP services from configuration files");
+                match SERVICE_MANAGER.load_mcp_servers(&app_handle).await {
                     Ok(_) => {
-                        tracing::info!("Database initialized successfully");
-                        match SERVICE_MANAGER.load_mcp_servers().await {
-                            Ok(_) => {
-                                tracing::info!("MCP services loaded");
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to load services: {}", e);
-                            }
-                        }
+                        tracing::info!("MCP services loaded");
                     }
                     Err(e) => {
-                        tracing::error!("Failed to initialize database: {}", e);
-                        tracing::error!("The application may not function correctly without database access.");
+                        tracing::error!("Failed to load services: {}", e);
                     }
                 }
             });

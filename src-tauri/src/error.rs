@@ -1,5 +1,7 @@
 use tauri::ipc::InvokeError;
 
+use crate::config::ConfigError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum McpError {
     #[error("Configuration error: {0}")]
@@ -84,34 +86,17 @@ pub enum McpError {
     InternalError(String),
 }
 
-// Convert SQLx errors to specific database errors
-impl From<sqlx::Error> for McpError {
-    fn from(err: sqlx::Error) -> Self {
-        match err {
-            sqlx::Error::Database(db_err) => {
-                McpError::DatabaseQueryError(format!("Database error: {}", db_err.message()))
-            }
-            sqlx::Error::PoolTimedOut => {
-                McpError::DatabaseConnectionError("Database connection pool timeout".to_string())
-            }
-            sqlx::Error::PoolClosed => {
-                McpError::DatabaseConnectionError("Database connection pool closed".to_string())
-            }
-            sqlx::Error::RowNotFound => McpError::NotFoundError("Record not found".to_string()),
-            sqlx::Error::ColumnDecode { .. } => {
-                McpError::DatabaseQueryError(format!("Column decode error: {}", err))
-            }
-            sqlx::Error::ColumnIndexOutOfBounds { .. } => {
-                McpError::DatabaseQueryError(format!("Column index out of bounds: {}", err))
-            }
-            _ => McpError::DatabaseQueryError(format!("Database error: {}", err)),
-        }
-    }
-}
+// SQLx support removed during migration to config files
 
 impl From<McpError> for InvokeError {
     fn from(error: McpError) -> Self {
         InvokeError::from(error.to_string())
+    }
+}
+
+impl From<ConfigError> for McpError {
+    fn from(error: ConfigError) -> Self {
+        McpError::ConfigError(error.to_string())
     }
 }
 

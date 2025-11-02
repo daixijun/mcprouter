@@ -1,4 +1,4 @@
-// 工具管理命令
+// 工具管理命令 - 迁移到配置文件
 
 use crate::error::{McpError, Result};
 
@@ -8,114 +8,35 @@ pub async fn toggle_mcp_server_tool(
     tool_name: String,
     enabled: bool,
 ) -> Result<String> {
-    use crate::db::repositories::mcp_server_repository::McpServerRepository;
-    use crate::db::repositories::tool_repository::ToolRepository;
+    // TODO: 迁移到配置文件后重新实现
+    tracing::warn!(
+        "toggle_mcp_server_tool not fully implemented yet for {}/{} (enabled: {})",
+        name,
+        tool_name,
+        enabled
+    );
 
-    // Get server from database
-    let server = McpServerRepository::get_by_name(&name)
-        .await?
-        .ok_or_else(|| McpError::ServiceNotFound(name.clone()))?;
-
-    let server_id = server
-        .id
-        .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
-
-    // Get tool from database
-    let tool = ToolRepository::get_by_name(&server_id, &tool_name)
-        .await?
-        .ok_or_else(|| McpError::ConfigError(format!("Tool '{}' not found", tool_name)))?;
-
-    // Toggle tool status in database
-    let tool_id = tool
-        .id
-        .ok_or_else(|| McpError::ConfigError("Tool ID not found".to_string()))?;
-    ToolRepository::toggle_enabled(&tool_id, enabled).await?;
-
-    let status = if enabled { "enabled" } else { "disabled" };
-    Ok(format!(
-        "Tool '{}' has been {} for service '{}'",
-        tool_name, status, name
+    Err(McpError::ProcessError(
+        "Tool management not fully migrated to config-based storage yet".to_string(),
     ))
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn enable_all_mcp_server_tools(name: String) -> Result<String> {
-    use crate::db::repositories::mcp_server_repository::McpServerRepository;
-    use crate::db::repositories::tool_repository::ToolRepository;
+    // TODO: 迁移到配置文件后重新实现
+    tracing::warn!("enable_all_mcp_server_tools not fully implemented yet for {}", name);
 
-    // Get server from database
-    let server = McpServerRepository::get_by_name(&name)
-        .await?
-        .ok_or_else(|| McpError::ServiceNotFound(name.clone()))?;
-
-    let server_id = server
-        .id
-        .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
-
-    // Enable all tools for this server
-    ToolRepository::batch_toggle_server_tools(&server_id, true).await?;
-
-    Ok(format!(
-        "All tools have been enabled for service '{}'",
-        name
+    Err(McpError::ProcessError(
+        "Tool management not fully migrated to config-based storage yet".to_string(),
     ))
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn disable_all_mcp_server_tools(name: String) -> Result<String> {
-    use crate::db::repositories::mcp_server_repository::McpServerRepository;
-    use crate::db::repositories::tool_repository::ToolRepository;
+    // TODO: 迁移到配置文件后重新实现
+    tracing::warn!("disable_all_mcp_server_tools not fully implemented yet for {}", name);
 
-    // Get server from database
-    let server = McpServerRepository::get_by_name(&name)
-        .await?
-        .ok_or_else(|| McpError::ServiceNotFound(name.clone()))?;
-
-    let server_id = server
-        .id
-        .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
-
-    // Disable all tools for this server
-    ToolRepository::batch_toggle_server_tools(&server_id, false).await?;
-
-    Ok(format!(
-        "All tools have been disabled for service '{}'",
-        name
+    Err(McpError::ProcessError(
+        "Tool management not fully migrated to config-based storage yet".to_string(),
     ))
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_server_tools(connection_id: String) -> Result<Vec<serde_json::Value>> {
-    use crate::db::repositories::mcp_server_repository::McpServerRepository;
-    use crate::db::repositories::tool_repository::ToolRepository;
-
-    // Get server by name (connection_id is the server name)
-    let server = McpServerRepository::get_by_name(&connection_id)
-        .await?
-        .ok_or_else(|| McpError::ServiceNotFound(connection_id.clone()))?;
-
-    let server_id = server
-        .id
-        .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
-
-    // Fetch tools from database by server_id
-    let tools = ToolRepository::get_by_server_id(&server_id).await?;
-
-    // Map to JSON matching frontend Tool interface
-    let result = tools
-        .into_iter()
-        .map(|t| {
-            serde_json::json!({
-                "id": t.id.unwrap_or_default(),
-                "name": t.name,
-                "server_id": t.server_id,
-                "description": t.description,
-                "enabled": t.enabled,
-                "created_at": t.created_at.to_rfc3339(),
-                "updated_at": t.updated_at.to_rfc3339(),
-            })
-        })
-        .collect();
-
-    Ok(result)
 }

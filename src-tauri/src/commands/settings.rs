@@ -43,10 +43,10 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         .update_config(|config| {
             // Ensure settings exists
             if config.settings.is_none() {
-                config.settings = Some(config_mod::Settings {
+                config.settings = Some(crate::Settings {
                     theme: Some("auto".to_string()),
                     autostart: Some(false),
-                    system_tray: Some(config_mod::SystemTraySettings {
+                    system_tray: Some(crate::SystemTraySettings {
                         enabled: Some(true),
                         close_to_tray: Some(false),
                         start_to_tray: Some(false),
@@ -70,7 +70,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             // System tray subobject
             if let Some(Value::Object(tray_obj)) = settings_obj.get("system_tray") {
                 if settings_mut.system_tray.is_none() {
-                    settings_mut.system_tray = Some(config_mod::SystemTraySettings {
+                    settings_mut.system_tray = Some(crate::SystemTraySettings {
                         enabled: Some(true),
                         close_to_tray: Some(false),
                         start_to_tray: Some(false),
@@ -121,7 +121,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             if let Some(Value::Object(logging_obj)) = settings.get("logging") {
                 // Ensure logging exists
                 if config.logging.is_none() {
-                    config.logging = Some(config_mod::LoggingSettings {
+                    config.logging = Some(crate::LoggingSettings {
                         level: "info".to_string(),
                         file_name: Some("mcprouter.log".to_string()),
                     });
@@ -167,7 +167,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             if let Some(Value::Object(sec_obj)) = settings.get("security") {
                 // Ensure security exists
                 if config.security.is_none() {
-                    config.security = Some(config_mod::SecuritySettings {
+                    config.security = Some(crate::SecuritySettings {
                         allowed_hosts: vec![],
                         auth: true,
                     });

@@ -27,10 +27,10 @@ pub async fn set_theme(app: tauri::AppHandle, theme: String) -> Result<()> {
     SERVICE_MANAGER
         .update_config(|config| {
             if config.settings.is_none() {
-                config.settings = Some(crate::config::Settings {
+                config.settings = Some(crate::Settings {
                     theme: Some("auto".to_string()),
                     autostart: Some(false),
-                    system_tray: Some(crate::config::SystemTraySettings {
+                    system_tray: Some(crate::SystemTraySettings {
                         enabled: Some(true),
                         close_to_tray: Some(false),
                         start_to_tray: Some(false),

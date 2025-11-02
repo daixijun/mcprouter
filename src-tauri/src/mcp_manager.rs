@@ -1,20 +1,14 @@
-use crate::config::AppConfig;
-use crate::db::models::{McpServerRow, ToolRow};
-use crate::db::repositories::mcp_server_repository::McpServerRepository;
-use crate::db::repositories::tool_repository::ToolRepository;
+// MCP服务器管理 - 配置文件版本
+
+use crate::config::{AppConfig, McpServerRepository};
 use crate::error::{McpError, Result};
 use crate::MCP_CLIENT_MANAGER;
-use chrono::Utc;
-use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-// Re-export types for backward compatibility
-pub use crate::types::{
-    McpServerConfig, McpServerInfo, ServiceStatus, ServiceTransport, ServiceVersionCache,
-};
+pub use crate::types::{McpServerConfig, McpServerInfo, ServiceStatus, ServiceVersionCache};
 
 #[derive(Clone)]
 pub struct McpServerManager {
@@ -22,7 +16,7 @@ pub struct McpServerManager {
     config: Arc<RwLock<AppConfig>>,
     startup_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     pub version_cache: Arc<RwLock<HashMap<String, ServiceVersionCache>>>,
-    loading_lock: Arc<Mutex<bool>>, // Prevent concurrent loading
+    loading_lock: Arc<Mutex<bool>>,
 }
 
 impl McpServerManager {
@@ -40,427 +34,53 @@ impl McpServerManager {
         self.config.read().await.clone()
     }
 
-    pub async fn load_mcp_servers(&self) -> Result<()> {
-        // Prevent concurrent loading
-        {
-            let mut loading = self.loading_lock.lock().unwrap();
-            if *loading {
-                tracing::debug!("MCP servers loading already in progress, skipping");
-                return Ok(());
-            }
-            *loading = true;
-        }
-
-        // Ensure we release the lock even if there's an error
-        let _guard = scopeguard::guard((), |_| {
-            if let Ok(mut loading) = self.loading_lock.lock() {
-                *loading = false;
-            }
-        });
-
-        // Cancel any existing startup tasks first
-        if let Ok(mut tasks) = self.startup_tasks.lock() {
-            for (_, handle) in tasks.drain() {
-                handle.abort();
-            }
-        }
-
-        let mut mcp_servers = self.mcp_servers.write().await;
-        mcp_servers.clear();
-
-        // Load from database instead of config file
-        let servers_from_db = McpServerRepository::get_all().await?;
-        for server_row in servers_from_db {
-            let service_config = self.db_row_to_config(&server_row)?;
-            mcp_servers.insert(service_config.name.clone(), service_config);
-        }
-
-        // Auto-check enabled services for connectivity
-        let enabled_services: Vec<_> = mcp_servers
-            .iter()
-            .filter(|(_, s)| s.enabled)
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        // Drop the lock before spawning tasks
-        drop(mcp_servers);
-
-        // Use batch health check with connection reuse and caching
-        if !enabled_services.is_empty() {
-            let manager = self.clone();
-            let enabled_services_clone = enabled_services.clone();
-            let handle = tokio::spawn(async move {
-                tracing::info!(
-                    "Performing batch health check for {} enabled services",
-                    enabled_services_clone.len()
-                );
-
-                // Batch check with connection reuse
-                let health_results = MCP_CLIENT_MANAGER
-                    .batch_health_check(&enabled_services_clone)
-                    .await;
-
-                for (service_name, is_healthy) in health_results {
-                    if is_healthy {
-                        // TODO: Fix cached version retrieval and logging
-                        tracing::info!("Service {} is active", service_name);
-
-                        // 后台获取工具清单（总是尝试获取以刷新缓存）
-                        if let Some(service_config) =
-                            manager.mcp_servers.read().await.get(&service_name).cloned()
-                        {
-                            manager.background_fetch_service_tools(
-                                service_name.clone(),
-                                service_config,
-                            );
-                        }
-                    } else {
-                        tracing::warn!("Service {} is unhealthy", service_name);
-                        tracing::debug!("Service {} health check failed", service_name);
-
-                        // Record the health check failure as connection error
-                        let error_message = format!("Service {} health check failed", service_name);
-                        MCP_CLIENT_MANAGER.set_connection_error(&service_name, error_message).await;
-                    }
-                }
-
-                // Remove the task from startup_tasks when completed
-                if let Ok(mut tasks) = manager.startup_tasks.lock() {
-                    for name in enabled_services_clone {
-                        tasks.remove(&name);
-                    }
-                }
-            });
-            // Store the task handle for tracking
-            if let Ok(mut tasks) = self.startup_tasks.lock() {
-                tasks.insert("batch_health_check".to_string(), handle);
-            }
-        }
-
+    pub async fn update_config<F>(&self, f: F) -> Result<()>
+    where
+        F: FnOnce(&mut AppConfig),
+    {
+        let mut config = self.config.write().await;
+        f(&mut config);
         Ok(())
     }
 
-    /// Smart service check using cached connection information
-    pub async fn check_service_with_version(&self, name: &str) -> Result<()> {
+    pub async fn load_mcp_servers(&self, app_handle: &tauri::AppHandle) -> Result<()> {
+        self.sync_with_config_file(app_handle).await
+    }
+
+    pub async fn get_mcp_servers(&self) -> Arc<RwLock<HashMap<String, McpServerConfig>>> {
+        self.mcp_servers.clone()
+    }
+
+    pub async fn list_mcp_servers(&self) -> Result<Vec<McpServerInfo>> {
         let services = self.mcp_servers.read().await;
-        let service_config = services
-            .get(name)
-            .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?
-            .clone();
-        drop(services);
+        let mut result = Vec::new();
 
-        tracing::debug!("Checking service {} with smart connection management", name);
+        for (name, config) in services.iter() {
+            let status_option = self.get_mcp_server_status(name).await.ok();
+            let status_string = status_option
+                .as_ref()
+                .map(|s| s.status.clone())
+                .unwrap_or_else(|| "disconnected".to_string());
+            let error_message = status_option.and_then(|s| s.error_message);
 
-        // First, try to get cached version
-        if let Some(cached_version) = MCP_CLIENT_MANAGER.get_cached_version(name).await {
-            tracing::debug!(
-                "Using cached version for service {}: {}",
-                name,
-                cached_version
-            );
-
-            // Update local version cache
-            let mut version_cache = self.version_cache.write().await;
-            version_cache.insert(
-                name.to_string(),
-                ServiceVersionCache {
-                    version: Some(cached_version.clone()),
-                },
-            );
-            return Ok(());
+            result.push(McpServerInfo {
+                name: name.clone(),
+                enabled: config.enabled,
+                status: status_string,
+                version: config.version.clone(),
+                error_message,
+                transport: format!("{:?}", config.transport),
+                url: config.url.clone(),
+                description: None,
+                env_vars: None,
+                headers: None,
+                command: config.command.clone(),
+                args: config.args.clone(),
+                tool_count: None,
+            });
         }
 
-        // Need to establish connection to get version info
-        // Only force refresh if we don't have a valid cached connection
-        let force_refresh = !MCP_CLIENT_MANAGER.is_connected(name).await;
-        match MCP_CLIENT_MANAGER
-            .ensure_connection(&service_config, force_refresh)
-            .await
-        {
-            Ok(connection) => {
-                tracing::debug!(
-                    "Successfully connected to service {} for version check",
-                    name
-                );
-
-                // Update version information from connection
-                if let Some(ref version) = connection.cached_version {
-                    let mut version_cache = self.version_cache.write().await;
-                    version_cache.insert(
-                        name.to_string(),
-                        ServiceVersionCache {
-                            version: Some(version.to_string()),
-                        },
-                    );
-                    tracing::debug!("Updated version cache for service {} to {}", name, version);
-                }
-
-                // Disconnect immediately (this was just for version retrieval and connectivity check)
-                // TODO: Fix disconnect_mcp_server implementation
-                // let _ = SERVICE_MANAGER.disconnect_mcp_server(&connection.service_id).await;
-
-                Ok(())
-            }
-            Err(e) => {
-                tracing::debug!(
-                    "Failed to connect to service {} for version check: {}",
-                    name,
-                    e
-                );
-                Err(e)
-            }
-        }
-    }
-
-    pub async fn add_mcp_server(&self, service_config: McpServerConfig) -> Result<()> {
-        let mut services = self.mcp_servers.write().await;
-
-        if services.contains_key(&service_config.name) {
-            return Err(McpError::ServiceAlreadyExists(service_config.name.clone()));
-        }
-
-        let service_name = service_config.name.clone();
-        let is_enabled = service_config.enabled;
-
-        // Convert config to database row and save to database
-        let server_row = self.config_to_db_row(&service_config)?;
-        McpServerRepository::create(server_row).await?;
-
-        services.insert(service_config.name.clone(), service_config.clone());
-        drop(services);
-
-        // 如果服务已启用，在后台获取工具清单
-        if is_enabled {
-            tracing::info!(
-                "New enabled service added, fetching tools in background: {}",
-                service_name
-            );
-            self.background_fetch_service_tools(service_name, service_config);
-        }
-
-        Ok(())
-    }
-
-    pub async fn update_mcp_server(&self, service_config: McpServerConfig) -> Result<()> {
-        let mut services = self.mcp_servers.write().await;
-
-        // Check if service exists
-        if !services.contains_key(&service_config.name) {
-            return Err(McpError::ServiceNotFound(service_config.name.clone()));
-        }
-
-        let service_name = service_config.name.clone();
-        let is_enabled = service_config.enabled;
-
-        // Convert config to database row and update in database
-        let server_row = self.config_to_db_row(&service_config)?;
-        McpServerRepository::update(&service_name, server_row).await?;
-
-        // Update in-memory configuration
-        services.insert(service_config.name.clone(), service_config.clone());
-        drop(services);
-
-        tracing::info!("Service '{}' updated successfully", service_name);
-
-        // 如果服务已启用，在后台获取工具清单
-        if is_enabled {
-            tracing::info!(
-                "Updated service is enabled, fetching tools in background: {}",
-                service_name
-            );
-            self.background_fetch_service_tools(service_name, service_config);
-        }
-
-        Ok(())
-    }
-
-    pub async fn remove_mcp_server(&self, name: &str) -> Result<()> {
-        // First, try to delete from database regardless of cache state
-        let deleted = McpServerRepository::delete(name).await?;
-
-        if !deleted {
-            return Err(McpError::ServiceNotFound(name.to_string()));
-        }
-
-        // Remove from memory cache if it exists
-        {
-            let mut services = self.mcp_servers.write().await;
-            services.remove(name);
-        }
-
-        // 清理内存中的版本缓存
-        {
-            let mut version_cache = self.version_cache.write().await;
-            version_cache.remove(name);
-        }
-
-        // 记录日志
-        tracing::info!("Service removed: {}", name);
-
-        Ok(())
-    }
-
-    // Toggle service enabled/disabled state
-    pub async fn toggle_mcp_server(&self, name: &str) -> Result<bool> {
-        let mut services = self.mcp_servers.write().await;
-
-        if let Some(service) = services.get_mut(name) {
-            let original_enabled = service.enabled;
-            let service_config_clone = service.clone();
-
-            // Don't update the service state yet - only check what the new state would be
-            let target_enabled = !original_enabled;
-
-            // Drop the write lock before performing async operations
-            let name_clone = name.to_string();
-            drop(services);
-
-            // If trying to enable the service, first verify connectivity
-            if target_enabled {
-                let manager = self.clone();
-
-                // First try to get cached info to avoid unnecessary connection
-                if let Some(cached_version) =
-                    MCP_CLIENT_MANAGER.get_cached_version(&name_clone).await
-                {
-                    tracing::info!(
-                        "Service {} is active (cached), version {}",
-                        name_clone,
-                        cached_version
-                    );
-
-                    // Sync version cache from MCP_CLIENT_MANAGER to local cache
-                    let mut version_cache = manager.version_cache.write().await;
-                    version_cache.insert(
-                        name_clone.clone(),
-                        ServiceVersionCache {
-                            version: Some(cached_version),
-                        },
-                    );
-                } else {
-                    // Fall back to full check if no cache
-                    match manager.check_service_with_version(&name_clone).await {
-                        Ok(_) => {
-                            // Try read version from local cache, fallback to client cache
-                            let version_from_cache = {
-                                let cache = manager.version_cache.read().await;
-                                cache.get(&name_clone).and_then(|c| c.version.clone())
-                            };
-
-                            if let Some(version) = version_from_cache {
-                                tracing::info!(
-                                    "Service {} is active, version {}",
-                                    name_clone,
-                                    version
-                                );
-                            } else if let Some(version) =
-                                MCP_CLIENT_MANAGER.get_cached_version(&name_clone).await
-                            {
-                                tracing::info!(
-                                    "Service {} is active, version {}",
-                                    name_clone,
-                                    version
-                                );
-                            } else {
-                                tracing::info!("Service {} is active", name_clone);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Service {} check failed: {}", name_clone, e);
-                            // Service failed to start, but update database to enabled=true
-                            // so the UI can show "failed" status instead of "disconnected"
-                            McpServerRepository::toggle_enabled(name, true).await?;
-
-                            // Update the in-memory cache to reflect the new state
-                            {
-                                let mut services = manager.mcp_servers.write().await;
-                                if let Some(service) = services.get_mut(name) {
-                                    service.enabled = true;
-                                    tracing::info!("Updated cache: service {} enabled={}", name, service.enabled);
-                                }
-                            }
-
-                            // Set connection error so get_connection_status returns the error message
-                            // Return the raw error message without wrapping
-                            let error_message = e.to_string();
-                            MCP_CLIENT_MANAGER.set_connection_error(&name_clone, error_message).await;
-
-                            return Err(e);
-                        }
-                    }
-                }
-
-                // Service successfully connected, now update the database
-                McpServerRepository::toggle_enabled(name, true).await?;
-
-                // Update the in-memory cache to reflect the new state
-                {
-                    let mut services = manager.mcp_servers.write().await;
-                    if let Some(service) = services.get_mut(name) {
-                        service.enabled = true;
-                        tracing::info!("Updated cache: service {} enabled={}", name, service.enabled);
-                    }
-                }
-
-                // Kick off background tool refresh and DB sync
-                manager.background_fetch_service_tools(name_clone, service_config_clone);
-
-                Ok(true)
-            } else {
-                // Trying to disable the service - always succeed, just update database
-                McpServerRepository::toggle_enabled(name, false).await?;
-
-                // Update the in-memory cache to reflect the new state
-                {
-                    let mut services = self.mcp_servers.write().await;
-                    if let Some(service) = services.get_mut(name) {
-                        service.enabled = false;
-                        tracing::info!("Updated cache: service {} enabled={}", name, service.enabled);
-                    }
-                }
-
-                // Try to disconnect all active connections for this service
-                let connections = MCP_CLIENT_MANAGER.get_connections().await;
-                let mut disconnected_count = 0;
-
-                for connection in connections {
-                    // Check if this connection belongs to the service being disabled
-                    // Service IDs can be either "name" or "name_transport" format
-                    if connection.service_id == name || connection.service_id.starts_with(&format!("{}_", name)) {
-                        tracing::debug!("Disconnecting connection {} for service {}", connection.service_id, name);
-
-                        if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(&connection.service_id).await {
-                            tracing::warn!("Failed to disconnect connection {}: {}", connection.service_id, e);
-                        } else {
-                            disconnected_count += 1;
-                        }
-                    }
-                }
-
-                tracing::info!("Disconnected {} connections for service {}", disconnected_count, name);
-
-                // Wait a short time for disconnection to complete (reduced from 5s to 1s)
-                let max_wait_time = std::time::Duration::from_secs(1);
-                let start_time = std::time::Instant::now();
-
-                while start_time.elapsed() < max_wait_time {
-                    let (status, _) = MCP_CLIENT_MANAGER.get_connection_status(name).await;
-                    if status != "connected" {
-                        tracing::debug!("Service {} has disconnected", name);
-                        break;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                }
-
-                if start_time.elapsed() >= max_wait_time {
-                    tracing::warn!("Service {} did not disconnect within timeout, but service has been disabled", name);
-                }
-
-                Ok(false)
-            }
-        } else {
-            Err(McpError::ServiceNotFound(name.to_string()))
-        }
+        Ok(result)
     }
 
     async fn get_mcp_server_status(&self, name: &str) -> Result<ServiceStatus> {
@@ -470,423 +90,222 @@ impl McpServerManager {
             .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?
             .clone();
 
-        // Get version from cache first
-        let version_from_cache = {
-            let version_cache = self.version_cache.read().await;
-            version_cache
-                .get(name)
-                .and_then(|cache| cache.version.clone())
-        };
-
-        // Use mcp_client_manager to get actual connection status
+        let version_from_connection = MCP_CLIENT_MANAGER.get_cached_version(name).await;
         let (status, error_message) = MCP_CLIENT_MANAGER.get_connection_status(name).await;
 
-        // Determine the actual status based on service enabled state and connection status
         let final_status = if !service_config.enabled {
-            // Service is explicitly disabled
             "disconnected".to_string()
         } else {
-            // Service is enabled, check actual connection status
-            match status.as_str() {
-                "connected" => "connected".to_string(),
-                // For enabled services that are not connected, they should be marked as "failed"
-                // This includes:
-                // - Services that were enabled but connection failed
-                // - Services that were connected but now disconnected
-                // - Services that have error messages
-                _ => "failed".to_string(),
-            }
+            status
         };
 
-        tracing::debug!(
-            "Service {} status: enabled={}, status={}, error_message={:?}, version={:?}",
-            name,
-            service_config.enabled,
-            final_status,
-            error_message,
-            version_from_cache
-        );
-
         Ok(ServiceStatus {
-            name: service_config.name.clone(),
+            name: name.to_string(),
             enabled: service_config.enabled,
             status: final_status,
             pid: None,
             port: None,
-            version: version_from_cache,
+            version: version_from_connection.or(service_config.version),
             start_time: None,
             error_message,
         })
     }
 
-    pub async fn list_mcp_servers(&self) -> Result<Vec<McpServerInfo>> {
+    pub async fn check_service_with_version(&self, name: &str) -> Result<()> {
         let services = self.mcp_servers.read().await;
-        let mut server_infos = Vec::new();
+        let service_config = services
+            .get(name)
+            .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?
+            .clone();
+        drop(services);
 
-        for (name, config) in services.iter() {
-            if let Ok(status) = self.get_mcp_server_status(name).await {
-                // Query tool count from database
-                let tool_count = match crate::db::get_database().await {
-                    Ok(db) => {
-                        // Get tools count for this server from database
-                        match sqlx::query("SELECT COUNT(*) as count FROM mcp_tools WHERE server_id = (SELECT id FROM mcp_servers WHERE name = ?)")
-                            .bind(name)
-                            .fetch_one(&db)
-                            .await
-                        {
-                            Ok(row) => {
-                                let count: i64 = row.get("count");
-                                tracing::debug!("Service {} has {} tools in database", name, count);
-                                Some(count as usize)
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to get tool count for service {}: {}", name, e);
-                                None
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to get database connection: {}", e);
-                        None
-                    }
-                };
+        let connection = MCP_CLIENT_MANAGER
+            .ensure_connection(&service_config, false)
+            .await
+            .map_err(|e| {
+                McpError::ConnectionError(format!("Failed to connect to service '{}': {}", name, e))
+            })?;
 
-                let server_info = McpServerInfo {
-                    name: status.name,
-                    enabled: status.enabled,
-                    status: status.status,
-                    version: status.version,
-                    error_message: status.error_message,
-                    transport: match config.transport {
-                        ServiceTransport::Stdio => "stdio".to_string(),
-                        ServiceTransport::Sse => "sse".to_string(),
-                        ServiceTransport::Http => "http".to_string(),
-                    },
-                    url: config.url.clone(),
-                    description: config.description.clone(),
-                    env_vars: config.env_vars.clone(),
-                    headers: config.headers.clone(),
-                    command: match config.transport {
-                        ServiceTransport::Stdio => config.command.clone(),
-                        _ => None,
-                    },
-                    args: match config.transport {
-                        ServiceTransport::Stdio => config.args.clone(),
-                        _ => None,
-                    },
-                    tool_count,
-                };
-                server_infos.push(server_info);
-            }
-        }
-
-        Ok(server_infos)
-    }
-
-    pub async fn get_mcp_servers(&self) -> Arc<RwLock<HashMap<String, McpServerConfig>>> {
-        self.mcp_servers.clone()
-    }
-}
-
-impl McpServerManager {
-    // Generic atomic config update: apply mutation under write-lock then persist
-    pub async fn update_config<F>(&self, update_fn: F) -> crate::error::Result<()>
-    where
-        F: FnOnce(&mut AppConfig),
-    {
-        let mut config = self.config.write().await;
-        update_fn(&mut config);
-        config.save()
-    }
-
-    /// 在后台异步获取并缓存服务工具（不阻塞调用者）
-    fn background_fetch_service_tools(&self, service_name: String, config: McpServerConfig) {
-        let manager = self.clone();
-        tokio::spawn(async move {
-            tracing::info!("Background fetching tools for service: {}", service_name);
-            match manager
-                .fetch_and_cache_service_tools(&service_name, &config)
-                .await
-            {
-                Ok(tools) => {
-                    tracing::info!(
-                        "Successfully cached {} tools for service {} in background",
-                        tools.len(),
-                        service_name
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Background tool fetch failed for service {}: {}",
-                        service_name,
-                        e
-                    );
-
-                    // Record the connection error when background fetch fails
-                    let error_message = format!("Failed to fetch tools: {}", e);
-                    MCP_CLIENT_MANAGER.set_connection_error(&service_name, error_message).await;
-                }
-            }
-        });
-    }
-
-    pub async fn update_version_cache(&self, name: &str, version: Option<String>) {
-        let mut cache = self.version_cache.write().await;
-        cache.insert(name.to_string(), ServiceVersionCache { version });
-        tracing::debug!("Updated version cache via API for {}", name);
-    }
-
-    async fn fetch_and_cache_service_tools(
-        &self,
-        service_name: &str,
-        config: &McpServerConfig,
-    ) -> Result<Vec<crate::McpTool>> {
-        tracing::info!("Fetching tools for service: {}", service_name);
-
-        // 尝试连接到服务
-        let connection = match MCP_CLIENT_MANAGER.ensure_connection(config, false).await {
-            Ok(conn) => conn,
-            Err(e) => {
-                tracing::warn!("Failed to connect to service {}: {}", service_name, e);
-
-                // Record connection error for display in UI
-                let error_message = format!("Failed to connect: {}", e);
-                MCP_CLIENT_MANAGER.set_connection_error(service_name, error_message).await;
-
-                return Err(e);
-            }
-        };
-
-        // 在建立连接后同步版本缓存，并写入数据库
-        if let Some(version) = connection.cached_version.clone() {
-            {
-                let mut cache = self.version_cache.write().await;
-                cache.insert(
-                    service_name.to_string(),
+        if let Some(ref client) = connection.client {
+            if let Some(version) = connection.server_info.as_ref().and_then(|info| {
+                info.get("version")
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+            }) {
+                let mut version_cache = self.version_cache.write().await;
+                version_cache.insert(
+                    name.to_string(),
                     ServiceVersionCache {
-                        version: Some(version.to_string()),
+                        version: Some(version.clone()),
                     },
                 );
             }
-            tracing::info!("Synced version cache for {} => {}", service_name, version);
-            if let Err(e) =
-                McpServerRepository::update_version(service_name, Some(version.clone())).await
-            {
-                tracing::warn!("Failed to persist version for {}: {}", service_name, e);
-            }
         }
 
-        // 获取工具列表
-        let mcp_tools = match MCP_CLIENT_MANAGER.list_tools(service_name).await {
-            Ok(tools) => tools,
-            Err(e) => {
-                tracing::warn!("Failed to list tools for service {}: {}", service_name, e);
-
-                // Record error when failing to list tools
-                let error_message = format!("Failed to list tools: {}", e);
-                MCP_CLIENT_MANAGER.set_connection_error(service_name, error_message).await;
-
-                return Err(e);
-            }
-        };
-
-        let tool_count = mcp_tools.len();
-
-        // Save tools to database
-        if let Err(e) = self.save_tools_to_database(service_name, &mcp_tools).await {
-            tracing::error!(
-                "Failed to save tools to database for service {}: {}",
-                service_name,
-                e
-            );
-        }
-
-        tracing::info!(
-            "Successfully fetched and cached {} tools for service: {}",
-            tool_count,
-            service_name
-        );
-        Ok(mcp_tools)
-    }
-
-    /// Save tools to database
-    async fn save_tools_to_database(
-        &self,
-        service_name: &str,
-        tools: &[crate::McpTool],
-    ) -> Result<()> {
-        // Get server ID from database
-        let server = McpServerRepository::get_by_name(service_name)
-            .await?
-            .ok_or_else(|| McpError::ServiceNotFound(service_name.to_string()))?;
-        let server_id = server
-            .id
-            .ok_or_else(|| McpError::ConfigError("Server ID not found".to_string()))?;
-
-        // Get existing tools from database
-        let existing_tools = ToolRepository::get_by_server_id(&server_id).await?;
-        let existing_map: std::collections::HashMap<String, ToolRow> = existing_tools
-            .into_iter()
-            .map(|t| (t.name.clone(), t))
-            .collect();
-
-        // Build remote tool name set
-        let remote_names: std::collections::HashSet<_> =
-            tools.iter().map(|t| t.name.to_string()).collect();
-
-        // Upsert tools: update description for existing, create missing
-        for tool in tools {
-            let tool_name = tool.name.to_string();
-            let remote_desc = tool.description.as_ref().map(|d| d.to_string());
-
-            if let Some(existing) = existing_map.get(&tool_name) {
-                // Update description if changed
-                if existing.description != remote_desc {
-                    if let Err(e) = ToolRepository::update_description(
-                        &server_id,
-                        &tool_name,
-                        remote_desc.clone(),
-                    )
-                    .await
-                    {
-                        tracing::warn!(
-                            "Failed to update description for tool {} on server {}: {}",
-                            tool_name,
-                            service_name,
-                            e
-                        );
-                    } else {
-                        tracing::debug!(
-                            "Updated description for tool {} on server {}",
-                            tool_name,
-                            service_name
-                        );
-                    }
-                }
-            } else {
-                // Create new tool
-                let tool_row = ToolRow {
-                    id: None,
-                    name: tool_name.clone(),
-                    server_id: server_id.clone(),
-                    description: remote_desc,
-                    enabled: true,
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
-                };
-                if let Err(e) = ToolRepository::create(tool_row).await {
-                    tracing::error!(
-                        "Failed to create tool {} for server {}: {}",
-                        tool_name,
-                        service_name,
-                        e
-                    );
-                } else {
-                    tracing::info!("Created new tool {} for server {}", tool_name, service_name);
-                }
-            }
-        }
-
-        // Disable tools that are no longer reported by the service
-        for (name, row) in existing_map.into_iter() {
-            if !remote_names.contains(&name) {
-                if let Some(id) = row.id.as_ref() {
-                    if let Err(e) = ToolRepository::toggle_enabled(id, false).await {
-                        tracing::warn!(
-                            "Failed to disable missing tool {} for server {}: {}",
-                            name,
-                            service_name,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Disabled missing tool {} for server {}",
-                            name,
-                            service_name
-                        );
-                    }
-                } else {
-                    // Fallback by name in rare case of missing ID
-                    if let Err(e) =
-                        ToolRepository::toggle_enabled_by_name(&server_id, &name, false).await
-                    {
-                        tracing::warn!(
-                            "Failed to disable missing tool {} by name for server {}: {}",
-                            name,
-                            service_name,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Disabled missing tool {} by name for server {}",
-                            name,
-                            service_name
-                        );
-                    }
-                }
-            }
-        }
-
-        tracing::info!(
-            "Synced {} tools with database for service {}",
-            remote_names.len(),
-            service_name
-        );
         Ok(())
     }
 
-    /// Convert database row to config
-    fn db_row_to_config(&self, row: &McpServerRow) -> Result<McpServerConfig> {
-        let transport = match row.transport.to_lowercase().as_str() {
-            "stdio" => ServiceTransport::Stdio,
-            "sse" => ServiceTransport::Sse,
-            "http" => ServiceTransport::Http,
-            _ => {
-                return Err(McpError::ConfigError(format!(
-                    "Invalid transport: {}",
-                    row.transport
-                )))
+    pub async fn update_version_cache(&self, name: &str, version: Option<String>) {
+        let mut version_cache = self.version_cache.write().await;
+        version_cache.insert(name.to_string(), ServiceVersionCache { version });
+    }
+
+    pub async fn add_mcp_server(&self, app_handle: &tauri::AppHandle, config: McpServerConfig) -> Result<()> {
+        tracing::info!("McpServerManager::add_mcp_server 开始添加服务器: {}", config.name);
+        let mut repo = McpServerRepository::new(app_handle).await
+            .map_err(|e| {
+                tracing::error!("创建仓库失败: {}", e);
+                McpError::ConfigError(format!("Failed to create repository: {}", e))
+            })?;
+
+        tracing::info!("仓库创建成功，开始添加配置");
+        repo.add(config.clone()).await
+            .map_err(|e| {
+                tracing::error!("添加配置失败: {}", e);
+                McpError::ConfigError(format!("Failed to add MCP server: {}", e))
+            })?;
+
+        tracing::info!("✅ 配置添加成功，同步内存状态");
+        self.sync_with_config_file(app_handle).await?;
+
+        tracing::info!("✅ 内存同步成功，开始连接服务获取版本和工具列表");
+
+        // 尝试连接服务以获取版本和工具列表
+        if let Err(e) = self.check_service_with_version(&config.name).await {
+            tracing::warn!("⚠️ 连接服务失败，将在首次使用时获取版本信息: {}", e);
+        } else {
+            tracing::info!("✅ 服务连接成功，版本和工具列表已更新");
+        }
+
+        Ok(())
+    }
+
+    pub async fn update_mcp_server(&self, app_handle: &tauri::AppHandle, config: McpServerConfig) -> Result<()> {
+        let mut repo = McpServerRepository::new(app_handle).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+
+        let server_name = config.name.clone();
+        repo.update(&server_name, config.clone()).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to update MCP server: {}", e)))?;
+
+        tracing::info!("✅ 配置更新成功，同步内存状态");
+        self.sync_with_config_file(app_handle).await?;
+
+        // 如果服务被启用，尝试连接以获取最新版本信息
+        if config.enabled {
+            tracing::info!("✅ 服务 '{}' 已更新，开始连接获取最新版本信息", server_name);
+            if let Err(e) = self.check_service_with_version(&server_name).await {
+                tracing::warn!("⚠️ 连接服务失败: {}", e);
+            } else {
+                tracing::info!("✅ 服务连接成功，版本信息已更新");
             }
-        };
+        } else {
+            tracing::info!("ℹ️ 服务 '{}' 当前为禁用状态", server_name);
+        }
 
-        Ok(McpServerConfig {
-            name: row.name.clone(),
-            description: row.description.clone(),
-            command: row.command.clone(),
-            args: row.args.clone(),
-            transport,
-            url: row.url.clone(),
-            enabled: row.enabled,
-            env_vars: row.env_vars.clone(),
-            headers: row.headers.clone(),
-            version: row.version.clone(),
-        })
+        Ok(())
     }
 
-    /// Convert config to database row
-    fn config_to_db_row(&self, config: &McpServerConfig) -> Result<McpServerRow> {
-        let transport = match config.transport {
-            ServiceTransport::Stdio => "stdio",
-            ServiceTransport::Sse => "sse",
-            ServiceTransport::Http => "http",
-        };
+    pub async fn remove_mcp_server(&self, app_handle: &tauri::AppHandle, name: &str) -> Result<()> {
+        let mut repo = McpServerRepository::new(app_handle).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
 
-        Ok(McpServerRow {
-            id: None, // Will be generated by repository if needed
-            name: config.name.clone(),
-            description: config.description.clone(),
-            command: config.command.clone(),
-            args: config.args.clone(),
-            transport: transport.to_string(),
-            url: config.url.clone(),
-            enabled: config.enabled,
-            env_vars: config.env_vars.clone(),
-            headers: config.headers.clone(),
-            version: config.version.clone(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        })
+        repo.delete(name).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to delete MCP server: {}", e)))?;
+
+        tracing::info!("✅ 配置删除成功，同步内存状态");
+        self.sync_with_config_file(app_handle).await?;
+
+        Ok(())
     }
 
-    // 缓存相关方法
+    pub async fn toggle_mcp_server(&self, app_handle: &tauri::AppHandle, name: &str) -> Result<bool> {
+        let mut repo = McpServerRepository::new(app_handle).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+
+        let new_state = repo.toggle_enabled(name).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to toggle MCP server: {}", e)))?;
+
+        tracing::info!("✅ 配置更新成功，同步内存状态");
+        self.sync_with_config_file(app_handle).await?;
+
+        // 如果服务被启用，尝试连接以获取版本信息
+        if new_state {
+            tracing::info!("✅ 服务 '{}' 已启用，开始连接获取版本信息", name);
+            if let Err(e) = self.check_service_with_version(name).await {
+                tracing::warn!("⚠️ 连接服务失败: {}", e);
+            } else {
+                tracing::info!("✅ 服务连接成功，版本信息已更新");
+            }
+        } else {
+            tracing::info!("ℹ️ 服务 '{}' 已禁用", name);
+        }
+
+        Ok(new_state)
+    }
+
+    /// 从配置文件同步内存状态
+    pub async fn sync_with_config_file(&self, app_handle: &tauri::AppHandle) -> Result<()> {
+        let repo = McpServerRepository::new(app_handle).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+
+        let servers = repo.get_all();
+        let mut mcp_servers_map = HashMap::new();
+
+        for server in servers {
+            // 转换为 McpServerConfig（去除内部字段）
+            let config = McpServerConfig {
+                name: server.name.clone(),
+                description: server.description.clone(),
+                command: server.command.clone(),
+                args: server.args.clone(),
+                transport: server.transport.clone(),
+                url: server.url.clone(),
+                enabled: server.enabled,
+                env_vars: server.env_vars.clone(),
+                headers: server.headers.clone(),
+                version: server.version.clone(),
+            };
+            mcp_servers_map.insert(config.name.clone(), config);
+        }
+
+        // 更新内存中的 HashMap
+        let mut mcp_servers = self.mcp_servers.write().await;
+        *mcp_servers = mcp_servers_map;
+
+        tracing::info!("✅ 内存状态已同步，共 {} 个服务器", mcp_servers.len());
+        Ok(())
+    }
+
+    /// 获取服务器的工具列表
+    pub async fn list_mcp_server_tools(&self, server_name: &str, app_handle: &tauri::AppHandle) -> Result<Vec<String>> {
+        // 首先从配置文件获取工具列表
+        let repo = McpServerRepository::new(app_handle).await
+            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+
+        if let Some(server) = repo.get_by_name(server_name) {
+            // 返回配置文件中存储的工具列表
+            let tools: Vec<String> = server.tools.iter().map(|t| t.id.clone()).collect();
+            tracing::info!("从配置文件中获取到 {} 个工具", tools.len());
+            return Ok(tools);
+        }
+
+        // 如果配置文件中没有，尝试从连接中获取
+        tracing::info!("配置文件中未找到工具列表，尝试从连接获取");
+
+        // 获取内存中的服务配置
+        let mcp_servers = self.mcp_servers.read().await;
+        if let Some(config) = mcp_servers.get(server_name) {
+            let config_clone = config.clone();
+            drop(mcp_servers);
+            // 尝试建立连接并获取工具
+            if let Ok(_connection) = MCP_CLIENT_MANAGER.ensure_connection(&config_clone, false).await {
+                // TODO: 需要有方法能通过服务器名称或连接ID获取工具列表
+                // 目前暂时返回空列表，后续完善
+                tracing::info!("连接成功，但工具列表获取功能待完善");
+            }
+        }
+
+        tracing::warn!("⚠️ 未找到服务器 '{}' 的工具列表", server_name);
+        Ok(Vec::new())
+    }
 }

@@ -1,15 +1,16 @@
 // API 密钥管理命令 - 基于配置文件存储
 
-use crate::config::{ApiKeyRepository, McpServerRepository};
+use crate::config::{ApiKeyRepository, ConfigError, McpServerRepository, Result};
 use crate::error::{McpError, Result as McpResult};
 use crate::types::{ApiKey, ApiKeyPermissions};
+use tauri::Manager;
 
 /// 从工具级别权限推导出授权的服务器列表
 async fn get_allowed_servers_from_tools(
     app_handle: &tauri::AppHandle,
     api_key_id: &str,
     api_key_repo: &ApiKeyRepository,
-) -> McpResult<Vec<String>> {
+) -> McpResult<Vec<String>, ConfigError> {
     let mcp_repo = McpServerRepository::new(app_handle).await?;
 
     // 获取授权的工具ID列表
@@ -34,7 +35,7 @@ pub async fn create_api_key(
     app_handle: tauri::AppHandle,
     name: String,
     permissions: ApiKeyPermissions,
-) -> McpResult<ApiKey> {
+) -> Result<ApiKey> {
     let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
 
     // 创建新的API密钥
@@ -42,7 +43,7 @@ pub async fn create_api_key(
 
     // 添加工具权限
     for server_name in &permissions.allowed_servers {
-        let mcp_repo = McpServerRepository::new(&app_handle).await?;
+        let mcp_repo = McpServerRepository::new(app_handle).await?;
 
         // 获取服务器的所有工具ID
         if let Some(server) = mcp_repo.get_by_name(server_name) {
@@ -70,7 +71,7 @@ pub async fn create_api_key(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_api_keys(app_handle: tauri::AppHandle) -> McpResult<Vec<serde_json::Value>> {
+pub async fn list_api_keys(app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Value>> {
     let api_key_repo = ApiKeyRepository::new(&app_handle).await?;
 
     // 获取API密钥列表（已隐藏敏感信息）
@@ -97,11 +98,9 @@ pub async fn list_api_keys(app_handle: tauri::AppHandle) -> McpResult<Vec<serde_
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn get_api_key_details(
-    app_handle: tauri::AppHandle,
-    id: String,
-) -> McpResult<ApiKey> {
-    let api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+pub async fn get_api_key_details(id: String) -> Result<ApiKey> {
+    let app_handle = tauri::generate_handler_context!();
+    let api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 获取API密钥详情
     let api_key = api_key_repo
@@ -112,7 +111,7 @@ pub async fn get_api_key_details(
     let tool_ids = api_key_repo.get_tools_by_api_key(&id)?;
 
     // 通过工具权限推导出服务器名称列表
-    let allowed_servers = get_allowed_servers_from_tools(&app_handle, &id, &api_key_repo).await?;
+    let allowed_servers = get_allowed_servers_from_tools(app_handle, &id, &api_key_repo).await?;
 
     Ok(ApiKey {
         id: api_key.id.clone(),
@@ -128,11 +127,9 @@ pub async fn get_api_key_details(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn delete_api_key(
-    app_handle: tauri::AppHandle,
-    id: String,
-) -> McpResult<String> {
-    let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+pub async fn delete_api_key(id: String) -> Result<String> {
+    let app_handle = tauri::generate_handler_context!();
+    let mut api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 删除API密钥
     let deleted = api_key_repo.delete(&id)?;
@@ -149,12 +146,9 @@ pub async fn delete_api_key(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn toggle_api_key(
-    app_handle: tauri::AppHandle,
-    id: String,
-) -> McpResult<bool> {
-    // app_handle passed as parameter
-    let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+pub async fn toggle_api_key(id: String) -> Result<bool> {
+    let app_handle = tauri::generate_handler_context!();
+    let mut api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 切换启用状态
     let new_state = api_key_repo.toggle_enabled(&id)?;
@@ -173,28 +167,21 @@ pub async fn toggle_api_key(
 // 工具级权限管理命令
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn get_api_key_tools(
-    app_handle: tauri::AppHandle,
-    api_key_id: String,
-) -> McpResult<Vec<String>> {
-    // app_handle passed as parameter
-    let api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+pub async fn get_api_key_tools(api_key_id: String) -> Result<Vec<String>> {
+    let app_handle = tauri::generate_handler_context!();
+    let api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     let tool_ids = api_key_repo.get_tools_by_api_key(&api_key_id)?;
     Ok(tool_ids)
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn add_tool_permission(
-    app_handle: tauri::AppHandle,
-    api_key_id: String,
-    tool_id: String,
-) -> McpResult<String> {
-    // app_handle passed as parameter
-    let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+pub async fn add_tool_permission(api_key_id: String, tool_id: String) -> Result<String> {
+    let app_handle = tauri::generate_handler_context!();
+    let mut api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 验证工具是否存在
-    let mcp_repo = McpServerRepository::new(&app_handle).await?;
+    let mcp_repo = McpServerRepository::new(app_handle).await?;
     let tool_exists = mcp_repo
         .get_all()
         .iter()
@@ -218,13 +205,9 @@ pub async fn add_tool_permission(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn remove_tool_permission(
-    app_handle: tauri::AppHandle,
-    api_key_id: String,
-    tool_id: String,
-) -> McpResult<String> {
-    // app_handle passed as parameter
-    let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+pub async fn remove_tool_permission(api_key_id: String, tool_id: String) -> Result<String> {
+    let app_handle = tauri::generate_handler_context!();
+    let mut api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 移除权限
     api_key_repo.remove_tool_permission(&api_key_id, &tool_id)?;
@@ -238,15 +221,14 @@ pub async fn remove_tool_permission(
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn grant_server_tools_to_api_key(
-    app_handle: tauri::AppHandle,
     api_key_id: String,
     server_name: String,
-) -> McpResult<String> {
-    // app_handle passed as parameter
-    let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+) -> Result<String> {
+    let app_handle = tauri::generate_handler_context!();
+    let mut api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 获取服务器信息
-    let mcp_repo = McpServerRepository::new(&app_handle).await?;
+    let mcp_repo = McpServerRepository::new(app_handle).await?;
     let server = mcp_repo
         .get_by_name(&server_name)
         .ok_or_else(|| McpError::ServiceNotFound(server_name.clone()))?;
@@ -272,15 +254,14 @@ pub async fn grant_server_tools_to_api_key(
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn revoke_server_tools_from_api_key(
-    app_handle: tauri::AppHandle,
     api_key_id: String,
     server_name: String,
-) -> McpResult<String> {
-    // app_handle passed as parameter
-    let mut api_key_repo = ApiKeyRepository::new(&app_handle).await?;
+) -> Result<String> {
+    let app_handle = tauri::generate_handler_context!();
+    let mut api_key_repo = ApiKeyRepository::new(app_handle).await?;
 
     // 获取服务器信息
-    let mcp_repo = McpServerRepository::new(&app_handle).await?;
+    let mcp_repo = McpServerRepository::new(app_handle).await?;
     let server = mcp_repo
         .get_by_name(&server_name)
         .ok_or_else(|| McpError::ServiceNotFound(server_name.clone()))?;
