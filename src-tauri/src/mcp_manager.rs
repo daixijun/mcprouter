@@ -126,7 +126,7 @@ impl McpServerManager {
                 McpError::ConnectionError(format!("Failed to connect to service '{}': {}", name, e))
             })?;
 
-        if let Some(ref client) = connection.client {
+        if let Some(ref _client) = connection.client {
             if let Some(version) = connection.server_info.as_ref().and_then(|info| {
                 info.get("version")
                     .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -149,20 +149,25 @@ impl McpServerManager {
         version_cache.insert(name.to_string(), ServiceVersionCache { version });
     }
 
-    pub async fn add_mcp_server(&self, app_handle: &tauri::AppHandle, config: McpServerConfig) -> Result<()> {
-        tracing::info!("McpServerManager::add_mcp_server 开始添加服务器: {}", config.name);
-        let mut repo = McpServerRepository::new(app_handle).await
-            .map_err(|e| {
-                tracing::error!("创建仓库失败: {}", e);
-                McpError::ConfigError(format!("Failed to create repository: {}", e))
-            })?;
+    pub async fn add_mcp_server(
+        &self,
+        app_handle: &tauri::AppHandle,
+        config: McpServerConfig,
+    ) -> Result<()> {
+        tracing::info!(
+            "McpServerManager::add_mcp_server 开始添加服务器: {}",
+            config.name
+        );
+        let mut repo = McpServerRepository::new(app_handle).await.map_err(|e| {
+            tracing::error!("创建仓库失败: {}", e);
+            McpError::ConfigError(format!("Failed to create repository: {}", e))
+        })?;
 
         tracing::info!("仓库创建成功，开始添加配置");
-        repo.add(config.clone()).await
-            .map_err(|e| {
-                tracing::error!("添加配置失败: {}", e);
-                McpError::ConfigError(format!("Failed to add MCP server: {}", e))
-            })?;
+        repo.add(config.clone()).await.map_err(|e| {
+            tracing::error!("添加配置失败: {}", e);
+            McpError::ConfigError(format!("Failed to add MCP server: {}", e))
+        })?;
 
         tracing::info!("✅ 配置添加成功，同步内存状态");
         self.sync_with_config_file(app_handle).await?;
@@ -179,12 +184,18 @@ impl McpServerManager {
         Ok(())
     }
 
-    pub async fn update_mcp_server(&self, app_handle: &tauri::AppHandle, config: McpServerConfig) -> Result<()> {
-        let mut repo = McpServerRepository::new(app_handle).await
+    pub async fn update_mcp_server(
+        &self,
+        app_handle: &tauri::AppHandle,
+        config: McpServerConfig,
+    ) -> Result<()> {
+        let mut repo = McpServerRepository::new(app_handle)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
 
         let server_name = config.name.clone();
-        repo.update(&server_name, config.clone()).await
+        repo.update(&server_name, config.clone())
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to update MCP server: {}", e)))?;
 
         tracing::info!("✅ 配置更新成功，同步内存状态");
@@ -206,10 +217,12 @@ impl McpServerManager {
     }
 
     pub async fn remove_mcp_server(&self, app_handle: &tauri::AppHandle, name: &str) -> Result<()> {
-        let mut repo = McpServerRepository::new(app_handle).await
+        let mut repo = McpServerRepository::new(app_handle)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
 
-        repo.delete(name).await
+        repo.delete(name)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to delete MCP server: {}", e)))?;
 
         tracing::info!("✅ 配置删除成功，同步内存状态");
@@ -218,11 +231,18 @@ impl McpServerManager {
         Ok(())
     }
 
-    pub async fn toggle_mcp_server(&self, app_handle: &tauri::AppHandle, name: &str) -> Result<bool> {
-        let mut repo = McpServerRepository::new(app_handle).await
+    pub async fn toggle_mcp_server(
+        &self,
+        app_handle: &tauri::AppHandle,
+        name: &str,
+    ) -> Result<bool> {
+        let mut repo = McpServerRepository::new(app_handle)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
 
-        let new_state = repo.toggle_enabled(name).await
+        let new_state = repo
+            .toggle_enabled(name)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to toggle MCP server: {}", e)))?;
 
         tracing::info!("✅ 配置更新成功，同步内存状态");
@@ -245,7 +265,8 @@ impl McpServerManager {
 
     /// 从配置文件同步内存状态
     pub async fn sync_with_config_file(&self, app_handle: &tauri::AppHandle) -> Result<()> {
-        let repo = McpServerRepository::new(app_handle).await
+        let repo = McpServerRepository::new(app_handle)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
 
         let servers = repo.get_all();
@@ -277,9 +298,14 @@ impl McpServerManager {
     }
 
     /// 获取服务器的工具列表
-    pub async fn list_mcp_server_tools(&self, server_name: &str, app_handle: &tauri::AppHandle) -> Result<Vec<String>> {
+    pub async fn list_mcp_server_tools(
+        &self,
+        server_name: &str,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<Vec<String>> {
         // 首先从配置文件获取工具列表
-        let repo = McpServerRepository::new(app_handle).await
+        let repo = McpServerRepository::new(app_handle)
+            .await
             .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
 
         if let Some(server) = repo.get_by_name(server_name) {
@@ -298,7 +324,10 @@ impl McpServerManager {
             let config_clone = config.clone();
             drop(mcp_servers);
             // 尝试建立连接并获取工具
-            if let Ok(_connection) = MCP_CLIENT_MANAGER.ensure_connection(&config_clone, false).await {
+            if let Ok(_connection) = MCP_CLIENT_MANAGER
+                .ensure_connection(&config_clone, false)
+                .await
+            {
                 // TODO: 需要有方法能通过服务器名称或连接ID获取工具列表
                 // 目前暂时返回空列表，后续完善
                 tracing::info!("连接成功，但工具列表获取功能待完善");

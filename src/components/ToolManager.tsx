@@ -9,7 +9,7 @@ import {
   Switch,
   Typography,
 } from 'antd'
-import { CheckSquare, Search, Square } from 'lucide-react'
+import { CheckSquare, RefreshCw, Search, Square } from 'lucide-react'
 import React, { useEffect, useMemo, useState } from 'react'
 import { ToolService } from '../services/tool-service'
 import type { McpServerInfo, Tool } from '../types'
@@ -27,13 +27,14 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   const [updating, setUpdating] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
+  const [refreshVersion, setRefreshVersion] = useState(0)
 
   useEffect(() => {
     loadTools()
     // 重置搜索查询和选中状态当服务器切换时
     setSearchQuery('')
     setSelectedTools(new Set())
-  }, [mcpServer.name])
+  }, [mcpServer.name, refreshVersion])  // 添加 refreshVersion 依赖
 
   const loadTools = async () => {
     setLoading(true)
@@ -41,12 +42,19 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
       // 直接从数据库获取工具列表（无需连接服务）
       const serverTools = await ToolService.listMcpServerTools(mcpServer.name)
       setTools(serverTools)
+      console.log(`✅ 成功加载 ${serverTools.length} 个工具`)
     } catch (error) {
       console.error('Failed to load tools:', error)
       message.error('加载工具列表失败')
     } finally {
       setLoading(false)
     }
+  }
+
+  // 手动刷新工具列表
+  const handleRefresh = () => {
+    console.log('🔄 手动刷新工具列表')
+    setRefreshVersion(prev => prev + 1)
   }
 
   // 过滤工具列表
@@ -113,14 +121,7 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
       return
     }
 
-    const originalTools = [...tools]
     setUpdating('batch-enable')
-
-    // 乐观更新
-    const updatedTools = tools.map((tool) =>
-      selectedTools.has(tool.name) ? { ...tool, enabled: true } : tool,
-    )
-    setTools(updatedTools)
 
     try {
       // 逐个启用选中的工具
@@ -130,9 +131,10 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
       await Promise.all(promises)
       message.success(`已启用 ${selectedTools.size} 个工具`)
       setSelectedTools(new Set())
+      // 重新加载工具列表以获取最新状态
+      await loadTools()
     } catch (error) {
       console.error('Failed to enable tools:', error)
-      setTools(originalTools)
       message.error('批量启用工具失败')
     } finally {
       setUpdating(null)
@@ -146,14 +148,7 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
       return
     }
 
-    const originalTools = [...tools]
     setUpdating('batch-disable')
-
-    // 乐观更新
-    const updatedTools = tools.map((tool) =>
-      selectedTools.has(tool.name) ? { ...tool, enabled: false } : tool,
-    )
-    setTools(updatedTools)
 
     try {
       // 逐个禁用选中的工具
@@ -163,9 +158,10 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
       await Promise.all(promises)
       message.success(`已禁用 ${selectedTools.size} 个工具`)
       setSelectedTools(new Set())
+      // 重新加载工具列表以获取最新状态
+      await loadTools()
     } catch (error) {
       console.error('Failed to disable tools:', error)
-      setTools(originalTools)
       message.error('批量禁用工具失败')
     } finally {
       setUpdating(null)
@@ -173,29 +169,15 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   }
 
   const handleToggleTool = async (toolName: string, enabled: boolean) => {
-    // 记录更新前的状态，以便在失败时回滚
-    const originalTools = [...tools]
-    const toolIndex = tools.findIndex((t) => t.name === toolName)
-
-    if (toolIndex === -1) {
-      message.error('未找到对应工具')
-      return
-    }
-
     setUpdating(toolName)
-    setTools((prevTools) =>
-      prevTools.map((tool) =>
-        tool.name === toolName ? { ...tool, enabled } : tool,
-      ),
-    )
 
     try {
       await ToolService.toggleMcpServerTool(mcpServer.name, toolName, enabled)
       message.success(`工具已${enabled ? '启用' : '禁用'}`)
+      // 重新加载工具列表以获取最新状态
+      await loadTools()
     } catch (error) {
       console.error('Failed to toggle tool:', error)
-      // 回滚到原始状态
-      setTools(originalTools)
       message.error('切换工具状态失败')
     } finally {
       setUpdating(null)
@@ -203,18 +185,15 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   }
 
   const handleEnableAll = async () => {
-    const originalTools = [...tools]
-    const enabledTools = tools.map((tool) => ({ ...tool, enabled: true }))
-
     setUpdating('all')
-    setTools(enabledTools)
 
     try {
       await ToolService.enableAllMcpServerTools(mcpServer.name)
       message.success('已启用所有工具')
+      // 重新加载工具列表以获取最新状态
+      await loadTools()
     } catch (error) {
       console.error('Failed to enable all tools:', error)
-      setTools(originalTools)
       message.error('启用所有工具失败')
     } finally {
       setUpdating(null)
@@ -222,18 +201,15 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   }
 
   const handleDisableAll = async () => {
-    const originalTools = [...tools]
-    const disabledTools = tools.map((tool) => ({ ...tool, enabled: false }))
-
     setUpdating('all')
-    setTools(disabledTools)
 
     try {
       await ToolService.disableAllMcpServerTools(mcpServer.name)
       message.success('已禁用所有工具')
+      // 重新加载工具列表以获取最新状态
+      await loadTools()
     } catch (error) {
       console.error('Failed to disable all tools:', error)
-      setTools(originalTools)
       message.error('禁用所有工具失败')
     } finally {
       setUpdating(null)
@@ -321,6 +297,14 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
                   filteredTools.every((tool) => !tool.enabled)
                 }>
                 全部禁用
+              </Button>
+              <Button
+                onClick={handleRefresh}
+                loading={loading}
+                size='small'
+                icon={<RefreshCw size={14} />}
+                title='刷新工具列表'>
+                刷新
               </Button>
               <Button
                 onClick={handleBatchEnable}
