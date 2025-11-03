@@ -396,6 +396,15 @@ pub async fn run() {
                 match SERVICE_MANAGER.load_mcp_servers(&app_handle).await {
                     Ok(_) => {
                         tracing::info!("MCP services loaded");
+
+                        // 5) 自动连接所有启用的服务
+                        tracing::info!("🚀 开始启动时自动连接服务...");
+                        if let Err(e) = SERVICE_MANAGER.auto_connect_enabled_services().await {
+                            tracing::error!("Failed to auto-connect services: {}", e);
+                        }
+
+                        // 6) 启动后台定期健康检查
+                        SERVICE_MANAGER.start_background_health_check();
                     }
                     Err(e) => {
                         tracing::error!("Failed to load services: {}", e);
@@ -486,6 +495,7 @@ pub async fn run() {
             delete_mcp_server,
             // Tool DB Commands
             list_mcp_server_tools,
+            refresh_all_mcp_servers,
             // Legacy Commands
             toggle_mcp_server_tool,
             enable_all_mcp_server_tools,

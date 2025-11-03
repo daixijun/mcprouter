@@ -337,4 +337,96 @@ impl McpServerManager {
         tracing::warn!("⚠️ 未找到服务器 '{}' 的工具列表", server_name);
         Ok(Vec::new())
     }
+
+    /// 启动时自动连接所有启用的服务
+    pub async fn auto_connect_enabled_services(&self) -> Result<()> {
+        let services = self.mcp_servers.read().await;
+        let enabled_services: Vec<String> = services
+            .iter()
+            .filter(|(_, config)| config.enabled)
+            .map(|(name, _)| name.clone())
+            .collect();
+        drop(services);
+
+        if enabled_services.is_empty() {
+            tracing::info!("没有启用的MCP服务需要连接");
+            return Ok(());
+        }
+
+        tracing::info!("🚀 启动时自动连接 {} 个已启用的MCP服务...", enabled_services.len());
+
+        // 使用批量健康检查并发连接所有服务
+        let health_results = MCP_CLIENT_MANAGER.batch_health_check(&enabled_services).await;
+
+        let mut success_count = 0;
+        let mut failed_count = 0;
+
+        for service_name in enabled_services {
+            let is_healthy = health_results.get(&service_name).copied().unwrap_or(false);
+
+            if is_healthy {
+                tracing::info!("✅ 服务 '{}' 连接成功", service_name);
+
+                // 尝试获取版本信息
+                if let Err(e) = self.check_service_with_version(&service_name).await {
+                    tracing::warn!("⚠️ 获取服务 '{}' 版本信息失败: {}", service_name, e);
+                } else {
+                    tracing::info!("✅ 服务 '{}' 版本信息已更新", service_name);
+                }
+
+                success_count += 1;
+            } else {
+                tracing::warn!("⚠️ 服务 '{}' 连接失败", service_name);
+                failed_count += 1;
+            }
+        }
+
+        tracing::info!(
+            "🎉 自动连接完成: {} 个服务连接成功, {} 个失败",
+            success_count,
+            failed_count
+        );
+
+        Ok(())
+    }
+
+    /// 启动后台定期健康检查任务
+    pub fn start_background_health_check(&self) {
+        let manager_clone = Arc::new(self.clone());
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30)); // 每30秒检查一次
+
+            loop {
+                interval.tick().await;
+
+                tracing::debug!("开始后台健康检查...");
+
+                let services = manager_clone.mcp_servers.read().await;
+                let enabled_services: Vec<String> = services
+                    .iter()
+                    .filter(|(_, config)| config.enabled)
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                drop(services);
+
+                if !enabled_services.is_empty() {
+                    let health_results = MCP_CLIENT_MANAGER.batch_health_check(&enabled_services).await;
+
+                    let healthy_count = health_results.values().filter(|&&v| v).count();
+                    let total_count = enabled_services.len();
+
+                    if healthy_count != total_count || healthy_count > 0 {
+                        tracing::debug!(
+                            "后台健康检查: {}/{} 个服务健康",
+                            healthy_count,
+                            total_count
+                        );
+                    }
+                }
+            }
+        });
+
+        tracing::info!("✅ 后台健康检查任务已启动（每30秒检查一次）");
+    }
 }

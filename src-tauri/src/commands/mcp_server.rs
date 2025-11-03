@@ -218,3 +218,19 @@ pub async fn list_mcp_server_tools(app_handle: tauri::AppHandle, server_name: St
         }
     }
 }
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn refresh_all_mcp_servers() -> Result<String> {
+    tracing::info!("🔄 手动刷新所有MCP服务连接状态...");
+
+    match SERVICE_MANAGER.auto_connect_enabled_services().await {
+        Ok(_) => {
+            tracing::info!("✅ 所有MCP服务连接状态已刷新");
+            Ok("所有MCP服务连接状态已刷新".to_string())
+        }
+        Err(e) => {
+            tracing::error!("❌ 刷新MCP服务连接状态失败: {}", e);
+            Err(e)
+        }
+    }
+}
