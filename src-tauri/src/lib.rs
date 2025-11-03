@@ -399,7 +399,7 @@ pub async fn run() {
 
                         // 5) 自动连接所有启用的服务
                         tracing::info!("🚀 开始启动时自动连接服务...");
-                        if let Err(e) = SERVICE_MANAGER.auto_connect_enabled_services().await {
+                        if let Err(e) = SERVICE_MANAGER.auto_connect_enabled_services(&app_handle).await {
                             tracing::error!("Failed to auto-connect services: {}", e);
                         }
 

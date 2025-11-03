@@ -311,7 +311,29 @@ impl McpServerManager {
         if let Some(server) = repo.get_by_name(server_name) {
             // 返回配置文件中存储的工具列表
             let tools: Vec<String> = server.tools.iter().map(|t| t.id.clone()).collect();
-            tracing::info!("从配置文件中获取到 {} 个工具", tools.len());
+
+            // 如果工具列表为空，自动从服务获取并更新
+            if tools.is_empty() {
+                tracing::info!("配置文件中工具列表为空，尝试从服务 '{}' 自动获取...", server_name);
+
+                if let Err(e) = self.sync_server_tools_from_service(server_name, app_handle).await {
+                    tracing::warn!("⚠️ 从服务 '{}' 获取工具列表失败: {}", server_name, e);
+                } else {
+                    // 重新读取配置
+                    let repo_new = McpServerRepository::new(app_handle)
+                        .await
+                        .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+
+                    if let Some(server_new) = repo_new.get_by_name(server_name) {
+                        let tools_new: Vec<String> = server_new.tools.iter().map(|t| t.id.clone()).collect();
+                        tracing::info!("✅ 已自动从服务 '{}' 获取到 {} 个工具", server_name, tools_new.len());
+                        return Ok(tools_new);
+                    }
+                }
+            } else {
+                tracing::info!("从配置文件中获取到 {} 个工具", tools.len());
+            }
+
             return Ok(tools);
         }
 
@@ -339,7 +361,7 @@ impl McpServerManager {
     }
 
     /// 启动时自动连接所有启用的服务
-    pub async fn auto_connect_enabled_services(&self) -> Result<()> {
+    pub async fn auto_connect_enabled_services(&self, app_handle: &tauri::AppHandle) -> Result<()> {
         let services = self.mcp_servers.read().await;
         let enabled_services: Vec<String> = services
             .iter()
@@ -372,6 +394,13 @@ impl McpServerManager {
                     tracing::warn!("⚠️ 获取服务 '{}' 版本信息失败: {}", service_name, e);
                 } else {
                     tracing::info!("✅ 服务 '{}' 版本信息已更新", service_name);
+                }
+
+                // 自动获取并更新工具列表
+                if let Err(e) = self.sync_server_tools_from_service(&service_name, app_handle).await {
+                    tracing::warn!("⚠️ 获取服务 '{}' 工具列表失败: {}", service_name, e);
+                } else {
+                    tracing::info!("✅ 服务 '{}' 工具列表已更新", service_name);
                 }
 
                 success_count += 1;
@@ -428,5 +457,65 @@ impl McpServerManager {
         });
 
         tracing::info!("✅ 后台健康检查任务已启动（每30秒检查一次）");
+    }
+
+    /// 从MCP服务同步工具列表并写入配置文件
+    pub async fn sync_server_tools_from_service(&self, server_name: &str, app_handle: &tauri::AppHandle) -> Result<()> {
+        tracing::debug!("开始从服务 '{}' 获取工具列表", server_name);
+
+        // 获取服务配置
+        let services = self.mcp_servers.read().await;
+        let service_config = services
+            .get(server_name)
+            .ok_or_else(|| McpError::ServiceNotFound(server_name.to_string()))?
+            .clone();
+        drop(services);
+
+        // 连接服务
+        let connection = MCP_CLIENT_MANAGER
+            .ensure_connection(&service_config, false)
+            .await
+            .map_err(|e| {
+                McpError::ConnectionError(format!("Failed to connect to service '{}': {}", server_name, e))
+            })?;
+
+        // TODO: 使用 rust_mcp_sdk 获取工具列表
+        // 目前返回空列表，等待完整实现
+        let tools = Vec::<crate::McpTool>::new();
+
+        if !tools.is_empty() {
+            tracing::info!("从服务 '{}' 获取到 {} 个工具", server_name, tools.len());
+
+            // 将工具写入配置文件
+            let repo = McpServerRepository::new(&app_handle)
+                .await
+                .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+
+            let mut repo_mut = repo;
+            let now = chrono::Utc::now();
+
+            for tool in tools {
+                let tool_config = crate::config::mcp_server_config::McpToolConfig {
+                    id: tool.name.clone(),
+                    name: tool.name.clone(),
+                    description: tool.description.unwrap_or_default(),
+                    enabled: true,
+                    created_at: now,
+                    updated_at: now,
+                };
+
+                // 只添加不存在的工具
+                if let Err(e) = repo_mut.add_tool(server_name, tool_config).await {
+                    // 如果工具已存在，跳过
+                    tracing::debug!("工具 '{}' 已存在，跳过", tool.name);
+                }
+            }
+
+            tracing::info!("已更新服务 '{}' 的工具列表", server_name);
+        } else {
+            tracing::debug!("服务 '{}' 没有可用的工具", server_name);
+        }
+
+        Ok(())
     }
 }
