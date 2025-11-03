@@ -205,9 +205,9 @@ pub async fn delete_mcp_server(app_handle: tauri::AppHandle, name: String) -> Re
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_server_tools(app_handle: tauri::AppHandle, server_name: String) -> Result<Vec<String>> {
-    tracing::info!("正在获取服务器 '{}' 的工具列表", server_name);
-    match SERVICE_MANAGER.list_mcp_server_tools(&server_name, &app_handle).await {
+pub async fn list_mcp_server_tools(app_handle: tauri::AppHandle, name: String) -> Result<Vec<String>> {
+    tracing::info!("正在获取服务器 '{}' 的工具列表", name);
+    match SERVICE_MANAGER.list_mcp_server_tools(&name, &app_handle).await {
         Ok(tools) => {
             tracing::info!("✅ 成功获取到 {} 个工具", tools.len());
             Ok(tools)

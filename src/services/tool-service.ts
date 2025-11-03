@@ -15,7 +15,7 @@ export class ToolService {
   }
 
   static async listMcpServerTools(serverName: string): Promise<Tool[]> {
-    return invoke('list_mcp_server_tools', { serverName })
+    return invoke('list_mcp_server_tools', { name: serverName })
   }
 
   static async enableAllMcpServerTools(serverName: string): Promise<string> {
