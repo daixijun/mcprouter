@@ -1,8 +1,8 @@
 use crate::config::AppConfig;
 use crate::error::{McpError, Result};
-use crate::types::{ConnectionStatus, McpConnection, McpServerConfig};
+use crate::types::{ConnectionStatus, McpConnection, McpServerConfig, McpService};
 use crate::SERVICE_MANAGER;
-use rust_mcp_sdk::schema::ListToolsResult;
+use rust_mcp_sdk::schema::{ListToolsResult, ToolInputSchema, ToolOutputSchema};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -241,6 +241,20 @@ impl McpClientManager {
         //     })?;
 
         // Convert ToolRow to Tool
+        // 如果连接有客户端，尝试通过客户端获取工具列表
+        if let Some(ref client) = connection.client {
+            tracing::info!("尝试通过客户端获取服务 '{}' 的工具列表", connection_id);
+            match self.fetch_tools_from_client(client).await {
+                Ok(tools) => {
+                    tracing::info!("✅ 从客户端获取到 {} 个工具", tools.len());
+                    return Ok(tools);
+                }
+                Err(e) => {
+                    tracing::warn!("⚠️ 从客户端获取工具失败: {}", e);
+                }
+            }
+        }
+
         // TODO: 临时返回空列表
         let tools: Vec<crate::McpTool> = Vec::new();
 
@@ -250,6 +264,22 @@ impl McpClientManager {
             connection_id
         );
         Ok(tools)
+    }
+
+    /// 通过 MCP 客户端获取工具列表
+    async fn fetch_tools_from_client(&self, client: &std::sync::Arc<McpService>) -> Result<Vec<crate::McpTool>> {
+        tracing::debug!("开始通过 MCP 客户端获取工具列表");
+
+        // TODO: 实际实现通过 rust_mcp_sdk 获取工具列表
+        // 当前返回空列表，等待完整实现
+        // 实际需要实现的步骤：
+        // 1. 根据客户端类型创建对应的 MCP 请求
+        // 2. 发送 ListToolsRequest 到 MCP 服务
+        // 3. 接收 ListToolsResult 响应
+        // 4. 转换为 McpTool 格式并返回
+
+        tracing::warn!("⚠️ 工具列表获取功能尚未实现，返回空列表");
+        Ok(Vec::new())
     }
 
     pub async fn _list_tools_on_service(&self, service_id: &str) -> Result<ListToolsResult> {

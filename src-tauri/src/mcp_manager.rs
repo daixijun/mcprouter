@@ -314,19 +314,30 @@ impl McpServerManager {
 
             // 如果工具列表为空，自动从服务获取并更新
             if tools.is_empty() {
-                tracing::info!("配置文件中工具列表为空，尝试从服务 '{}' 自动获取...", server_name);
+                tracing::info!(
+                    "配置文件中工具列表为空，尝试从服务 '{}' 自动获取...",
+                    server_name
+                );
 
-                if let Err(e) = self.sync_server_tools_from_service(server_name, app_handle).await {
+                if let Err(e) = self
+                    .sync_server_tools_from_service(server_name, app_handle)
+                    .await
+                {
                     tracing::warn!("⚠️ 从服务 '{}' 获取工具列表失败: {}", server_name, e);
                 } else {
                     // 重新读取配置
-                    let repo_new = McpServerRepository::new(app_handle)
-                        .await
-                        .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+                    let repo_new = McpServerRepository::new(app_handle).await.map_err(|e| {
+                        McpError::ConfigError(format!("Failed to create repository: {}", e))
+                    })?;
 
                     if let Some(server_new) = repo_new.get_by_name(server_name) {
-                        let tools_new: Vec<String> = server_new.tools.iter().map(|t| t.id.clone()).collect();
-                        tracing::info!("✅ 已自动从服务 '{}' 获取到 {} 个工具", server_name, tools_new.len());
+                        let tools_new: Vec<String> =
+                            server_new.tools.iter().map(|t| t.id.clone()).collect();
+                        tracing::info!(
+                            "✅ 已自动从服务 '{}' 获取到 {} 个工具",
+                            server_name,
+                            tools_new.len()
+                        );
                         return Ok(tools_new);
                     }
                 }
@@ -375,10 +386,15 @@ impl McpServerManager {
             return Ok(());
         }
 
-        tracing::info!("🚀 启动时自动连接 {} 个已启用的MCP服务...", enabled_services.len());
+        tracing::info!(
+            "🚀 启动时自动连接 {} 个已启用的MCP服务...",
+            enabled_services.len()
+        );
 
         // 使用批量健康检查并发连接所有服务
-        let health_results = MCP_CLIENT_MANAGER.batch_health_check(&enabled_services).await;
+        let health_results = MCP_CLIENT_MANAGER
+            .batch_health_check(&enabled_services)
+            .await;
 
         let mut success_count = 0;
         let mut failed_count = 0;
@@ -397,7 +413,10 @@ impl McpServerManager {
                 }
 
                 // 自动获取并更新工具列表
-                if let Err(e) = self.sync_server_tools_from_service(&service_name, app_handle).await {
+                if let Err(e) = self
+                    .sync_server_tools_from_service(&service_name, app_handle)
+                    .await
+                {
                     tracing::warn!("⚠️ 获取服务 '{}' 工具列表失败: {}", service_name, e);
                 } else {
                     tracing::info!("✅ 服务 '{}' 工具列表已更新", service_name);
@@ -440,7 +459,9 @@ impl McpServerManager {
                 drop(services);
 
                 if !enabled_services.is_empty() {
-                    let health_results = MCP_CLIENT_MANAGER.batch_health_check(&enabled_services).await;
+                    let health_results = MCP_CLIENT_MANAGER
+                        .batch_health_check(&enabled_services)
+                        .await;
 
                     let healthy_count = health_results.values().filter(|&&v| v).count();
                     let total_count = enabled_services.len();
@@ -460,7 +481,11 @@ impl McpServerManager {
     }
 
     /// 从MCP服务同步工具列表并写入配置文件
-    pub async fn sync_server_tools_from_service(&self, server_name: &str, app_handle: &tauri::AppHandle) -> Result<()> {
+    pub async fn sync_server_tools_from_service(
+        &self,
+        server_name: &str,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<()> {
         tracing::debug!("开始从服务 '{}' 获取工具列表", server_name);
 
         // 获取服务配置
@@ -472,11 +497,14 @@ impl McpServerManager {
         drop(services);
 
         // 连接服务
-        let connection = MCP_CLIENT_MANAGER
+        let _connection = MCP_CLIENT_MANAGER
             .ensure_connection(&service_config, false)
             .await
             .map_err(|e| {
-                McpError::ConnectionError(format!("Failed to connect to service '{}': {}", server_name, e))
+                McpError::ConnectionError(format!(
+                    "Failed to connect to service '{}': {}",
+                    server_name, e
+                ))
             })?;
 
         // TODO: 使用 rust_mcp_sdk 获取工具列表
@@ -487,9 +515,9 @@ impl McpServerManager {
             tracing::info!("从服务 '{}' 获取到 {} 个工具", server_name, tools.len());
 
             // 将工具写入配置文件
-            let repo = McpServerRepository::new(&app_handle)
-                .await
-                .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+            let repo = McpServerRepository::new(&app_handle).await.map_err(|e| {
+                McpError::ConfigError(format!("Failed to create repository: {}", e))
+            })?;
 
             let mut repo_mut = repo;
             let now = chrono::Utc::now();
@@ -505,7 +533,7 @@ impl McpServerManager {
                 };
 
                 // 只添加不存在的工具
-                if let Err(e) = repo_mut.add_tool(server_name, tool_config).await {
+                if let Err(_e) = repo_mut.add_tool(server_name, tool_config).await {
                     // 如果工具已存在，跳过
                     tracing::debug!("工具 '{}' 已存在，跳过", tool.name);
                 }
