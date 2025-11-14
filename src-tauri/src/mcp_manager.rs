@@ -11,20 +11,12 @@ use tokio::sync::RwLock;
 pub use crate::types::{McpServerConfig, McpServerInfo, ServiceStatus, ServiceVersionCache};
 
 #[derive(Clone)]
-pub struct ToolCacheMeta {
-    pub last_updated: chrono::DateTime<chrono::Utc>,
-    pub count: usize,
-}
-
-#[derive(Clone)]
 pub struct McpServerManager {
     mcp_servers: Arc<RwLock<HashMap<String, McpServerConfig>>>,
     config: Arc<RwLock<AppConfig>>,
     pub version_cache: Arc<RwLock<HashMap<String, ServiceVersionCache>>>,
-    pub tools_cache: Arc<RwLock<HashMap<String, Vec<crate::types::McpToolInfo>>>>,
-    pub tools_cache_meta: Arc<RwLock<HashMap<String, ToolCacheMeta>>>,
+    pub tools_cache_entries: Arc<RwLock<HashMap<String, ToolsCacheEntry>>>,
     tools_cache_ttl: std::time::Duration,
-    pub raw_tools_cache: Arc<RwLock<HashMap<String, Vec<rmcp::model::Tool>>>>,
 }
 
 impl McpServerManager {
@@ -33,10 +25,8 @@ impl McpServerManager {
             mcp_servers: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(RwLock::new(config)),
             version_cache: Arc::new(RwLock::new(HashMap::new())),
-            tools_cache: Arc::new(RwLock::new(HashMap::new())),
-            tools_cache_meta: Arc::new(RwLock::new(HashMap::new())),
+            tools_cache_entries: Arc::new(RwLock::new(HashMap::new())),
             tools_cache_ttl: std::time::Duration::from_secs(600),
-            raw_tools_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -44,43 +34,46 @@ impl McpServerManager {
         self.tools_cache_ttl.as_secs()
     }
 
-    pub async fn set_tools_cache(&self, server_name: &str, infos: Vec<crate::types::McpToolInfo>) {
-        {
-            let mut tc = self.tools_cache.write().await;
-            tc.insert(server_name.to_string(), infos.clone());
-        }
-        {
-            let mut meta = self.tools_cache_meta.write().await;
-            meta.insert(
-                server_name.to_string(),
-                ToolCacheMeta {
-                    last_updated: chrono::Utc::now(),
-                    count: infos.len(),
-                },
-            );
-        }
-    }
-
-    pub async fn set_raw_tools_cache(&self, server_name: &str, tools: Vec<rmcp::model::Tool>) {
-        let mut rtc = self.raw_tools_cache.write().await;
-        rtc.insert(server_name.to_string(), tools);
-        let mut meta = self.tools_cache_meta.write().await;
-        let count = {
-            let tc = self.tools_cache.read().await;
-            tc.get(server_name).map(|v| v.len()).unwrap_or(0)
-        };
-        meta.insert(
+    pub async fn set_tools_cache_entry(&self, server_name: &str, raw: Vec<rmcp::model::Tool>) {
+        let now = chrono::Utc::now();
+        let infos: Vec<crate::types::McpToolInfo> = raw
+            .iter()
+            .map(|tool| crate::types::McpToolInfo {
+                id: tool.name.to_string(),
+                name: tool.name.to_string(),
+                description: tool.description.clone().unwrap_or_default().to_string(),
+                enabled: true,
+                created_at: now.to_rfc3339(),
+                updated_at: now.to_rfc3339(),
+            })
+            .collect();
+        let mut entries = self.tools_cache_entries.write().await;
+        entries.insert(
             server_name.to_string(),
-            ToolCacheMeta {
-                last_updated: chrono::Utc::now(),
-                count,
+            ToolsCacheEntry {
+                raw,
+                infos: infos.clone(),
+                last_updated: now,
+                count: infos.len(),
             },
         );
     }
 
+    pub async fn get_cached_tools_raw(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
+        let entries = self.tools_cache_entries.read().await;
+        entries.get(server_name).map(|e| e.raw.clone())
+    }
+
+    pub async fn get_cached_tools_infos(
+        &self,
+        server_name: &str,
+    ) -> Option<Vec<crate::types::McpToolInfo>> {
+        let entries = self.tools_cache_entries.read().await;
+        entries.get(server_name).map(|e| e.infos.clone())
+    }
+
     pub async fn get_raw_cached_tools(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
-        let rtc = self.raw_tools_cache.read().await;
-        rtc.get(server_name).cloned()
+        self.get_cached_tools_raw(server_name).await
     }
 
     pub async fn get_config(&self) -> AppConfig {
@@ -128,8 +121,8 @@ impl McpServerManager {
 
             // Tool count from cache
             let tool_count = {
-                let tc = self.tools_cache.read().await;
-                tc.get(name).map(|v| v.len())
+                let entries = self.tools_cache_entries.read().await;
+                entries.get(name).map(|e| e.count)
             };
 
             // Set different fields based on transport type, set unneeded fields to None to skip during serialization
@@ -469,9 +462,8 @@ impl McpServerManager {
     ) -> Result<Vec<crate::types::McpToolInfo>> {
         // Try cache first
         {
-            let tc = self.tools_cache.read().await;
-            if let Some(list) = tc.get(server_name) {
-                return Ok(list.clone());
+            if let Some(list) = self.get_cached_tools_infos(server_name).await {
+                return Ok(list);
             }
         }
 
@@ -479,8 +471,10 @@ impl McpServerManager {
         self.sync_server_tools_from_service(server_name, app_handle)
             .await?;
 
-        let tc = self.tools_cache.read().await;
-        let tools = tc.get(server_name).cloned().unwrap_or_default();
+        let tools = self
+            .get_cached_tools_infos(server_name)
+            .await
+            .unwrap_or_default();
         Ok(tools)
     }
 
@@ -645,22 +639,7 @@ impl McpServerManager {
         if !tools.is_empty() {
             tracing::info!("Got {} tools from service '{}'", tools.len(), server_name);
 
-            let now = chrono::Utc::now();
-            let infos: Vec<crate::types::McpToolInfo> = tools
-                .clone()
-                .iter()
-                .map(|tool| crate::types::McpToolInfo {
-                    id: tool.name.to_string(),
-                    name: tool.name.to_string(),
-                    description: tool.description.clone().unwrap_or_default().to_string(),
-                    enabled: true,
-                    created_at: now.to_rfc3339(),
-                    updated_at: now.to_rfc3339(),
-                })
-                .collect();
-
-            self.set_tools_cache(server_name, infos.clone()).await;
-            self.set_raw_tools_cache(server_name, tools.clone()).await;
+            self.set_tools_cache_entry(server_name, tools.clone()).await;
             let _ = app_handle.emit("tools-updated", server_name.to_string());
             tracing::info!("Updated in-memory tool list for service '{}'", server_name);
         } else {
@@ -669,4 +648,12 @@ impl McpServerManager {
 
         Ok(())
     }
+}
+
+#[derive(Clone)]
+pub struct ToolsCacheEntry {
+    pub raw: Vec<rmcp::model::Tool>,
+    pub infos: Vec<crate::types::McpToolInfo>,
+    pub last_updated: chrono::DateTime<chrono::Utc>,
+    pub count: usize,
 }

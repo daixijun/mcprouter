@@ -117,11 +117,11 @@ impl McpAggregator {
     }
 
     pub async fn get_statistics(&self) -> Value {
-        let meta = self.mcp_server_manager.tools_cache_meta.read().await;
-        let total = meta.len();
+        let entries = self.mcp_server_manager.tools_cache_entries.read().await;
+        let total = entries.len();
         let ttl = self.mcp_server_manager.get_tools_cache_ttl_seconds();
-        let updated_count: usize = meta.values().map(|m| m.count).sum();
-        let latest = meta.values().map(|m| m.last_updated).max();
+        let updated_count: usize = entries.values().map(|e| e.count).sum();
+        let latest = entries.values().map(|e| e.last_updated).max();
         serde_json::json!({
             "status": "running",
             "message": "Aggregator initialized",
@@ -142,8 +142,8 @@ impl McpAggregator {
                 config.enabled,
                 config.transport,
                 {
-                    let tc = self.mcp_server_manager.tools_cache.read().await;
-                    tc.get(name).map(|v| v.len()).unwrap_or(0)
+                    let tc = self.mcp_server_manager.tools_cache_entries.read().await;
+                    tc.get(name).map(|v| v.count).unwrap_or(0)
                 }
             );
         }
