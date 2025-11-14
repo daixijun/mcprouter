@@ -10,7 +10,7 @@ import React, {
 
 // 状态类型定义
 export type ThemeMode = 'light' | 'dark' | 'auto'
-export type TabType = 'overview' | 'servers' | 'market' | 'apikeys' | 'settings'
+export type TabType = 'overview' | 'servers' | 'market' | 'settings'
 
 interface AppState {
   themeMode: ThemeMode

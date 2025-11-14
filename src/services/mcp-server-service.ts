@@ -1,7 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type {
-  McpServerInfo,
-} from '../types'
+import type { McpServerInfo } from '../types'
 
 export class McpServerService {
   // MCP Server Management
@@ -9,10 +7,10 @@ export class McpServerService {
     name: string,
     command: string,
     args: string[],
-    transport: string,
+    type: string,
     url?: string,
     description?: string,
-    env_vars?: [string, string][],
+    env?: [string, string][],
     headers?: [string, string][],
   ): Promise<string> {
     // Create request object to match backend structure
@@ -20,24 +18,24 @@ export class McpServerService {
       name,
       command,
       args,
-      transport,
+      type,
       url,
       description,
-      env_vars,
+      env,
       headers,
-    };
+    }
 
-    return invoke('add_mcp_server', { request });
+    return invoke('add_mcp_server', { request })
   }
 
   static async updateMcpServer(
     name: string,
     command: string | null,
     args: string[] | null,
-    transport: string,
+    type: string,
     url?: string | null,
     description?: string | null,
-    env_vars?: [string, string][] | null,
+    env?: [string, string][] | null,
     headers?: [string, string][] | null,
     enabled?: boolean,
   ): Promise<string> {
@@ -46,19 +44,19 @@ export class McpServerService {
       name,
       command,
       args,
-      transport,
+      type,
       url,
       description,
-      env_vars,
+      env,
       headers,
       enabled: enabled ?? true,
-    };
+    }
 
-    return invoke('update_mcp_server', { request });
+    return invoke('update_mcp_server', { request })
   }
 
   static async removeMcpServer(name: string): Promise<string> {
-    return invoke('remove_mcp_server', { name })
+    return invoke('delete_mcp_server', { name })
   }
 
   static async checkMcpServerConnectivity(name: string): Promise<string> {
@@ -76,5 +74,9 @@ export class McpServerService {
 
   static async listMcpServers(): Promise<McpServerInfo[]> {
     return invoke('list_mcp_servers')
+  }
+
+  static async importMcpServersConfig(configJson: any): Promise<string> {
+    return invoke('import_mcp_servers_config', { configJson })
   }
 }

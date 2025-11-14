@@ -26,11 +26,11 @@ export class MarketplaceApi {
 
   static async installMarketplaceService(
     serviceId: string,
-    env_vars?: [string, string][],
+    env?: [string, string][],
   ): Promise<McpServerConfig> {
     return invoke('install_marketplace_service', {
       service_id: serviceId,
-      env_vars,
+      env,
     })
   }
 }

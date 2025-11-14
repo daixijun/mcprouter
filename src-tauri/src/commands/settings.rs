@@ -1,17 +1,113 @@
-// 系统设置命令
+// System Settings Commands
 
 use crate::config as config_mod;
 use crate::error::{McpError, Result};
-use crate::{build_main_tray, AGGREGATOR, SERVICE_MANAGER};
+use crate::{build_main_tray, types, AGGREGATOR, SERVICE_MANAGER};
+use serde::Serialize;
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn get_settings() -> Result<serde_json::Value> {
+pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
     // Load configuration
-    let config = config_mod::AppConfig::load()
+    let mut config = config_mod::AppConfig::load()
         .map_err(|e| McpError::ConfigError(format!("Failed to load settings: {}", e)))?;
 
-    // Convert AppConfig to serde_json::Value
-    serde_json::to_value(config)
+    // Get actual autostart status from the system
+    use tauri_plugin_autostart::ManagerExt;
+    match app.autolaunch().is_enabled() {
+        Ok(enabled) => {
+            if let Some(ref mut settings) = config.settings {
+                settings.autostart = Some(enabled);
+            } else {
+                config.settings = Some(types::Settings {
+                    autostart: Some(enabled),
+                    ..Default::default()
+                });
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to check actual autostart status, using config value: {}",
+                e
+            );
+            // Keep the config value if we can't check the system status
+        }
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct ServerOut {
+        host: String,
+        port: u16,
+        max_connections: usize,
+        timeout_seconds: u64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct LoggingOut {
+        level: String,
+        file_name: Option<String>,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct TrayOut {
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        close_to_tray: Option<bool>,
+        #[serde(default)]
+        start_to_tray: Option<bool>,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct SettingsOut {
+        #[serde(default)]
+        theme: Option<String>,
+        #[serde(default)]
+        autostart: Option<bool>,
+        #[serde(default)]
+        system_tray: Option<TrayOut>,
+        #[serde(default)]
+        uv_index_url: Option<String>,
+        #[serde(default)]
+        npm_registry: Option<String>,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct SystemSettingsOut {
+        server: ServerOut,
+        logging: Option<LoggingOut>,
+        settings: Option<SettingsOut>,
+    }
+
+    let out = SystemSettingsOut {
+        server: ServerOut {
+            host: config.server.host,
+            port: config.server.port,
+            max_connections: config.server.max_connections,
+            timeout_seconds: config.server.timeout_seconds,
+        },
+        logging: config.logging.as_ref().map(|l| LoggingOut {
+            level: l.level.clone(),
+            file_name: l.file_name.clone(),
+        }),
+        settings: config.settings.as_ref().map(|s| SettingsOut {
+            theme: s.theme.clone(),
+            autostart: s.autostart,
+            system_tray: s.system_tray.as_ref().map(|t| TrayOut {
+                enabled: t.enabled,
+                close_to_tray: t.close_to_tray,
+                start_to_tray: t.start_to_tray,
+            }),
+            uv_index_url: s.uv_index_url.clone(),
+            npm_registry: s.npm_registry.clone(),
+        }),
+    };
+
+    serde_json::to_value(out)
         .map_err(|e| McpError::ConfigError(format!("Failed to convert settings to JSON: {}", e)))
 }
 
@@ -82,7 +178,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 if let Some(Value::Bool(enabled)) = tray_obj.get("enabled") {
                     tray_mut.enabled = Some(*enabled);
 
-                    // 如果系统托盘被禁用,自动禁用"关闭到托盘"功能
+                    // If system tray is disabled, automatically disable "close to tray" feature
                     if !*enabled {
                         tray_mut.close_to_tray = Some(false);
                         tracing::info!(
@@ -91,7 +187,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                     }
                 }
 
-                // 只有在系统托盘启用时才允许设置"关闭到托盘"
+                // Only allow setting "close to tray" when system tray is enabled
                 let tray_enabled = tray_mut.enabled.unwrap_or(true);
                 if tray_enabled {
                     if let Some(Value::Bool(close_to_tray)) = tray_obj.get("close_to_tray") {
@@ -163,40 +259,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 }
             }
 
-            // Security config (support top-level payload; auth bool and allowed_hosts)
-            if let Some(Value::Object(sec_obj)) = settings.get("security") {
-                // Ensure security exists
-                if config.security.is_none() {
-                    config.security = Some(crate::SecuritySettings {
-                        allowed_hosts: vec![],
-                        auth: true,
-                    });
-                }
-                let sec_mut = config.security.as_mut().unwrap();
-
-                // auth can be boolean (new) or object with enabled (legacy)
-                match sec_obj.get("auth") {
-                    Some(Value::Bool(b)) => {
-                        sec_mut.auth = *b;
-                    }
-                    Some(Value::Object(auth_obj)) => {
-                        if let Some(Value::Bool(b)) = auth_obj.get("enabled") {
-                            sec_mut.auth = *b;
-                        }
-                        // ignore api_key if present (removed from config)
-                    }
-                    _ => {}
-                }
-
-                // allowed_hosts as array of strings
-                if let Some(Value::Array(arr)) = sec_obj.get("allowed_hosts") {
-                    let hosts: Vec<String> = arr
-                        .iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect();
-                    sec_mut.allowed_hosts = hosts;
-                }
-            }
+            // Security settings removed
         })
         .await?;
 
@@ -218,7 +281,18 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
 
     if server_config_changed {
         tracing::info!("Server configuration changed (restarting aggregator)...");
-        AGGREGATOR.trigger_shutdown().await;
+        // 获取聚合器的克隆，避免跨越 await 点持有锁
+        let aggregator_clone = {
+            let aggregator_guard = AGGREGATOR.lock().unwrap();
+            (*aggregator_guard).clone()
+        };
+        // 锁在这里释放
+
+        if let Some(ref aggregator) = aggregator_clone {
+            aggregator.trigger_shutdown().await;
+        } else {
+            tracing::warn!("Aggregator not initialized, cannot trigger shutdown");
+        }
         if tray_changed {
             tracing::info!(
                 "System tray configuration changed during server restart, enabled: {}",
@@ -244,12 +318,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 tracing::info!("Tray icon hidden after aggregator restart");
             }
 
-            // 立即保存配置到文件以确保变更持久化
-            if let Err(e) = config.save() {
-                tracing::error!("Failed to save tray configuration to file: {}", e);
-            } else {
-                tracing::info!("Tray configuration saved to file");
-            }
+            // Config has been automatically saved to file via SERVICE_MANAGER.update_config
         }
         Ok(format!(
             "Settings saved successfully. Aggregator restarted on {}:{}",
@@ -278,31 +347,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 tracing::info!("Tray icon hidden");
             }
 
-            // 立即保存配置到文件以确保变更持久化
-            if let Err(e) = config.save() {
-                tracing::error!("Failed to save tray configuration to file: {}", e);
-            } else {
-                tracing::info!("Tray configuration saved to file");
-            }
+            // Config has been automatically saved to file via SERVICE_MANAGER.update_config
         }
         Ok("Settings saved successfully".to_string())
-    }
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool> {
-    // Use the autostart plugin to check if autostart is enabled
-    use tauri_plugin_autostart::ManagerExt;
-
-    match app.autolaunch().is_enabled() {
-        Ok(enabled) => Ok(enabled),
-        Err(e) => {
-            tracing::error!("Failed to check autostart status: {}", e);
-            Err(McpError::ConfigError(format!(
-                "Failed to check autostart status: {}",
-                e
-            )))
-        }
     }
 }
 
@@ -319,7 +366,7 @@ pub async fn toggle_autostart(app: tauri::AppHandle) -> Result<String> {
         match app.autolaunch().disable() {
             Ok(_) => {
                 tracing::info!("Autostart disabled successfully");
-                Ok("自动启动已禁用".to_string())
+                Ok("Auto-startup disabled".to_string())
             }
             Err(e) => {
                 tracing::error!("Failed to disable autostart: {}", e);
@@ -334,7 +381,7 @@ pub async fn toggle_autostart(app: tauri::AppHandle) -> Result<String> {
         match app.autolaunch().enable() {
             Ok(_) => {
                 tracing::info!("Autostart enabled successfully");
-                Ok("自动启动已启用".to_string())
+                Ok("Auto-startup enabled".to_string())
             }
             Err(e) => {
                 tracing::error!("Failed to enable autostart: {}", e);

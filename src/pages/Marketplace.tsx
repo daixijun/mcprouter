@@ -327,9 +327,9 @@ const Marketplace: React.FC = memo(() => {
   const getPlatformBadgeColor = useCallback((platform: string) => {
     switch (platform) {
       case '魔搭社区':
-        return '#f43f5e'
+        return 'var(--color-platform-mada)'
       default:
-        return '#6b7280'
+        return 'var(--color-platform-default)'
     }
   }, [])
 
@@ -378,7 +378,7 @@ const Marketplace: React.FC = memo(() => {
               height: '48px',
               borderRadius: '8px',
               overflow: 'hidden',
-              backgroundColor: '#f5f5f5',
+              backgroundColor: 'var(--color-bg-tertiary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -402,7 +402,11 @@ const Marketplace: React.FC = memo(() => {
             <Flex
               gap='small'
               align='center'
-              style={{ marginTop: '4px', fontSize: '14px', color: '#666' }}>
+              style={{
+                marginTop: '4px',
+                fontSize: '14px',
+                color: 'var(--color-text-tertiary)',
+              }}>
               <Flex align='center' gap='small'>
                 <span>👤</span>
                 <Text style={{ fontSize: '12px' }}>{service.author}</Text>
@@ -436,15 +440,19 @@ const Marketplace: React.FC = memo(() => {
               </Text>
             </Flex>
           </Badge>
-          {service.is_verified && <Badge color='#52c41a'>✅ 已验证</Badge>}
-          {service.is_hosted && <Badge color='#722ed1'>🖥️ 托管</Badge>}
+          {service.is_verified && (
+            <Badge color='var(--color-success)'>✅ 已验证</Badge>
+          )}
+          {service.is_hosted && (
+            <Badge color='var(--color-primary)'>🖥️ 托管</Badge>
+          )}
         </Flex>
 
         <Flex justify='space-between' align='center'>
           <Space size='large'>
             {typeof service.github_stars === 'number' &&
               service.github_stars > 0 && (
-                <Text style={{ color: '#faad14' }}>
+                <Text style={{ color: 'var(--color-warning)' }}>
                   ⭐ {service.github_stars.toLocaleString()}
                 </Text>
               )}

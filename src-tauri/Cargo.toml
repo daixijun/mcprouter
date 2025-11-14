@@ -1,13 +1,13 @@
 [package]
 name = "mcprouter"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "MCP Router"
+authors = ["Xijun Dai <daixijun1990@gmail.com>"]
 edition = "2021"
 
 [lints.rust]
-# dead_code = "allow"
-# unused_imports = "allow"
+dead_code = "deny"
+unused_imports = "deny"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -40,20 +40,25 @@ thiserror = "1.0"
 dirs = "5.0"
 regex = "1.10"
 if-addrs = "0.11"
-# MCP SDK
-rust-mcp-sdk = { version = "0.7.2", features = [
+rustc_version = "0.4"
+futures = "0.3"
+http = "1.0"
+# MCP SDK - 使用官方 rmcp
+rmcp = { git = "https://github.com/daixijun/mcp-rust-sdk", branch = "feat/streamable-http-client", features = [
     "client",
     "server",
-    "stdio",
-    "sse",
-    "streamable-http",
-    "hyper-server",
     "macros",
+    "transport-child-process",
+    "transport-sse-client",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+    "transport-sse-client-reqwest",
+    "transport-streamable-http-server",
+    "transport-streamable-http-server-session",
+    "client-side-sse",
+    "reqwest",
 ] }
-rust-mcp-transport = "0.6.2"
-rust-mcp-schema = "0.7.5"
-rust-mcp-extra = "0.1.2"
-rust-mcp-macros = "0.5.2"
+rmcp-macros = "0.8.5"
 async-trait = "0.1"
 
 process-wrap = "8.2"

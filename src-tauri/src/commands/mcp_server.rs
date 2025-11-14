@@ -1,4 +1,4 @@
-// MCP 服务器管理命令
+// MCP Server Management Commands
 
 use crate::error::{McpError, Result};
 use crate::mcp_manager::McpServerInfo;
@@ -7,37 +7,42 @@ use crate::{MCP_CLIENT_MANAGER, SERVICE_MANAGER};
 use serde::Deserialize;
 use std::collections::HashMap;
 
-/// MCP 服务器创建请求
+/// MCP Server Create Request
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct McpServerCreateRequest {
     pub name: String,
     pub command: String,
     pub args: Vec<String>,
+    #[serde(rename = "type")]
     pub transport: String,
     pub url: Option<String>,
     pub description: Option<String>,
-    pub env_vars: Option<Vec<(String, String)>>,
+    pub env: Option<Vec<(String, String)>>,
     pub headers: Option<Vec<(String, String)>>,
 }
 
-/// MCP 服务器更新请求
+/// MCP Server Update Request
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct McpServerUpdateRequest {
     pub name: String,
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
+    #[serde(rename = "type")]
     pub transport: String,
     pub url: Option<String>,
     pub description: Option<String>,
-    pub env_vars: Option<Vec<(String, String)>>,
+    pub env: Option<Vec<(String, String)>>,
     pub headers: Option<Vec<(String, String)>>,
     pub enabled: bool,
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn add_mcp_server(app_handle: tauri::AppHandle, request: McpServerCreateRequest) -> Result<String> {
+pub async fn add_mcp_server(
+    app_handle: tauri::AppHandle,
+    request: McpServerCreateRequest,
+) -> Result<String> {
     // Convert transport string to ServiceTransport enum
     let service_transport = match request.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
@@ -51,8 +56,12 @@ pub async fn add_mcp_server(app_handle: tauri::AppHandle, request: McpServerCrea
     };
 
     // Convert environment variables and headers
-    let env_vars_map = request.env_vars.map(|vars| vars.into_iter().collect::<HashMap<String, String>>());
-    let headers_map = request.headers.map(|hdrs| hdrs.into_iter().collect::<HashMap<String, String>>());
+    let env_vars_map = request
+        .env
+        .map(|vars| vars.into_iter().collect::<HashMap<String, String>>());
+    let headers_map = request
+        .headers
+        .map(|hdrs| hdrs.into_iter().collect::<HashMap<String, String>>());
 
     // Use the provided name as the service identifier
     tracing::info!(
@@ -66,7 +75,11 @@ pub async fn add_mcp_server(app_handle: tauri::AppHandle, request: McpServerCrea
         service_transport,
         ServiceTransport::Sse | ServiceTransport::Http
     ) {
-        tracing::info!("Adding HTTP server: {} with URL: {:?}", request.name, request.url);
+        tracing::info!(
+            "Adding HTTP server: {} with URL: {:?}",
+            request.name,
+            request.url
+        );
         if let Some(ref hdrs) = headers_map {
             tracing::debug!("Headers: {:?}", hdrs);
         }
@@ -91,27 +104,35 @@ pub async fn add_mcp_server(app_handle: tauri::AppHandle, request: McpServerCrea
         transport: service_transport.clone(),
         url: request.url.clone(),
         enabled: true,
-        env_vars: env_vars_map,
+        env: env_vars_map,
         headers: headers_map,
-        version: None, // Version will be detected when connecting to the service
     };
 
     // Add service using the service manager
-    tracing::info!("调用 SERVICE_MANAGER.add_mcp_server 添加服务: {}", request.name);
-    match SERVICE_MANAGER.add_mcp_server(&app_handle, service_config).await {
+    tracing::info!(
+        "Calling SERVICE_MANAGER.add_mcp_server to add service: {}",
+        request.name
+    );
+    match SERVICE_MANAGER
+        .add_mcp_server(&app_handle, service_config)
+        .await
+    {
         Ok(()) => {
-            tracing::info!("服务添加成功: {}", request.name);
-            Ok(format!("服务 '{}' 已成功添加", request.name))
+            tracing::info!("Service added successfully: {}", request.name);
+            Ok(format!("Service '{}' added successfully", request.name))
         }
         Err(e) => {
-            tracing::error!("服务添加失败: {} - {:?}", request.name, e);
+            tracing::error!("Service addition failed: {} - {:?}", request.name, e);
             Err(e)
         }
     }
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn update_mcp_server(app_handle: tauri::AppHandle, request: McpServerUpdateRequest) -> Result<String> {
+pub async fn update_mcp_server(
+    app_handle: tauri::AppHandle,
+    request: McpServerUpdateRequest,
+) -> Result<String> {
     // Convert transport string to ServiceTransport enum
     let service_transport = match request.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
@@ -125,8 +146,12 @@ pub async fn update_mcp_server(app_handle: tauri::AppHandle, request: McpServerU
     };
 
     // Convert environment variables and headers
-    let env_vars_map = request.env_vars.map(|vars| vars.into_iter().collect::<HashMap<String, String>>());
-    let headers_map = request.headers.map(|hdrs| hdrs.into_iter().collect::<HashMap<String, String>>());
+    let env_vars_map = request
+        .env
+        .map(|vars| vars.into_iter().collect::<HashMap<String, String>>());
+    let headers_map = request
+        .headers
+        .map(|hdrs| hdrs.into_iter().collect::<HashMap<String, String>>());
 
     tracing::info!(
         "Updating service: {} with transport: {:?}",
@@ -143,34 +168,17 @@ pub async fn update_mcp_server(app_handle: tauri::AppHandle, request: McpServerU
         transport: service_transport,
         url: request.url,
         enabled: request.enabled,
-        env_vars: env_vars_map,
+        env: env_vars_map,
         headers: headers_map,
-        version: None, // Version will be preserved/updated when connecting
     };
 
     // Update service using the service manager
-    match SERVICE_MANAGER.update_mcp_server(&app_handle, service_config).await {
-        Ok(()) => Ok(format!("服务 '{}' 已成功更新", request.name)),
+    match SERVICE_MANAGER
+        .update_mcp_server(&app_handle, service_config)
+        .await
+    {
+        Ok(()) => Ok(format!("Service '{}' updated successfully", request.name)),
         Err(e) => Err(e),
-    }
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn remove_mcp_server(app_handle: tauri::AppHandle, name: String) -> Result<String> {
-    match SERVICE_MANAGER.remove_mcp_server(&app_handle, &name).await {
-        Ok(()) => Ok(format!("服务 '{}' 已成功删除", name)),
-        Err(e) => Err(e),
-    }
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn check_mcp_server_connectivity(name: String) -> Result<String> {
-    match SERVICE_MANAGER.check_service_with_version(&name).await {
-        Ok(_) => Ok(format!("服务 '{}' 连接成功", name)),
-        Err(e) => {
-            tracing::error!("Failed to connect to service {}: {:?}", name, e);
-            Err(e)
-        }
     }
 }
 
@@ -183,8 +191,11 @@ pub async fn toggle_mcp_server(app_handle: tauri::AppHandle, name: String) -> Re
 }
 
 #[tauri::command]
-pub async fn list_mcp_servers() -> Vec<McpServerInfo> {
-    SERVICE_MANAGER.list_mcp_servers().await.unwrap_or_default()
+pub async fn list_mcp_servers(app_handle: tauri::AppHandle) -> Vec<McpServerInfo> {
+    SERVICE_MANAGER
+        .list_mcp_servers(Some(&app_handle))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -200,20 +211,28 @@ pub async fn delete_mcp_server(app_handle: tauri::AppHandle, name: String) -> Re
     }
 
     // Remove the service
-    SERVICE_MANAGER.remove_mcp_server(&app_handle, &name).await?;
-    Ok(format!("服务 '{}' 已删除", name))
+    SERVICE_MANAGER
+        .remove_mcp_server(&app_handle, &name)
+        .await?;
+    Ok(format!("Service '{}' deleted", name))
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_server_tools(app_handle: tauri::AppHandle, name: String) -> Result<Vec<String>> {
-    tracing::info!("正在获取服务器 '{}' 的工具列表", name);
-    match SERVICE_MANAGER.list_mcp_server_tools(&name, &app_handle).await {
+pub async fn list_mcp_server_tools(
+    app_handle: tauri::AppHandle,
+    name: String,
+) -> Result<Vec<crate::types::McpToolInfo>> {
+    tracing::info!("Getting tool list for server '{}'", name);
+    match SERVICE_MANAGER
+        .list_mcp_server_tools(&name, &app_handle)
+        .await
+    {
         Ok(tools) => {
-            tracing::info!("✅ 成功获取到 {} 个工具", tools.len());
+            tracing::info!("Successfully retrieved {} tools", tools.len());
             Ok(tools)
         }
         Err(e) => {
-            tracing::error!("❌ 获取工具列表失败: {}", e);
+            tracing::error!("Failed to get tool list: {}", e);
             Err(e)
         }
     }
@@ -221,15 +240,18 @@ pub async fn list_mcp_server_tools(app_handle: tauri::AppHandle, name: String) -
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn refresh_all_mcp_servers(app_handle: tauri::AppHandle) -> Result<String> {
-    tracing::info!("🔄 手动刷新所有MCP服务连接状态...");
+    tracing::info!("Manually refreshing all MCP service connection status...");
 
-    match SERVICE_MANAGER.auto_connect_enabled_services(&app_handle).await {
+    match SERVICE_MANAGER
+        .auto_connect_enabled_services(&app_handle)
+        .await
+    {
         Ok(_) => {
-            tracing::info!("✅ 所有MCP服务连接状态已刷新");
-            Ok("所有MCP服务连接状态已刷新".to_string())
+            tracing::info!("All MCP service connection status refreshed");
+            Ok("All MCP service connection status refreshed".to_string())
         }
         Err(e) => {
-            tracing::error!("❌ 刷新MCP服务连接状态失败: {}", e);
+            tracing::error!("Failed to refresh MCP service connection status: {}", e);
             Err(e)
         }
     }

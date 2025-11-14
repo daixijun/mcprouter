@@ -16,6 +16,7 @@ import {
   Check,
   CheckCircle,
   Copy,
+  Heart,
   Server,
   Wrench,
   XCircle,
@@ -140,6 +141,7 @@ const Dashboard: React.FC = memo(() => {
         total_servers: 0,
         enabled_servers: 0,
         disabled_servers: 0,
+        healthy_services: 0,
         connected_services: 0,
         total_tools: 0,
       }
@@ -149,6 +151,7 @@ const Dashboard: React.FC = memo(() => {
       total_servers: dashboardStats.total_servers,
       enabled_servers: dashboardStats.enabled_servers,
       disabled_servers: dashboardStats.disabled_servers,
+      healthy_services: dashboardStats.healthy_services,
       connected_services: dashboardStats.connected_services,
       total_tools: dashboardStats.total_tools,
     }
@@ -269,50 +272,68 @@ const Dashboard: React.FC = memo(() => {
   }
 
   return (
-    <Flex vertical gap='small' style={{ height: '100%', overflowY: 'auto' }}>
+    <Flex
+      vertical
+      gap='small'
+      style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Statistics Cards - Compact Layout */}
-      <Row gutter={[8, 8]}>
+      <Row gutter={[8, 8]} style={{ margin: 0, width: '100%' }}>
+        {/* 服务总数 - 最左边 */}
         <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<Server style={{ width: '16px', height: '16px' }} />}
-            iconColor='#1890ff'
-            bgColor='#e6f7ff'
+            iconColor='var(--color-info)'
+            bgColor='var(--color-bg-tertiary)'
             label='服务总数'
             value={stats?.total_servers || 0}
           />
         </Col>
-        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
-          <StatsCard
-            icon={<CheckCircle style={{ width: '16px', height: '16px' }} />}
-            iconColor='#52c41a'
-            bgColor='#f6ffed'
-            label='已启用'
-            value={stats?.enabled_servers || 0}
-          />
-        </Col>
-        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
-          <StatsCard
-            icon={<XCircle style={{ width: '16px', height: '16px' }} />}
-            iconColor='#ff4d4f'
-            bgColor='#fff2f0'
-            label='已禁用'
-            value={stats?.disabled_servers || 0}
-          />
-        </Col>
+        {/* 工具总数 - 最左边第二个 */}
         <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<Wrench style={{ width: '16px', height: '16px' }} />}
-            iconColor='#fa8c16'
-            bgColor='#fff7e6'
+            iconColor='var(--color-warning)'
+            bgColor='var(--color-bg-tertiary)'
             label='工具总数'
             value={stats?.total_tools || 0}
           />
         </Col>
+        {/* 健康服务数 - 新增 */}
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
+          <StatsCard
+            icon={<Heart style={{ width: '16px', height: '16px' }} />}
+            iconColor='var(--color-success)'
+            bgColor='var(--color-bg-tertiary)'
+            label='健康服务'
+            value={stats?.healthy_services || 0}
+          />
+        </Col>
+        {/* 已启用 */}
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
+          <StatsCard
+            icon={<CheckCircle style={{ width: '16px', height: '16px' }} />}
+            iconColor='var(--color-success)'
+            bgColor='var(--color-bg-tertiary)'
+            label='已启用'
+            value={stats?.enabled_servers || 0}
+          />
+        </Col>
+        {/* 已禁用 */}
+        <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
+          <StatsCard
+            icon={<XCircle style={{ width: '16px', height: '16px' }} />}
+            iconColor='var(--color-error)'
+            bgColor='var(--color-bg-tertiary)'
+            label='已禁用'
+            value={stats?.disabled_servers || 0}
+          />
+        </Col>
+        {/* 已连接 */}
         <Col xs={24} sm={24} md={12} lg={6} xl={4} xxl={4}>
           <StatsCard
             icon={<Activity style={{ width: '16px', height: '16px' }} />}
-            iconColor='#722ed1'
-            bgColor='#f9f0ff'
+            iconColor='var(--color-primary)'
+            bgColor='var(--color-bg-tertiary)'
             label='已连接'
             value={stats?.connected_services || 0}
           />
@@ -321,7 +342,11 @@ const Dashboard: React.FC = memo(() => {
 
       {/* Error Notice */}
       {error && (
-        <Card style={{ borderColor: '#ff7875', backgroundColor: '#fff2f0' }}>
+        <Card
+          style={{
+            borderColor: 'var(--color-error)',
+            backgroundColor: 'var(--color-bg-tertiary)',
+          }}>
           <Text type='danger' style={{ fontSize: '14px' }}>
             {error}
           </Text>
@@ -339,7 +364,7 @@ const Dashboard: React.FC = memo(() => {
       />
 
       {/* System Information */}
-      <Row gutter={[16, 16]}>
+      <Row gutter={[16, 16]} style={{ margin: 0, width: '100%' }}>
         <Col xs={24} lg={12}>
           <SystemInfoCard
             stats={dashboardStats}

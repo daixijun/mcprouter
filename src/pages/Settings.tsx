@@ -16,8 +16,6 @@ import { memo, useCallback, useEffect, useState } from 'react'
 import { useErrorContext } from '../contexts/ErrorContext'
 import type { SystemSettings } from '../types'
 
-const { TextArea } = Input
-
 const { Title, Text } = Typography
 
 const Settings: React.FC = memo(() => {
@@ -35,10 +33,6 @@ const Settings: React.FC = memo(() => {
     logging: {
       level: 'info',
       file_name: '',
-    },
-    security: {
-      auth: true,
-      allowed_hosts: ['localhost', '127.0.0.1'],
     },
     settings: {
       autostart: false,
@@ -73,27 +67,13 @@ const Settings: React.FC = memo(() => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        await Promise.all([
-          loadSettings(),
-          loadAutostartStatus(),
-          loadLocalIPs(),
-        ])
+        await Promise.all([loadSettings(), loadLocalIPs()])
       } catch (error) {
         console.error('Failed to load initial data:', error)
       }
     }
 
     loadData()
-  }, [])
-
-  const loadAutostartStatus = useCallback(async () => {
-    try {
-      const { ConfigService } = await import('../services/config-service')
-      const enabled = await ConfigService.isAutostartEnabled()
-      setAutostartEnabled(enabled)
-    } catch (error) {
-      console.error('Failed to load autostart status:', error)
-    }
   }, [])
 
   const loadSettings = useCallback(async () => {
@@ -110,7 +90,9 @@ const Settings: React.FC = memo(() => {
         timeoutPromise,
       ])
 
+      // 同时更新设置和自启动状态，避免重复调用接口
       setSettings(loadedSettings)
+      setAutostartEnabled(loadedSettings.settings?.autostart || false)
     } catch (error) {
       console.error('Failed to load settings:', error)
       const errorMessage =
@@ -186,15 +168,7 @@ const Settings: React.FC = memo(() => {
     }))
   }, [])
 
-  const handleSecuritySettingChange = useCallback((key: string, value: any) => {
-    setSettings((prev) => ({
-      ...prev,
-      security: {
-        ...prev.security,
-        [key]: value,
-      },
-    }))
-  }, [])
+  // security removed
 
   const handleSystemTraySettingChange = useCallback(
     async (key: string, value: any) => {
@@ -254,16 +228,7 @@ const Settings: React.FC = memo(() => {
     }
   }, [autostartEnabled, addError])
 
-  const handleHostsChange = useCallback(
-    (hosts: string) => {
-      const hostArray = hosts
-        .split('\n')
-        .map((host) => host.trim())
-        .filter((host) => host)
-      handleSecuritySettingChange('allowed_hosts', hostArray)
-    },
-    [handleSecuritySettingChange],
-  )
+  // security removed
 
   if (loading) {
     return (
@@ -365,55 +330,6 @@ const Settings: React.FC = memo(() => {
               />
             </Col>
           </Row>
-        </Card>
-
-        {/* Security Settings */}
-        <Card>
-          <Title level={4}>安全配置</Title>
-          <Flex vertical gap='middle'>
-            <Flex justify='space-between' align='center'>
-              <div>
-                <Text strong>身份验证</Text>
-                <Text
-                  type='secondary'
-                  style={{
-                    fontSize: '14px',
-                    display: 'block',
-                    marginTop: '2px',
-                  }}>
-                  启用 API 密钥认证
-                </Text>
-              </div>
-              <Switch
-                checked={settings.security.auth}
-                onChange={(checked) =>
-                  handleSecuritySettingChange('auth', checked)
-                }
-                checkedChildren='启用'
-                unCheckedChildren='禁用'
-              />
-            </Flex>
-
-            <div>
-              <Text strong>允许的主机列表</Text>
-              <TextArea
-                placeholder='输入主机地址，每行一个地址，如:&#10;localhost&#10;127.0.0.1&#10;192.168.1.100'
-                value={settings.security.allowed_hosts.join('\n')}
-                onChange={(e) => handleHostsChange(e.target.value)}
-                style={{ marginTop: '8px' }}
-                rows={3}
-              />
-              <Text
-                type='secondary'
-                style={{
-                  fontSize: '12px',
-                  marginTop: '4px',
-                  display: 'block',
-                }}>
-                每行输入一个主机地址
-              </Text>
-            </div>
-          </Flex>
         </Card>
 
         {/* Application Settings */}

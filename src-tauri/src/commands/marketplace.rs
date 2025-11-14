@@ -1,4 +1,4 @@
-// 市场服务命令
+// Marketplace Service Commands
 
 use crate::error::{McpError, Result};
 use crate::types::{MarketplaceService, McpServerConfig, ServiceTransport};
@@ -23,7 +23,7 @@ pub async fn list_marketplace_services(
 pub async fn install_marketplace_service(
     app_handle: tauri::AppHandle,
     service_id: String,
-    env_vars: Option<Vec<(String, String)>>,
+    env: Option<Vec<(String, String)>>,
 ) -> Result<McpServerConfig> {
     let service = get_mcp_server_details(service_id.clone()).await?;
 
@@ -41,11 +41,11 @@ pub async fn install_marketplace_service(
     };
 
     // Convert env vars into HashMap if provided
-    let env_vars_map = env_vars.map(|vars| vars.into_iter().collect::<HashMap<String, String>>());
+    let env_map = env.map(|vars| vars.into_iter().collect::<HashMap<String, String>>());
 
     // Check if install command is available
     let install_command = service.install_command.ok_or_else(|| {
-        McpError::InvalidConfiguration("无法提取安装命令,该服务可能不支持一键安装".to_string())
+        McpError::InvalidConfiguration("Cannot extract installation command, this service may not support one-click installation".to_string())
     })?;
 
     // Create service configuration and add to manager (one-click install)
@@ -57,35 +57,20 @@ pub async fn install_marketplace_service(
         transport: service_transport,
         url: None,
         enabled: true,
-        env_vars: env_vars_map,
+        env: env_map,
         headers: None,
-        version: None,
     };
 
     // Persist into service manager
-    SERVICE_MANAGER.add_mcp_server(&app_handle, config.clone()).await?;
+    SERVICE_MANAGER
+        .add_mcp_server(&app_handle, config.clone())
+        .await?;
 
-    // Try to connect immediately to retrieve version and persist to DB
+    // Try to connect immediately to retrieve version (cache only)
     match MCP_CLIENT_MANAGER.ensure_connection(&config, false).await {
-        Ok(connection) => {
-            if let Some(version) = connection.cached_version.clone() {
-                // TODO: 后续需要更新配置文件中的版本信息
-                // McpServerRepository::update_version(&config.name, Some(version.clone())).await
-                tracing::info!(
-                    "Service {} version detected: {}",
-                    config.name,
-                    version
-                );
-                // Also update in-memory cache so UI shows immediately
-                SERVICE_MANAGER
-                    .update_version_cache(&config.name, Some(version.clone()))
-                    .await;
-            } else {
-                tracing::info!(
-                    "Service {} connected but did not report version",
-                    config.name
-                );
-            }
+        Ok(_connection) => {
+            tracing::info!("Service {} connected successfully", config.name);
+            // Version is now read directly from config files, no need for in-memory cache
         }
         Err(e) => {
             tracing::warn!(

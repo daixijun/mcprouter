@@ -1,6 +1,4 @@
-// 命令模块统一导出
-
-pub mod api_key;
+// API Key module removed
 pub mod config;
 pub mod dashboard;
 pub mod marketplace;
@@ -8,8 +6,8 @@ pub mod mcp_server;
 pub mod settings;
 pub mod tool;
 
-// 重新导出所有命令函数
-pub use api_key::*;
+// Re-export all command functions
+// API Key commands removed
 pub use config::*;
 pub use dashboard::*;
 pub use marketplace::*;

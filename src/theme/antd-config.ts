@@ -45,6 +45,7 @@ export const lightTheme: ThemeConfig = {
     colorTextSecondary: '#6b7280', // gray-500
     colorTextTertiary: '#9ca3af', // gray-400
     colorTextQuaternary: '#d1d5db', // gray-300
+    colorTextPlaceholder: '#9ca3af', // 亮色模式占位符颜色
   },
   components: {
     Button: {
@@ -73,9 +74,9 @@ export const lightTheme: ThemeConfig = {
       borderRadiusLG: 12,
     },
     Switch: {
-      colorPrimary: '#10B981',        // 开启状态：绿色
-      colorText: '#ffffff',           // 开启状态文字：白色
-      colorBorder: '#d1d5db',         // 边框颜色
+      colorPrimary: '#10B981', // 开启状态：绿色
+      colorText: '#ffffff', // 开启状态文字：白色
+      colorBorder: '#d1d5db', // 边框颜色
     },
   },
 }
@@ -114,17 +115,18 @@ export const darkTheme: ThemeConfig = {
     controlHeightLG: 40,
     controlHeightSM: 24,
 
-    // 中性色 - 暗色模式，所有文本都使用白色
+    // 中性色 - 暗色模式，使用分层的文本颜色以提供更好的对比度
     colorBgBase: '#111827', // gray-900
     colorBgContainer: '#1f2937', // gray-800
     colorBgElevated: '#1f2937', // gray-800
     colorBgLayout: '#0f172a', // slate-900
     colorBorder: '#374151', // gray-700
     colorBorderSecondary: '#4b5563', // gray-600
-    colorText: '#ffffff', // 纯白色
-    colorTextSecondary: '#ffffff', // 纯白色
-    colorTextTertiary: '#ffffff', // 纯白色
-    colorTextQuaternary: '#ffffff', // 纯白色
+    colorText: '#f9fafb', // 主文本：亮灰色 (gray-50)
+    colorTextSecondary: '#d1d5db', // 次要文本：中灰色 (gray-300)
+    colorTextTertiary: '#9ca3af', // 三级文本：暗灰色 (gray-400)
+    colorTextQuaternary: '#6b7280', // 四级文本：更暗灰色 (gray-500)
+    colorTextPlaceholder: '#4b5563', // 暗色模式占位符颜色
   },
   components: {
     Button: {
@@ -154,9 +156,9 @@ export const darkTheme: ThemeConfig = {
       titleColor: '#ffffff', // 暗黑模式下标题使用白色
     },
     Switch: {
-      colorPrimary: '#10B981',        // 开启状态：绿色
-      colorText: '#ffffff',           // 开启状态文字：白色
-      colorBorder: '#374151',         // 边框颜色（暗色）
+      colorPrimary: '#10B981', // 开启状态：绿色
+      colorText: '#ffffff', // 开启状态文字：白色
+      colorBorder: '#374151', // 边框颜色（暗色）
     },
   },
 }

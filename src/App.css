@@ -2,6 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSS 变量定义 - 统一的颜色系统 */
+:root {
+  /* 主色调 */
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-primary-light: #60a5fa;
+  --color-success: #10b981;
+  --color-success-dark: #059669;
+  --color-warning: #f59e0b;
+  --color-warning-dark: #d97706;
+  --color-error: #ef4444;
+  --color-error-dark: #dc2626;
+  --color-info: #3b82f6;
+  --color-info-dark: #2563eb;
+
+  /* 文本颜色 - 亮色模式 */
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-text-quaternary: #d1d5db;
+  --color-text-disabled: #e5e7eb;
+  --color-text-inverse: #ffffff;
+
+  /* 背景颜色 - 亮色模式 */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f9fafb;
+  --color-bg-tertiary: #f3f4f6;
+  --color-bg-elevated: #ffffff;
+  --color-bg-layout: #f9fafb;
+
+  /* 边框颜色 - 亮色模式 */
+  --color-border: #e5e7eb;
+  --color-border-secondary: #f3f4f6;
+  --color-border-light: #e5e7eb;
+
+  /* 平台特定颜色 */
+  --color-platform-mada: #f43f5e;
+  --color-platform-default: #6b7280;
+  --color-platform-github: #24292e;
+  --color-platform-custom: #8b5cf6;
+
+  /* 状态颜色 */
+  --color-status-online: #10b981;
+  --color-status-offline: #ef4444;
+  --color-status-connecting: #f59e0b;
+  --color-status-disabled: #6b7280;
+
+  /* 占位符颜色 */
+  --color-placeholder: #9ca3af;
+
+  /* 阴影 */
+  --color-shadow: rgba(0, 0, 0, 0.1);
+  --color-shadow-dark: rgba(0, 0, 0, 0.2);
+}
+
+.dark {
+  /* 主色调 - 暗色模式保持不变 */
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-primary-light: #60a5fa;
+  --color-success: #10b981;
+  --color-success-dark: #059669;
+  --color-warning: #f59e0b;
+  --color-warning-dark: #d97706;
+  --color-error: #ef4444;
+  --color-error-dark: #dc2626;
+  --color-info: #3b82f6;
+  --color-info-dark: #2563eb;
+
+  /* 文本颜色 - 暗色模式 */
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #d1d5db;
+  --color-text-tertiary: #9ca3af;
+  --color-text-quaternary: #6b7280;
+  --color-text-disabled: #4b5563;
+  --color-text-inverse: #111827;
+
+  /* 背景颜色 - 暗色模式 */
+  --color-bg-primary: #111827;
+  --color-bg-secondary: #1f2937;
+  --color-bg-tertiary: #374151;
+  --color-bg-elevated: #1f2937;
+  --color-bg-layout: #0f172a;
+
+  /* 边框颜色 - 暗色模式 */
+  --color-border: #374151;
+  --color-border-secondary: #4b5563;
+  --color-border-light: #4b5563;
+
+  /* 平台特定颜色 - 暗色模式保持不变 */
+  --color-platform-mada: #f43f5e;
+  --color-platform-default: #6b7280;
+  --color-platform-github: #24292e;
+  --color-platform-custom: #8b5cf6;
+
+  /* 状态颜色 - 暗色模式保持不变 */
+  --color-status-online: #10b981;
+  --color-status-offline: #ef4444;
+  --color-status-connecting: #f59e0b;
+  --color-status-disabled: #6b7280;
+
+  /* 占位符颜色 - 暗色模式 */
+  --color-placeholder: #4b5563;
+
+  /* 阴影 - 暗色模式 */
+  --color-shadow: rgba(0, 0, 0, 0.3);
+  --color-shadow-dark: rgba(0, 0, 0, 0.5);
+}
+
 /* Base styles */
 @layer base {
   html {
@@ -21,6 +130,38 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /* 占位符样式 - 确保表单元素使用正确的占位符颜色 */
+  input::placeholder,
+  textarea::placeholder,
+  .ant-input::placeholder {
+    color: var(--color-placeholder) !important;
+    opacity: 1 !important;
+  }
+
+  /* 针对 Ant Design 输入框的占位符样式 */
+  .ant-input .ant-input-placeholder {
+    color: var(--color-placeholder) !important;
+  }
+
+  /* 确保占位符在所有浏览器中显示一致 */
+  input::-webkit-input-placeholder,
+  textarea::-webkit-input-placeholder {
+    color: var(--color-placeholder) !important;
+    opacity: 1 !important;
+  }
+
+  input::-moz-placeholder,
+  textarea::-moz-placeholder {
+    color: var(--color-placeholder) !important;
+    opacity: 1 !important;
+  }
+
+  input:-ms-input-placeholder,
+  textarea:-ms-input-placeholder {
+    color: var(--color-placeholder) !important;
+    opacity: 1 !important;
   }
 }
 
@@ -72,20 +213,62 @@
     @apply px-3 py-1.5 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow-md text-sm; /* 减小内边距和字体大小 */
   }
 
+  /* 基于CSS变量的标准按钮样式 */
   .btn-primary-modern {
-    @apply bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    border: 1px solid var(--color-primary);
+  }
+  .btn-primary-modern:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+    border-color: var(--color-primary-dark);
   }
 
   .btn-secondary-modern {
-    @apply bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+  }
+  .btn-secondary-modern:hover:not(:disabled) {
+    background: var(--color-border-secondary);
+    border-color: var(--color-border);
   }
 
   .btn-danger-modern {
-    @apply bg-red-500 hover:bg-red-600 text-white dark:bg-red-600 dark:hover:bg-red-700;
+    background: var(--color-error);
+    color: var(--color-text-inverse);
+    border: 1px solid var(--color-error);
+  }
+  .btn-danger-modern:hover:not(:disabled) {
+    background: var(--color-error-dark);
+    border-color: var(--color-error-dark);
   }
 
   .btn-success-modern {
-    @apply bg-green-500 hover:bg-green-600 text-white dark:bg-green-600 dark:hover:bg-green-700;
+    background: var(--color-success);
+    color: var(--color-text-inverse);
+    border: 1px solid var(--color-success);
+  }
+  .btn-success-modern:hover:not(:disabled) {
+    background: var(--color-success-dark);
+    border-color: var(--color-success-dark);
+  }
+
+  .btn-warning-modern {
+    background: var(--color-warning);
+    color: var(--color-text-inverse);
+    border: 1px solid var(--color-warning);
+  }
+  .btn-warning-modern:hover:not(:disabled) {
+    background: var(--color-warning-dark);
+    border-color: var(--color-warning-dark);
+  }
+
+  /* 禁用状态 */
+  .btn-modern:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
   }
 
   /* 紧凑布局相关类 */

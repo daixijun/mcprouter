@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
-use tokio::sync::Mutex as TokioMutex;
 
 use commands::*;
 use mcp_client::McpClientManager;
@@ -49,29 +48,12 @@ static MCP_CLIENT_MANAGER: std::sync::LazyLock<Arc<McpClientManager>> = std::syn
     },
 );
 
-static AGGREGATOR: std::sync::LazyLock<Arc<aggregator::McpAggregator>> = std::sync::LazyLock::new(
-    || {
-        let config = AppConfig::load().unwrap_or_else(|e| {
-            tracing::error!(
-                "\n========================================\nERROR: Failed to load configuration file\n========================================\n{}\n\nThe application cannot start with an invalid configuration.\nPlease fix the config file at: ~/.mcprouter/config.json\nOr delete it to use default settings.\n",
-                e
-            );
-            std::process::exit(1);
-        });
-        let mcp_server_manager = Arc::new(mcp_manager::McpServerManager::new(config.clone()));
-        Arc::new(aggregator::McpAggregator::new(
-            mcp_server_manager,
-            config.server.clone(),
-        ))
-    },
-);
+static AGGREGATOR: std::sync::LazyLock<
+    Arc<std::sync::Mutex<Option<Arc<aggregator::McpAggregator>>>>,
+> = std::sync::LazyLock::new(|| Arc::new(std::sync::Mutex::new(None)));
 
 // Track application startup time
 static STARTUP_TIME: std::sync::LazyLock<SystemTime> = std::sync::LazyLock::new(SystemTime::now);
-
-// Track aggregator task handle
-static AGGREGATOR_HANDLE: TokioMutex<Option<tokio::task::JoinHandle<()>>> =
-    TokioMutex::const_new(None);
 
 fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Load configuration to initialize theme menu state
@@ -369,10 +351,34 @@ pub async fn run() {
             // Log after subscriber is initialized
             tracing::info!("Starting MCP Router");
 
+            // 2.5) Initialize aggregator with all required components
+            let config = AppConfig::load().unwrap_or_else(|e| {
+                tracing::error!(
+                    "\n========================================\nERROR: Failed to load configuration file\n========================================\n{}\n\nThe application cannot start with an invalid configuration.\nPlease fix the config file at: ~/.mcprouter/config.json\nOr delete it to use default settings.\n",
+                    e
+                );
+                std::process::exit(1);
+            });
+
+            let mcp_server_manager = SERVICE_MANAGER.clone();
+            let mcp_client_manager = MCP_CLIENT_MANAGER.clone();
+            let server_config = Arc::new(config.server.clone());
+            let aggregator = Arc::new(aggregator::McpAggregator::new(
+                mcp_server_manager,
+                mcp_client_manager,
+                server_config,
+            ));
+
+            // Store aggregator in global variable
+            {
+                let mut agg_guard = AGGREGATOR.lock().unwrap();
+                *agg_guard = Some(aggregator.clone());
+            }
+
             // 3) Start aggregator AFTER logging is initialized
-            let aggregator_clone = AGGREGATOR.clone();
-            let handle = tokio::spawn(async move {
-                if let Err(e) = aggregator_clone.start().await {
+            // Since we're in a non-async setup(), we need to spawn the async task
+            tokio::spawn(async move {
+                if let Err(e) = aggregator.start().await {
                     tracing::error!(
                         "Failed to start MCP aggregator server: {}\n\
                         The application cannot continue without the MCP aggregator service.\n\
@@ -381,12 +387,6 @@ pub async fn run() {
                     );
                     std::process::exit(1);
                 }
-            });
-
-            // Store aggregator handle asynchronously
-            tokio::spawn(async move {
-                let mut handle_guard = AGGREGATOR_HANDLE.lock().await;
-                *handle_guard = Some(handle);
             });
 
             // 4) Load MCP services from configuration files
@@ -398,13 +398,10 @@ pub async fn run() {
                         tracing::info!("MCP services loaded");
 
                         // 5) 自动连接所有启用的服务
-                        tracing::info!("🚀 开始启动时自动连接服务...");
+                        tracing::info!("🚀 Starting auto-connect services at startup...");
                         if let Err(e) = SERVICE_MANAGER.auto_connect_enabled_services(&app_handle).await {
                             tracing::error!("Failed to auto-connect services: {}", e);
                         }
-
-                        // 6) 启动后台定期健康检查
-                        SERVICE_MANAGER.start_background_health_check();
                     }
                     Err(e) => {
                         tracing::error!("Failed to load services: {}", e);
@@ -482,10 +479,9 @@ pub async fn run() {
             get_theme,
             set_theme,
             update_config,
+            import_mcp_servers_config,
             add_mcp_server,
             update_mcp_server,
-            remove_mcp_server,
-            check_mcp_server_connectivity,
             toggle_mcp_server,
             list_mcp_servers,
             list_marketplace_services,
@@ -504,20 +500,7 @@ pub async fn run() {
             save_settings,
             get_dashboard_stats,
             get_local_ip_addresses,
-            is_autostart_enabled,
             toggle_autostart,
-            // API Key Management Commands
-            create_api_key,
-            list_api_keys,
-            get_api_key_details,
-            delete_api_key,
-            toggle_api_key,
-            // Tool-level Permission Management
-            get_api_key_tools,
-            add_tool_permission,
-            remove_tool_permission,
-            grant_server_tools_to_api_key,
-            revoke_server_tools_from_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -25,4 +25,5 @@ dist-ssr
 
 # openspec/
 IFLOW.md
-target
+target/
+.trae/

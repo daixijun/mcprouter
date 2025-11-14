@@ -91,22 +91,7 @@ export class ConfigService {
   }
 
   // Autostart Management
-  static async isAutostartEnabled(): Promise<boolean> {
-    try {
-      return await withTimeout(
-        invoke('is_autostart_enabled'),
-        5000,
-        '检查自启动状态',
-      )
-    } catch (error) {
-      throw new ServiceError(
-        '检查自启动状态失败',
-        'isAutostartEnabled',
-        error instanceof Error ? error : new Error(String(error)),
-      )
-    }
-  }
-
+  // Note: To get autostart status, use the 'autostart' field from getSystemSettings() result
   static async toggleAutostart(): Promise<string> {
     try {
       return await withTimeout(invoke('toggle_autostart'), 10000, '切换自启动')

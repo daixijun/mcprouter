@@ -1,3 +1,4 @@
+import { listen } from '@tauri-apps/api/event'
 import {
   App,
   Button,
@@ -34,7 +35,21 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     // 重置搜索查询和选中状态当服务器切换时
     setSearchQuery('')
     setSelectedTools(new Set())
-  }, [mcpServer.name, refreshVersion])  // 添加 refreshVersion 依赖
+  }, [mcpServer.name, refreshVersion]) // 添加 refreshVersion 依赖
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    ;(async () => {
+      unlisten = await listen<string>('tools-updated', (e) => {
+        if (e.payload === mcpServer.name) {
+          setRefreshVersion((prev) => prev + 1)
+        }
+      })
+    })()
+    return () => {
+      if (unlisten) unlisten()
+    }
+  }, [mcpServer.name])
 
   const loadTools = async () => {
     setLoading(true)
@@ -54,7 +69,7 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
   // 手动刷新工具列表
   const handleRefresh = () => {
     console.log('🔄 手动刷新工具列表')
-    setRefreshVersion(prev => prev + 1)
+    setRefreshVersion((prev) => prev + 1)
   }
 
   // 过滤工具列表
@@ -241,7 +256,6 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     )
   }
 
-
   return (
     <Flex
       vertical
@@ -253,7 +267,6 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          backgroundColor: '#ffffff',
           padding: '16px',
           borderRadius: '8px',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
@@ -262,11 +275,12 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
           <Flex justify='space-between' align='center' wrap='wrap'>
             <Text strong>
               工具清单 ( 启用:{' '}
-              <span style={{ color: '#52c41a', fontWeight: 'bold' }}>
+              <span
+                style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>
                 {enabledToolsCount}
               </span>{' '}
               | 禁用:{' '}
-              <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
+              <span style={{ color: 'var(--color-error)', fontWeight: 'bold' }}>
                 {disabledToolsCount}
               </span>{' '}
               |{' '}

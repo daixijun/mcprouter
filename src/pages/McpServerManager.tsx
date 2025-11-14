@@ -52,7 +52,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const [newServiceConfig, setNewServiceConfig] = useState({
     name: '',
     description: '',
-    transport: 'stdio' as 'stdio' | 'sse' | 'http',
+    type: 'stdio' as 'stdio' | 'sse' | 'http',
     command: '',
     args: '',
     url: '',
@@ -181,11 +181,11 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     setNewServiceConfig({
       name: server.name,
       description: server.description || '',
-      transport: server.transport as any,
+      type: server.type as any,
       command: server.command || '',
       args: server.args ? server.args.join(' ') : '',
       url: server.url || '',
-      env: server.env_vars ? jsonToKeyValuePairs(server.env_vars) : '',
+      env: server.env ? jsonToKeyValuePairs(server.env) : '',
       headers: server.headers ? jsonToKeyValuePairs(server.headers) : '',
     })
     setShowEditService(true)
@@ -195,21 +195,43 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     try {
       if (addServiceMode === 'json') {
         try {
-          JSON.parse(jsonConfig)
+          const configData = JSON.parse(jsonConfig)
+
+          // Validate JSON structure
+          if (
+            !configData.mcpServers ||
+            typeof configData.mcpServers !== 'object'
+          ) {
+            setJsonError('配置格式错误：必须包含 mcpServers 对象')
+            return
+          }
+
+          if (Object.keys(configData.mcpServers).length === 0) {
+            setJsonError('配置格式错误：mcpServers 对象不能为空')
+            return
+          }
+
           // Call the backend API with JSON data
-          // TODO: Implement actual JSON import functionality
-          message.success('服务已添加')
+          const result = await McpServerService.importMcpServersConfig(
+            configData,
+          )
+          message.success(result)
           setShowAddService(false)
           resetForm()
           onServiceChange?.()
           await fetchMcpServers()
-        } catch (error) {
-          setJsonError('JSON 格式无效，请检查配置')
+        } catch (error: any) {
+          console.error('Failed to import JSON config:', error)
+          if (error.code === 'JSON_PARSE_ERROR') {
+            setJsonError('JSON 格式无效，请检查配置')
+          } else {
+            setJsonError(error.message || '导入配置失败，请检查配置格式')
+          }
           return
         }
       } else {
         // Convert environment variables and headers from key-value pairs to [string, string][] format
-        const envVars = newServiceConfig.env
+        const env = newServiceConfig.env
           ? Object.entries(keyValuePairsToJson(newServiceConfig.env))
           : []
         const headers = newServiceConfig.headers
@@ -222,10 +244,10 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           newServiceConfig.args
             ? newServiceConfig.args.split(' ').filter((arg) => arg.trim())
             : [],
-          newServiceConfig.transport,
+          newServiceConfig.type,
           newServiceConfig.url || undefined,
           newServiceConfig.description || undefined,
-          envVars,
+          env,
           headers,
         )
         await fetchMcpServers()
@@ -245,7 +267,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
     try {
       // Parse environment variables and headers
-      const env_vars = newServiceConfig.env
+      const env = newServiceConfig.env
         .split('\n')
         .filter((line) => line.trim())
         .map((line) => {
@@ -262,7 +284,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         })
 
       // Prepare command and args based on transport type
-      const isStdio = newServiceConfig.transport === 'stdio'
+      const isStdio = newServiceConfig.type === 'stdio'
       const command = isStdio ? newServiceConfig.command : null
       const args = isStdio
         ? newServiceConfig.args.split(' ').filter((arg) => arg.trim())
@@ -272,10 +294,10 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         newServiceConfig.name,
         command,
         args,
-        newServiceConfig.transport,
+        newServiceConfig.type,
         newServiceConfig.url || null,
         newServiceConfig.description || null,
-        env_vars.length > 0 ? env_vars : null,
+        env.length > 0 ? env : null,
         headers.length > 0 ? headers : null,
         editingService.enabled,
       )
@@ -296,7 +318,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     setNewServiceConfig({
       name: '',
       description: '',
-      transport: 'stdio',
+      type: 'stdio',
       command: '',
       args: '',
       url: '',
@@ -332,39 +354,38 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
     {
       title: '协议',
-      dataIndex: 'transport',
-      key: 'transport',
+      dataIndex: 'type',
+      key: 'type',
       width: 100,
       filters: [
         { text: 'STDIO', value: 'stdio' },
         { text: 'SSE', value: 'sse' },
         { text: 'HTTP', value: 'http' },
       ],
-      onFilter: (value: any, record: McpServerInfo) =>
-        record.transport === value,
-      render: (transport: string) => {
-        let tagColor = 'blue'
+      onFilter: (value: any, record: McpServerInfo) => record.type === value,
+      // render: (transport: string) => {
+      //   let tagColor = 'blue'
 
-        switch (transport.toLowerCase()) {
-          case 'stdio':
-            tagColor = '#52c41a'
-            break
-          case 'sse':
-            tagColor = '#1890ff'
-            break
-          case 'http':
-            tagColor = '#faad14'
-            break
-          default:
-            tagColor = '#d9d9d9'
-        }
+      //   switch (transport.toLowerCase()) {
+      //     case 'stdio':
+      //       tagColor = '#52c41a'
+      //       break
+      //     case 'sse':
+      //       tagColor = '#1890ff'
+      //       break
+      //     case 'http':
+      //       tagColor = '#faad14'
+      //       break
+      //     default:
+      //       tagColor = '#d9d9d9'
+      //   }
 
-        return (
-          <Tag color={tagColor} style={{ fontSize: '12px' }}>
-            {transport.toUpperCase()}
-          </Tag>
-        )
-      },
+      //   return (
+      //     <Tag color={tagColor} style={{ fontSize: '12px' }}>
+      //       {transport.toUpperCase()}
+      //     </Tag>
+      //   )
+      // },
     },
     {
       title: '状态',
@@ -680,23 +701,23 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                   传输协议 <Text type='danger'>*</Text>
                 </Text>
                 <Select
-                  value={newServiceConfig.transport}
+                  value={newServiceConfig.type}
                   onChange={(value) =>
                     setNewServiceConfig({
                       ...newServiceConfig,
-                      transport: value as any,
+                      type: value as any,
                     })
                   }
                   options={[
                     { value: 'stdio', label: 'STDIO (标准输入输出)' },
                     { value: 'sse', label: 'SSE (服务器发送事件)' },
-                    { value: 'http', label: 'HTTP' },
+                    { value: 'http', label: 'Streamable HTTP' },
                   ]}
                   style={{ marginTop: '4px', width: '100%' }}
                 />
               </div>
 
-              {newServiceConfig.transport === 'stdio' && (
+              {newServiceConfig.type === 'stdio' && (
                 <>
                   <div>
                     <Text strong>
@@ -759,8 +780,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 </>
               )}
 
-              {(newServiceConfig.transport === 'sse' ||
-                newServiceConfig.transport === 'http') && (
+              {(newServiceConfig.type === 'sse' ||
+                newServiceConfig.type === 'http') && (
                 <>
                   <div>
                     <Text strong>
@@ -819,12 +840,52 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                     setJsonConfig(e.target.value)
                   }
-                  placeholder={
-                    '{"name": "my-server", "transport": "stdio", ...}'
-                  }
+                  placeholder={`{
+  "mcpServers": {
+    "stdio-example": {
+      "command": "python server.py",
+      "args": ["--port", "3000"],
+      "description": "STDIO服务示例",
+      "env": {
+        "API_KEY": "your-api-key",
+        "DEBUG": "true"
+      }
+    },
+    "sse-example": {
+      "url": "http://localhost:3000/sse",
+      "description": "SSE服务示例（URL以/sse结尾）",
+      "headers": {
+        "Authorization": "Bearer your-token"
+      }
+    },
+    "http-example": {
+      "url": "http://localhost:3000/mcp",
+      "description": "HTTP服务示例",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  }
+}`}
                   rows={12}
                   style={{ marginTop: '4px' }}
                 />
+                <Text
+                  type='secondary'
+                  style={{
+                    fontSize: '12px',
+                    marginTop: '4px',
+                    display: 'block',
+                  }}>
+                  <strong>配置说明：</strong>
+                  <br />• 必须包含 <code>mcpServers</code> 对象
+                  <br />• 传输协议自动检测：有 <code>url</code>{' '}
+                  字段时根据路径判断（<code>/sse</code>
+                  结尾为SSE，否则为HTTP），有 <code>command</code> 字段时为STDIO
+                  <br />• 可选字段：<code>transport</code>（显式指定）、
+                  <code>description</code>、<code>env</code>（环境变量）、
+                  <code>headers</code>、<code>args</code>
+                </Text>
               </div>
               {jsonError && (
                 <Text type='danger' style={{ fontSize: '14px' }}>
@@ -888,23 +949,23 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           <div>
             <Text strong>传输协议</Text>
             <Select
-              value={newServiceConfig.transport}
+              value={newServiceConfig.type}
               onChange={(value) =>
                 setNewServiceConfig({
                   ...newServiceConfig,
-                  transport: value as any,
+                  type: value as any,
                 })
               }
               options={[
                 { value: 'stdio', label: 'STDIO (标准输入输出)' },
                 { value: 'sse', label: 'SSE (服务器发送事件)' },
-                { value: 'streamablehttp', label: 'Streamable HTTP' },
+                { value: 'http', label: 'Streamable HTTP' },
               ]}
               style={{ marginTop: '4px', width: '100%' }}
             />
           </div>
 
-          {newServiceConfig.transport === 'stdio' && (
+          {newServiceConfig.type === 'stdio' && (
             <>
               <div>
                 <Text strong>命令</Text>
@@ -963,8 +1024,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             </>
           )}
 
-          {(newServiceConfig.transport === 'sse' ||
-            newServiceConfig.transport === 'http') && (
+          {(newServiceConfig.type === 'sse' ||
+            newServiceConfig.type === 'http') && (
             <>
               <div>
                 <Text strong>服务 URL</Text>

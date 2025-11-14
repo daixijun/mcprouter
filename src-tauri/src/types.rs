@@ -1,15 +1,15 @@
-use rust_mcp_sdk::schema::Tool as McpToolSchema;
-use serde::{Deserialize, Serialize, Serializer};
+use rmcp::model::Tool as McpToolSchema;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// Use rust-mcp-sdk Tool model directly instead of custom struct
+// Use rmcp Tool model directly instead of custom struct
 pub type McpTool = McpToolSchema;
 
 // ============================================================================
 // Config related types (from config.rs)
 // ============================================================================
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct McpServerConfig {
     pub name: String,
@@ -18,77 +18,52 @@ pub struct McpServerConfig {
     pub command: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    #[serde(rename = "type")]
     pub transport: ServiceTransport,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    pub enabled: bool,
-    pub env_vars: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
-    #[serde(default)]
-    pub version: Option<String>,
+    pub enabled: bool,
 }
 
-impl Serialize for McpServerConfig {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeStruct;
-
-        let mut state = serializer.serialize_struct("McpServerConfig", 11)?;
-        state.serialize_field("name", &self.name)?;
-        if let Some(ref description) = self.description {
-            state.serialize_field("description", description)?;
-        }
-        if let Some(ref command) = self.command {
-            if !should_skip_command(command) {
-                state.serialize_field("command", command)?;
-            }
-        }
-        if let Some(ref args) = self.args {
-            if !should_skip_args(args) {
-                state.serialize_field("args", args)?;
-            }
-        }
-        state.serialize_field("transport", &self.transport)?;
-        if let Some(ref url) = self.url {
-            state.serialize_field("url", url)?;
-        }
-        state.serialize_field("enabled", &self.enabled)?;
-
-        // Only serialize env_vars if transport is Stdio
+impl McpServerConfig {
+    /// Clean fields, ensure only fields related to transport type are set
+    pub fn clean_fields(&mut self) {
         match self.transport {
             ServiceTransport::Stdio => {
-                if let Some(ref env_vars) = self.env_vars {
-                    state.serialize_field("env_vars", env_vars)?;
-                }
+                // stdio type: clean sse/http related fields
+                self.url = None;
+                self.headers = None;
             }
-            _ => {
-                // Skip env_vars for SSE and Http
+            ServiceTransport::Sse | ServiceTransport::Http => {
+                // sse/http type: clean stdio related fields
+                self.command = None;
+                self.args = None;
+                self.env = None;
             }
         }
+    }
 
-        if let Some(ref headers) = self.headers {
-            state.serialize_field("headers", headers)?;
+    /// Create a new minimal config
+    pub fn new(_id: String, name: String) -> Self {
+        Self {
+            name,
+            description: None,
+            command: None,
+            args: None,
+            env: None,
+            transport: ServiceTransport::Stdio,
+            url: None,
+            headers: None,
+            enabled: true,
         }
-
-        // Serialize version
-        if let Some(ref version) = self.version {
-            state.serialize_field("version", version)?;
-        }
-
-        state.end()
     }
 }
 
-// Helper functions for conditional serialization
-fn should_skip_command(command: &str) -> bool {
-    command.is_empty()
-}
-
-fn should_skip_args(args: &[String]) -> bool {
-    args.is_empty()
-}
+// Conditional serialization helpers removed
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -103,9 +78,9 @@ pub enum ServiceTransport {
 pub struct AppConfig {
     pub server: ServerConfig,
     pub logging: Option<LoggingSettings>,
-    pub security: Option<SecuritySettings>,
     #[serde(default)]
     pub settings: Option<Settings>,
+    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -120,54 +95,20 @@ pub struct LoggingSettings {
 pub struct SystemTraySettings {
     #[serde(default)]
     pub enabled: Option<bool>,
-    #[serde(default)]
     pub close_to_tray: Option<bool>,
-    #[serde(default)]
     pub start_to_tray: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "snake_case")]
-#[derive(Default)]
 pub struct Settings {
     #[serde(default)]
     pub theme: Option<String>,
     #[serde(default)]
     pub autostart: Option<bool>,
-    #[serde(default)]
     pub system_tray: Option<SystemTraySettings>,
-    #[serde(default)]
     pub uv_index_url: Option<String>,
-    #[serde(default)]
     pub npm_registry: Option<String>,
-}
-
-// API Key Permission structure
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub struct ApiKeyPermissions {
-    pub allowed_servers: Vec<String>,
-    pub allowed_tools: Vec<String>,
-}
-
-// API Key structure
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct ApiKey {
-    pub id: String,
-    pub name: String,
-    pub key: String,
-    pub enabled: bool,
-    pub created_at: String,
-    pub permissions: ApiKeyPermissions,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct SecuritySettings {
-    pub allowed_hosts: Vec<String>,
-    pub auth: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -278,20 +219,43 @@ pub struct ServiceStatus {
 
 // 合并后的响应结构体，包含状态和配置信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct McpServerInfo {
     pub name: String,
     pub enabled: bool,
     pub status: String, // "connecting", "connected", "disconnected", "failed"
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
+    #[serde(rename = "type")]
     pub transport: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub env_vars: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_count: Option<usize>,
+}
+
+/// MCP服务器工具信息，用于API返回
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct McpToolInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Clone)]
@@ -303,13 +267,12 @@ pub struct ServiceVersionCache {
 // MCP Client related types (from mcp_client.rs)
 // ============================================================================
 
-// Define enum for different service types
+// Define enum for different service types (rmcp 0.8.3)
+// Use RunningService directly to enable peer access for tool listing
 pub enum McpService {
-    // 注意：rust-mcp-sdk 使用不同的运行时模型
-    // 我们将使用 Box<dyn McpClient> 来存储客户端实例
-    Stdio(Box<dyn rust_mcp_sdk::McpClient>),
-    Sse(Box<dyn rust_mcp_sdk::McpClient>),
-    Http(Box<dyn rust_mcp_sdk::McpClient>),
+    Stdio(std::sync::Arc<rmcp::service::RunningService<rmcp::service::RoleClient, ()>>),
+    Sse(std::sync::Arc<rmcp::service::RunningService<rmcp::service::RoleClient, ()>>),
+    Http(std::sync::Arc<rmcp::service::RunningService<rmcp::service::RoleClient, ()>>),
 }
 
 impl std::fmt::Debug for McpService {
@@ -322,9 +285,21 @@ impl std::fmt::Debug for McpService {
     }
 }
 
+impl McpService {
+    /// Get the peer for sending requests
+    pub fn peer(&self) -> &rmcp::service::Peer<rmcp::service::RoleClient> {
+        match self {
+            McpService::Stdio(service) => service.peer(),
+            McpService::Sse(service) => service.peer(),
+            McpService::Http(service) => service.peer(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConnectionStatus {
     pub is_connected: bool,
+    pub is_connecting: bool,
     pub last_connected: Option<chrono::DateTime<chrono::Utc>>,
     pub error_message: Option<String>,
 }
@@ -332,53 +307,70 @@ pub struct ConnectionStatus {
 #[derive(Debug, Clone)]
 pub struct McpConnection {
     pub service_id: String,
-    pub server_info: Option<serde_json::Value>,
+    pub server_info: Option<rmcp::model::InitializeResult>,
     // Store the actual RMCP client using enum
     pub client: Option<std::sync::Arc<McpService>>,
     // Enhanced connection state management
     pub status: ConnectionStatus,
-    // Cached service information
-    pub cached_version: Option<String>,
 }
 
 impl AppConfig {
     /// 从文件加载配置
     pub fn load() -> Result<Self, crate::config::ConfigError> {
-        let app_data_dir = std::path::PathBuf::from(
-            &std::env::var("APPDATA").or_else(|_| std::env::var("HOME")
-                .map(|home| format!("{}/.mcprouter", home)))
-                .unwrap_or_else(|_| ".mcprouter".to_string())
-        );
+        // Resolve home directory cross-platform
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string());
+        let app_data_dir = std::path::PathBuf::from(format!("{}/.mcprouter", home_dir));
 
         let config_path = crate::config::get_app_config_path(&app_data_dir);
 
+        // Migration: read old path if new path not exists
         if !config_path.exists() {
-            // 如果配置文件不存在，返回默认配置
+            let old_path = app_data_dir.join("config").join("app.json");
+            if old_path.exists() {
+                let file =
+                    std::fs::File::open(&old_path).map_err(crate::config::ConfigError::Io)?;
+                let reader = std::io::BufReader::new(file);
+                let config: AppConfig =
+                    serde_json::from_reader(reader).map_err(crate::config::ConfigError::Json)?;
+
+                // Ensure parent dir exists and write to new path
+                if let Some(parent) = config_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                crate::config::write_json_atomic(&config_path, &config)?;
+                return Ok(config);
+            }
+
+            // Create default when no config exists
             let default_config = Self::default();
-            default_config.save()?;
+            if let Some(parent) = config_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            crate::config::write_json_atomic(&config_path, &default_config)?;
             return Ok(default_config);
         }
 
-        let file = std::fs::File::open(&config_path)
-            .map_err(crate::config::ConfigError::Io)?;
+        let file = std::fs::File::open(&config_path).map_err(crate::config::ConfigError::Io)?;
         let reader = std::io::BufReader::new(file);
-        let config = serde_json::from_reader(reader)
-            .map_err(crate::config::ConfigError::Json)?;
+        let config = serde_json::from_reader(reader).map_err(crate::config::ConfigError::Json)?;
 
         Ok(config)
     }
 
     /// 保存配置到文件
     pub fn save(&self) -> Result<(), crate::config::ConfigError> {
-        let app_data_dir = std::path::PathBuf::from(
-            &std::env::var("APPDATA").or_else(|_| std::env::var("HOME")
-                .map(|home| format!("{}/.mcprouter", home)))
-                .unwrap_or_else(|_| ".mcprouter".to_string())
-        );
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string());
+        let app_data_dir = std::path::PathBuf::from(format!("{}/.mcprouter", home_dir));
 
         let config_path = crate::config::get_app_config_path(&app_data_dir);
 
-        // 使用文件管理器进行原子性写入
+        if let Some(parent) = config_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         crate::config::write_json_atomic(&config_path, self)
     }
 }
@@ -394,11 +386,7 @@ impl Default for AppConfig {
             },
             logging: Some(crate::types::LoggingSettings {
                 level: "info".to_string(),
-                file_name: None,
-            }),
-            security: Some(SecuritySettings {
-                allowed_hosts: vec!["localhost".to_string(), "127.0.0.1".to_string()],
-                auth: true,
+                file_name: Some("mcprouter.log".to_string()),
             }),
             settings: Some(Settings {
                 theme: Some("auto".to_string()),
@@ -411,6 +399,7 @@ impl Default for AppConfig {
                 uv_index_url: None,
                 npm_registry: None,
             }),
+            mcp_servers: Vec::new(),
         }
     }
 }

@@ -3,12 +3,11 @@ export interface McpServerConfig {
   description?: string
   command?: string
   args?: string[]
-  transport: 'stdio' | 'sse' | 'http'
+  env?: Record<string, string>
+  type: 'stdio' | 'sse' | 'http'
   url?: string
-  enabled: boolean
-  env_vars?: Record<string, string>
   headers?: Record<string, string>
-  version?: string
+  enabled: boolean
 }
 
 export interface ServiceStatus {
@@ -28,10 +27,10 @@ export interface McpServerInfo {
   version?: string
   last_error?: string
   error_message?: string
-  transport: 'stdio' | 'sse' | 'http'
+  type: 'stdio' | 'sse' | 'http'
   url?: string
   description?: string
-  env_vars?: Record<string, string>
+  env?: Record<string, string>
   headers?: Record<string, string>
   command?: string
   args?: string[]
@@ -134,34 +133,25 @@ export interface AppConfig {
   server: {
     host: string
     port: number
-    max_connections: number
-    timeout_seconds: number
+    maxConnections: number
+    timeoutSeconds: number
   }
   logging?: {
     level: 'trace' | 'debug' | 'info' | 'warn' | 'error'
-    file_name?: string
+    fileName?: string
   }
-  security?: {
-    auth: boolean
-    allowed_hosts: string[]
-  }
-  // 新的嵌套设置结构
+  mcpServers: McpServerConfig[]
   settings?: {
     theme?: string | null
     autostart?: boolean
-    system_tray?: {
+    systemTray?: {
       enabled?: boolean
-      close_to_tray?: boolean
-      start_to_tray?: boolean
+      closeToTray?: boolean
+      startToTray?: boolean
     }
-    uv_index_url?: string
-    npm_registry?: string
+    uvIndexUrl?: string
+    npmRegistry?: string
   }
-}
-
-export interface ApiKeyPermissions {
-  allowed_servers: string[]
-  allowed_tools: string[]
 }
 
 export interface Tool {
@@ -172,28 +162,6 @@ export interface Tool {
   enabled: boolean
   created_at: string
   updated_at: string
-}
-
-export interface ApiKey {
-  id: string
-  name: string
-  key: string // Will be masked in list view (sk-xxx...xxx)
-  enabled: boolean
-  created_at: string
-  updated_at: string
-  permissions?: ApiKeyPermissions
-  tool_count?: number // Number of authorized tools
-}
-
-export interface ApiKeyListItem {
-  id: string
-  name: string
-  key: string
-  enabled: boolean
-  created_at: string
-  updated_at: string
-  authorized_server_count: number
-  authorized_tool_count: number
 }
 
 export interface SystemSettings {
@@ -207,11 +175,6 @@ export interface SystemSettings {
     level: 'trace' | 'debug' | 'info' | 'warn' | 'error'
     file_name?: string
   }
-  security: {
-    auth: boolean
-    allowed_hosts: string[]
-  }
-  // 新的嵌套设置结构（应用层设置）
   settings?: {
     theme?: string | null
     autostart?: boolean
@@ -229,6 +192,7 @@ export interface DashboardStats {
   total_servers: number
   enabled_servers: number
   disabled_servers: number
+  healthy_services: number
   connected_services: number
   total_tools: number
   active_clients: number

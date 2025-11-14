@@ -2,7 +2,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { App as AntdApp, ConfigProvider } from 'antd'
 import {
   Info,
-  Key,
   Menu,
   Monitor,
   Moon,
@@ -18,7 +17,6 @@ import AboutModal from './components/AboutModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AppProvider, useAppContext } from './contexts/AppContext'
 import { ErrorProvider } from './contexts/ErrorContext'
-import ApiKeys from './pages/ApiKeys'
 import Dashboard from './pages/Dashboard'
 import Marketplace from './pages/Marketplace'
 import McpServerManager from './pages/McpServerManager'
@@ -46,7 +44,6 @@ const AppContent = memo(() => {
     { id: 'overview', label: '概览', icon: Info },
     { id: 'servers', label: '服务管理', icon: Server },
     { id: 'market', label: 'MCP广场', icon: Package },
-    { id: 'apikeys', label: 'API Keys', icon: Key },
     { id: 'settings', label: '设置', icon: SettingsIcon },
   ]
 
@@ -237,7 +234,6 @@ const AppContent = memo(() => {
                   {state.activeTab === 'overview' && <Dashboard />}
                   {state.activeTab === 'servers' && <McpServerManager />}
                   {state.activeTab === 'market' && <Marketplace />}
-                  {state.activeTab === 'apikeys' && <ApiKeys />}
                   {state.activeTab === 'settings' && <Settings />}
                 </div>
               </div>
