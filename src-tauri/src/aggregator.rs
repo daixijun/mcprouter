@@ -131,14 +131,9 @@ impl McpAggregator {
 
     /// Get tools directly from memory (with optional sync from config file)
     async fn get_tools_from_memory(&self) -> Result<Vec<McpTool>, McpError> {
-        // Aggregate tools from all servers
         let mut aggregated_tools: Vec<McpTool> = Vec::new();
-
-        // Get all enabled MCP servers
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
         let servers = servers_lock.read().await;
-
-        // Debug: Log server count and details
         tracing::info!("Found {} MCP servers in memory", servers.len());
         for (name, config) in servers.iter() {
             tracing::info!(
@@ -152,172 +147,27 @@ impl McpAggregator {
                 }
             );
         }
-
-        // Iterate through all configured servers and aggregate their tools
-        use futures::future::join_all;
-        use tokio::task::JoinHandle;
-
-        let mut tasks: Vec<JoinHandle<Result<Vec<McpTool>, String>>> = Vec::new();
-
         for (server_name, server_config) in servers.iter() {
             if !server_config.enabled {
-                tracing::debug!("Skipping disabled server: {}", server_name);
                 continue;
             }
-
-            tracing::info!("Aggregating tools from server: {}", server_name);
-
-            // Clone necessary data for the async task
-            let server_name = server_name.clone();
-            let server_config = server_config.clone();
-            let mcp_client_manager = self.mcp_client_manager.clone();
-
-            // Spawn async task for each server
-            let manager_clone = self.mcp_server_manager.clone();
-            let task: JoinHandle<Result<Vec<McpTool>, String>> = tokio::spawn(async move {
-                // Ensure connection to the MCP server
-                match mcp_client_manager
-                    .ensure_connection(&server_config, false)
-                    .await
-                {
-                    Ok(connection) => {
-                        if connection.status.is_connected {
-                            // Fetch actual tools from the server
-                            match mcp_client_manager.list_tools(&server_name).await {
-                                Ok(tools) => {
-                                    tracing::info!(
-                                        "Retrieved {} tools from server: {}",
-                                        tools.len(),
-                                        server_name
-                                    );
-
-                                    // Add each tool with server/tool prefix
-                                    let mut prefixed_tools = Vec::new();
-                                    for mut tool in tools {
-                                        let original_name = tool.name.clone();
-                                        tool.name =
-                                            format!("{}/{}", server_name, original_name).into();
-                                        if tool.description.is_none() {
-                                            tool.description = Some("No description".into());
-                                        }
-
-                                        tracing::debug!(
-                                            "Added tool: {} (from server: {})",
-                                            tool.name,
-                                            server_name
-                                        );
-
-                                        prefixed_tools.push(tool);
-                                    }
-
-                                    let now_infos: Vec<crate::types::McpToolInfo> = prefixed_tools
-                                        .iter()
-                                        .map(|t| {
-                                            let now = chrono::Utc::now();
-                                            crate::types::McpToolInfo {
-                                                id: t.name.to_string(),
-                                                name: t.name.to_string(),
-                                                description: t
-                                                    .description
-                                                    .clone()
-                                                    .unwrap_or_else(|| "".into())
-                                                    .to_string(),
-                                                enabled: true,
-                                                created_at: now.to_rfc3339(),
-                                                updated_at: now.to_rfc3339(),
-                                            }
-                                        })
-                                        .collect();
-                                    manager_clone.set_tools_cache(&server_name, now_infos).await;
-                                    Ok(prefixed_tools)
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Failed to fetch tools from server '{}': {}",
-                                        server_name,
-                                        e
-                                    );
-                                    if let Some(cached) =
-                                        manager_clone.get_raw_cached_tools(&server_name).await
-                                    {
-                                        let mut prefixed = Vec::new();
-                                        for mut tool in cached {
-                                            let original_name = tool.name.clone();
-                                            tool.name =
-                                                format!("{}/{}", server_name, original_name).into();
-                                            if tool.description.is_none() {
-                                                tool.description = Some("No description".into());
-                                            }
-                                            prefixed.push(tool);
-                                        }
-                                        Ok(prefixed)
-                                    } else {
-                                        Err(format!("Failed to fetch tools: {}", e))
-                                    }
-                                }
-                            }
-                        } else {
-                            tracing::warn!("Server '{}' is not connected, skipping", server_name);
-                            if let Some(cached) =
-                                manager_clone.get_raw_cached_tools(&server_name).await
-                            {
-                                let mut prefixed = Vec::new();
-                                for mut tool in cached {
-                                    let original_name = tool.name.clone();
-                                    tool.name = format!("{}/{}", server_name, original_name).into();
-                                    if tool.description.is_none() {
-                                        tool.description = Some("No description".into());
-                                    }
-                                    prefixed.push(tool);
-                                }
-                                Ok(prefixed)
-                            } else {
-                                Err("Server not connected".to_string())
-                            }
-                        }
+            if let Some(cached) = self
+                .mcp_server_manager
+                .get_raw_cached_tools(server_name)
+                .await
+            {
+                let mut prefixed = Vec::new();
+                for mut tool in cached {
+                    let original_name = tool.name.clone();
+                    tool.name = format!("{}/{}", server_name, original_name).into();
+                    if tool.description.is_none() {
+                        tool.description = Some("No description".into());
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to connect to server '{}': {}", server_name, e);
-                        if let Some(cached) = manager_clone.get_raw_cached_tools(&server_name).await
-                        {
-                            let mut prefixed = Vec::new();
-                            for mut tool in cached {
-                                let original_name = tool.name.clone();
-                                tool.name = format!("{}/{}", server_name, original_name).into();
-                                if tool.description.is_none() {
-                                    tool.description = Some("No description".into());
-                                }
-                                prefixed.push(tool);
-                            }
-                            Ok(prefixed)
-                        } else {
-                            Err(format!("Failed to connect: {}", e))
-                        }
-                    }
+                    prefixed.push(tool);
                 }
-            });
-
-            tasks.push(task);
-        }
-
-        // Wait for all tasks to complete concurrently
-        let results = join_all(tasks).await;
-
-        // Collect results
-        for result in results {
-            match result {
-                Ok(Ok(tools)) => {
-                    aggregated_tools.extend(tools);
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!("Task failed: {}", e);
-                }
-                Err(e) => {
-                    tracing::warn!("Join error: {}", e);
-                }
+                aggregated_tools.extend(prefixed);
             }
         }
-
         Ok(aggregated_tools)
     }
 

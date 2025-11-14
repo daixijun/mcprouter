@@ -659,21 +659,8 @@ impl McpServerManager {
                 })
                 .collect();
 
-            {
-                let mut tc = self.tools_cache.write().await;
-                tc.insert(server_name.to_string(), infos.clone());
-            }
+            self.set_tools_cache(server_name, infos.clone()).await;
             self.set_raw_tools_cache(server_name, tools.clone()).await;
-            {
-                let mut meta = self.tools_cache_meta.write().await;
-                meta.insert(
-                    server_name.to_string(),
-                    ToolCacheMeta {
-                        last_updated: chrono::Utc::now(),
-                        count: infos.len(),
-                    },
-                );
-            }
             let _ = app_handle.emit("tools-updated", server_name.to_string());
             tracing::info!("Updated in-memory tool list for service '{}'", server_name);
         } else {
