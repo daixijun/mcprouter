@@ -479,6 +479,347 @@ impl McpClientManager {
         }
     }
 
+    pub async fn list_resources(&self, connection_id: &str) -> Result<Vec<rmcp::model::Resource>> {
+        let connections = self.connections.read().await;
+        let connection = connections
+            .get(connection_id)
+            .ok_or_else(|| McpError::ServiceNotFound(connection_id.to_string()))?;
+
+        if !connection.status.is_connected {
+            return Err(McpError::ConnectionError(
+                "Service not connected".to_string(),
+            ));
+        }
+
+        if let Some(ref client_arc) = connection.client {
+            tracing::info!(
+                "Attempting to fetch resources from rmcp client {}",
+                connection_id
+            );
+
+            let peer = client_arc.peer();
+
+            let request =
+                rmcp::model::ListResourcesRequest::with_param(rmcp::model::PaginatedRequestParam {
+                    cursor: None,
+                });
+
+            let start_time = std::time::Instant::now();
+            let client_request: rmcp::model::ClientRequest = request.into();
+            let server_result = peer
+                .send_request(client_request)
+                .await
+                .map_err(|e| McpError::ServiceError(e.to_string()))?;
+            let duration = start_time.elapsed();
+
+            let result = match server_result {
+                rmcp::model::ServerResult::ListResourcesResult(r) => r,
+                _ => {
+                    tracing::warn!("Unexpected response type from {}", connection_id);
+                    rmcp::model::ListResourcesResult {
+                        resources: Vec::new(),
+                        next_cursor: None,
+                    }
+                }
+            };
+
+            tracing::info!(
+                "Successfully fetched {} resources from {} ({}ms)",
+                result.resources.len(),
+                connection_id,
+                duration.as_millis()
+            );
+
+            for resource in &result.resources {
+                let name = &resource.name;
+                let description = &resource.description.as_deref().unwrap_or("No description");
+                tracing::debug!("Resource: {} - {} ({})", name, description, resource.uri);
+            }
+
+            Ok(result.resources)
+        } else {
+            tracing::warn!("No client available for connection {}", connection_id);
+            Ok(Vec::new())
+        }
+    }
+
+    pub async fn list_prompts(&self, connection_id: &str) -> Result<Vec<rmcp::model::Prompt>> {
+        let connections = self.connections.read().await;
+        let connection = connections
+            .get(connection_id)
+            .ok_or_else(|| McpError::ServiceNotFound(connection_id.to_string()))?;
+
+        if !connection.status.is_connected {
+            return Err(McpError::ConnectionError(
+                "Service not connected".to_string(),
+            ));
+        }
+
+        if let Some(ref client_arc) = connection.client {
+            tracing::info!(
+                "Attempting to fetch prompts from rmcp client {}",
+                connection_id
+            );
+
+            let peer = client_arc.peer();
+
+            let request =
+                rmcp::model::ListPromptsRequest::with_param(rmcp::model::PaginatedRequestParam {
+                    cursor: None,
+                });
+
+            let start_time = std::time::Instant::now();
+            let client_request: rmcp::model::ClientRequest = request.into();
+            let server_result = peer
+                .send_request(client_request)
+                .await
+                .map_err(|e| McpError::ServiceError(e.to_string()))?;
+            let duration = start_time.elapsed();
+
+            let result = match server_result {
+                rmcp::model::ServerResult::ListPromptsResult(r) => r,
+                _ => {
+                    tracing::warn!("Unexpected response type from {}", connection_id);
+                    rmcp::model::ListPromptsResult {
+                        prompts: Vec::new(),
+                        next_cursor: None,
+                    }
+                }
+            };
+
+            tracing::info!(
+                "Successfully fetched {} prompts from {} ({}ms)",
+                result.prompts.len(),
+                connection_id,
+                duration.as_millis()
+            );
+
+            for prompt in &result.prompts {
+                tracing::debug!(
+                    "Prompt: {} - {}",
+                    prompt.name,
+                    prompt
+                        .description
+                        .as_ref()
+                        .unwrap_or(&"No description".to_string())
+                );
+            }
+
+            Ok(result.prompts)
+        } else {
+            tracing::warn!("No client available for connection {}", connection_id);
+            Ok(Vec::new())
+        }
+    }
+
+    pub async fn read_resource(
+        &self,
+        connection_id: &str,
+        uri: &str,
+    ) -> Result<rmcp::model::ReadResourceResult> {
+        let connections = self.connections.read().await;
+        let connection = connections
+            .get(connection_id)
+            .ok_or_else(|| McpError::ServiceNotFound(connection_id.to_string()))?;
+
+        if !connection.status.is_connected {
+            return Err(McpError::ConnectionError(
+                "Service not connected".to_string(),
+            ));
+        }
+
+        if let Some(ref client_arc) = connection.client {
+            tracing::info!(
+                "Attempting to read resource '{}' from rmcp client {}",
+                uri,
+                connection_id
+            );
+
+            let peer = client_arc.peer();
+
+            let request =
+                rmcp::model::Request::<_, _>::new(rmcp::model::ReadResourceRequestParam {
+                    uri: uri.to_string(),
+                });
+
+            let start_time = std::time::Instant::now();
+            // Send request via peer and get response
+            let client_request: rmcp::model::ClientRequest = request.into();
+            let server_result = peer
+                .send_request(client_request)
+                .await
+                .map_err(|e| McpError::ServiceError(e.to_string()))?;
+            let duration = start_time.elapsed();
+
+            let result = match server_result {
+                rmcp::model::ServerResult::ReadResourceResult(r) => r,
+                _ => {
+                    return Err(McpError::ServiceError(
+                        "Unexpected response type".to_string(),
+                    ));
+                }
+            };
+
+            tracing::info!(
+                "Successfully read resource '{}' from {} ({}ms, {} contents)",
+                uri,
+                connection_id,
+                duration.as_millis(),
+                result.contents.len()
+            );
+
+            Ok(result)
+        } else {
+            Err(McpError::ServiceError(
+                "No client available for connection".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_prompt(
+        &self,
+        connection_id: &str,
+        name: &str,
+        arguments: Option<HashMap<String, rmcp::model::PromptArgument>>,
+    ) -> Result<rmcp::model::GetPromptResult> {
+        let connections = self.connections.read().await;
+        let connection = connections
+            .get(connection_id)
+            .ok_or_else(|| McpError::ServiceNotFound(connection_id.to_string()))?;
+
+        if !connection.status.is_connected {
+            return Err(McpError::ConnectionError(
+                "Service not connected".to_string(),
+            ));
+        }
+
+        if let Some(ref client_arc) = connection.client {
+            tracing::info!(
+                "Attempting to get prompt '{}' from rmcp client {}",
+                name,
+                connection_id
+            );
+
+            let peer = client_arc.peer();
+
+            let arguments_map = arguments
+                .map(|args| {
+                    args.into_iter()
+                        .map(|(k, v)| (k, serde_json::json!(v)))
+                        .collect::<serde_json::Map<_, _>>()
+                })
+                .unwrap_or_default();
+            let request = rmcp::model::Request::<_, _>::new(rmcp::model::GetPromptRequestParam {
+                name: name.to_string().into(),
+                arguments: Some(arguments_map),
+            });
+
+            let start_time = std::time::Instant::now();
+            // Send request via peer and get response
+            let client_request: rmcp::model::ClientRequest = request.into();
+            let server_result = peer
+                .send_request(client_request)
+                .await
+                .map_err(|e| McpError::ServiceError(e.to_string()))?;
+            let duration = start_time.elapsed();
+
+            let result = match server_result {
+                rmcp::model::ServerResult::GetPromptResult(r) => r,
+                _ => {
+                    return Err(McpError::ServiceError(
+                        "Unexpected response type".to_string(),
+                    ));
+                }
+            };
+
+            tracing::info!(
+                "Successfully got prompt '{}' from {} ({}ms, {} messages)",
+                name,
+                connection_id,
+                duration.as_millis(),
+                result.messages.len()
+            );
+
+            Ok(result)
+        } else {
+            Err(McpError::ServiceError(
+                "No client available for connection".to_string(),
+            ))
+        }
+    }
+
+    pub async fn call_tool(
+        &self,
+        connection_id: &str,
+        name: &str,
+        arguments: Option<HashMap<String, serde_json::Value>>,
+    ) -> Result<rmcp::model::CallToolResult> {
+        let connections = self.connections.read().await;
+        let connection = connections
+            .get(connection_id)
+            .ok_or_else(|| McpError::ServiceNotFound(connection_id.to_string()))?;
+
+        if !connection.status.is_connected {
+            return Err(McpError::ConnectionError(
+                "Service not connected".to_string(),
+            ));
+        }
+
+        if let Some(ref client_arc) = connection.client {
+            tracing::info!(
+                "Attempting to call tool '{}' from rmcp client {}",
+                name,
+                connection_id
+            );
+
+            let peer = client_arc.peer();
+
+            let arguments_map = arguments
+                .map(|args| {
+                    args.into_iter()
+                        .map(|(k, v)| (k, serde_json::Value::from(v)))
+                        .collect::<serde_json::Map<_, _>>()
+                })
+                .unwrap_or_default();
+            let request = rmcp::model::Request::<_, _>::new(rmcp::model::CallToolRequestParam {
+                name: name.to_string().into(),
+                arguments: Some(arguments_map),
+            });
+
+            let start_time = std::time::Instant::now();
+            // Send request via peer and get response
+            let client_request: rmcp::model::ClientRequest = request.into();
+            let server_result = peer
+                .send_request(client_request)
+                .await
+                .map_err(|e| McpError::ServiceError(e.to_string()))?;
+            let duration = start_time.elapsed();
+
+            let result = match server_result {
+                rmcp::model::ServerResult::CallToolResult(r) => r,
+                _ => {
+                    return Err(McpError::ServiceError(
+                        "Unexpected response type".to_string(),
+                    ));
+                }
+            };
+
+            tracing::info!(
+                "Successfully called tool '{}' from {} ({}ms, {} content items)",
+                name,
+                connection_id,
+                duration.as_millis(),
+                result.content.len()
+            );
+
+            Ok(result)
+        } else {
+            Err(McpError::ServiceError(
+                "No client available for connection".to_string(),
+            ))
+        }
+    }
+
     pub async fn get_connections(&self) -> Vec<McpConnection> {
         self.connections.read().await.values().cloned().collect()
     }

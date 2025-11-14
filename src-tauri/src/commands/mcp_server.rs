@@ -256,3 +256,45 @@ pub async fn refresh_all_mcp_servers(app_handle: tauri::AppHandle) -> Result<Str
         }
     }
 }
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_mcp_server_resources(
+    app_handle: tauri::AppHandle,
+    name: String,
+) -> Result<Vec<crate::types::McpResourceInfo>> {
+    tracing::info!("Getting resource list for server '{}'", name);
+    match SERVICE_MANAGER
+        .list_mcp_server_resources(&name, &app_handle)
+        .await
+    {
+        Ok(resources) => {
+            tracing::info!("Successfully retrieved {} resources", resources.len());
+            Ok(resources)
+        }
+        Err(e) => {
+            tracing::error!("Failed to get resource list: {}", e);
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_mcp_server_prompts(
+    app_handle: tauri::AppHandle,
+    name: String,
+) -> Result<Vec<crate::types::McpPromptInfo>> {
+    tracing::info!("Getting prompt list for server '{}'", name);
+    match SERVICE_MANAGER
+        .list_mcp_server_prompts(&name, &app_handle)
+        .await
+    {
+        Ok(prompts) => {
+            tracing::info!("Successfully retrieved {} prompts", prompts.len());
+            Ok(prompts)
+        }
+        Err(e) => {
+            tracing::error!("Failed to get prompt list: {}", e);
+            Err(e)
+        }
+    }
+}

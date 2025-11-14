@@ -264,6 +264,45 @@ pub struct ServiceVersionCache {
 }
 
 // ============================================================================
+// Resources and Prompts related types
+// ============================================================================
+
+/// MCP 资源信息，用于 API 返回
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct McpResourceInfo {
+    pub id: String,
+    pub uri: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub mime_type: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// MCP 提示信息，用于 API 返回
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct McpPromptInfo {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// MCP 提示消息参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct McpPromptArgument {
+    pub name: String,
+    pub description: Option<String>,
+    pub required: bool,
+}
+
+// ============================================================================
 // MCP Client related types (from mcp_client.rs)
 // ============================================================================
 

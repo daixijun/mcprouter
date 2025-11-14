@@ -491,6 +491,8 @@ pub async fn run() {
             delete_mcp_server,
             // Tool DB Commands
             list_mcp_server_tools,
+            list_mcp_server_resources,
+            list_mcp_server_prompts,
             refresh_all_mcp_servers,
             // Legacy Commands
             toggle_mcp_server_tool,

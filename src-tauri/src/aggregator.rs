@@ -3,9 +3,10 @@ use crate::mcp_client::McpClientManager;
 use crate::mcp_manager::McpServerManager;
 use crate::types::ServerConfig;
 use rmcp::model::{
-    CallToolRequestParam, CallToolResult, ErrorCode, InitializeRequestParam, InitializeResult,
-    ListPromptsResult, ListResourcesResult, ListToolsResult, PaginatedRequestParam,
-    ProtocolVersion, Tool as McpTool,
+    CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult,
+    InitializeRequestParam, InitializeResult, ListPromptsResult, ListResourcesResult,
+    ListToolsResult, PaginatedRequestParam, ProtocolVersion, ReadResourceRequestParam,
+    ReadResourceResult, Tool as McpTool,
 };
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
@@ -171,6 +172,98 @@ impl McpAggregator {
         Ok(aggregated_tools)
     }
 
+    /// Get resources directly from memory (with optional sync from config file)
+    async fn get_resources_from_memory(&self) -> Result<Vec<rmcp::model::Resource>, McpError> {
+        let mut aggregated_resources: Vec<rmcp::model::Resource> = Vec::new();
+        let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
+        let servers = servers_lock.read().await;
+        tracing::info!(
+            "Found {} MCP servers in memory for resources",
+            servers.len()
+        );
+
+        for (server_name, server_config) in servers.iter() {
+            if !server_config.enabled {
+                continue;
+            }
+
+            // Get from cache directly
+            if let Some(cached) = self
+                .mcp_server_manager
+                .get_cached_resources_raw(server_name)
+                .await
+            {
+                let mut prefixed = Vec::new();
+                for resource in cached {
+                    let original_uri = resource.uri.clone();
+                    let prefixed_uri = format!("{}/{}", server_name, original_uri);
+                    let mut prefixed_resource = resource.clone();
+                    prefixed_resource.uri = prefixed_uri;
+                    prefixed.push(prefixed_resource);
+                }
+                aggregated_resources.extend(prefixed);
+            }
+        }
+        Ok(aggregated_resources)
+    }
+
+    /// Get prompts directly from memory (with optional sync from config file)
+    async fn get_prompts_from_memory(&self) -> Result<Vec<rmcp::model::Prompt>, McpError> {
+        let mut aggregated_prompts: Vec<rmcp::model::Prompt> = Vec::new();
+        let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
+        let servers = servers_lock.read().await;
+        tracing::info!("Found {} MCP servers in memory for prompts", servers.len());
+
+        for (server_name, server_config) in servers.iter() {
+            if !server_config.enabled {
+                continue;
+            }
+
+            // Get from cache directly
+            if let Some(cached) = self
+                .mcp_server_manager
+                .get_cached_prompts_raw(server_name)
+                .await
+            {
+                let mut prefixed = Vec::new();
+                for mut prompt in cached {
+                    let original_name = prompt.name.clone();
+                    prompt.name = format!("{}/{}", server_name, original_name).into();
+                    prefixed.push(prompt);
+                }
+                aggregated_prompts.extend(prefixed);
+            }
+        }
+        Ok(aggregated_prompts)
+    }
+
+    /// Parse tool name with server prefix
+    fn parse_tool_name(&self, tool_name: &str) -> Option<(String, String)> {
+        if let Some((server_name, original_name)) = tool_name.split_once('/') {
+            Some((server_name.to_string(), original_name.to_string()))
+        } else {
+            None
+        }
+    }
+
+    /// Parse resource URI with server prefix
+    fn parse_resource_uri(&self, uri: &str) -> Option<(String, String)> {
+        if let Some((server_name, original_uri)) = uri.split_once('/') {
+            Some((server_name.to_string(), original_uri.to_string()))
+        } else {
+            None
+        }
+    }
+
+    /// Parse prompt name with server prefix
+    fn parse_prompt_name(&self, prompt_name: &str) -> Option<(String, String)> {
+        if let Some((server_name, original_name)) = prompt_name.split_once('/') {
+            Some((server_name.to_string(), original_name.to_string()))
+        } else {
+            None
+        }
+    }
+
     pub async fn trigger_shutdown(&self) {
         tracing::info!("Triggering aggregator shutdown...");
 
@@ -201,8 +294,11 @@ impl ServerHandler for McpAggregator {
                 experimental: None,
                 logging: None,
                 completions: None,
-                prompts: None,
-                resources: None,
+                prompts: Some(rmcp::model::PromptsCapability { list_changed: None }),
+                resources: Some(rmcp::model::ResourcesCapability {
+                    subscribe: None,
+                    list_changed: None,
+                }),
                 tools: Some(rmcp::model::ToolsCapability { list_changed: None }),
             },
             server_info: rmcp::model::Implementation {
@@ -221,11 +317,7 @@ impl ServerHandler for McpAggregator {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, RmcpErrorData> {
-        tracing::info!("List tools request received");
-
-        // Enhanced debugging: Check server memory state
-        tracing::info!("=== DIAGNOSTIC START ===");
-        tracing::info!("MCP Aggregator list_tools diagnostic:");
+        tracing::debug!("List tools request received");
 
         // Check total servers in memory
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
@@ -260,7 +352,6 @@ impl ServerHandler for McpAggregator {
             enabled_servers,
             connected_servers
         );
-        tracing::info!("=== DIAGNOSTIC END ===");
 
         let mut offset = 0usize;
         if let Some(param) = _request {
@@ -308,18 +399,59 @@ impl ServerHandler for McpAggregator {
         }
     }
 
-    // Simplified implementations for remaining methods
+    // Enhanced implementations for remaining methods
     async fn call_tool(
         &self,
-        _request: CallToolRequestParam,
+        request: CallToolRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, RmcpErrorData> {
-        tracing::warn!("Call tool not implemented yet");
-        Err(RmcpErrorData::new(
-            ErrorCode(501),
-            "Tool execution not implemented".to_string(),
-            None,
-        ))
+        tracing::info!("Call tool request received for name: {}", request.name);
+
+        // Parse the tool name to extract server name and original name
+        let (server_name, original_name) =
+            self.parse_tool_name(&request.name).ok_or_else(|| {
+                RmcpErrorData::new(
+                    ErrorCode(400),
+                    format!("Invalid tool name format: {}", request.name),
+                    None,
+                )
+            })?;
+
+        tracing::info!(
+            "Routing tool call to server: {}, original name: {}",
+            server_name,
+            original_name
+        );
+
+        // Use the MCP client manager to call the tool
+        let arguments = request.arguments.map(|args| args.into_iter().collect());
+        match self
+            .mcp_client_manager
+            .call_tool(&server_name, &original_name, arguments)
+            .await
+        {
+            Ok(result) => {
+                tracing::info!(
+                    "Successfully called tool '{}' from server '{}'",
+                    original_name,
+                    server_name
+                );
+                Ok(result)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to call tool '{}' from server '{}': {}",
+                    original_name,
+                    server_name,
+                    e
+                );
+                Err(RmcpErrorData::new(
+                    ErrorCode(500),
+                    format!("Failed to call tool: {}", e),
+                    None,
+                ))
+            }
+        }
     }
 
     async fn list_prompts(
@@ -327,11 +459,127 @@ impl ServerHandler for McpAggregator {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, RmcpErrorData> {
-        Err(RmcpErrorData::new(
-            ErrorCode(501),
-            "System prompts are not supported".to_string(),
-            None,
-        ))
+        tracing::info!("List prompts request received");
+
+        let mut offset = 0usize;
+        if let Some(param) = _request {
+            if let Some(cursor) = param.cursor {
+                if let Ok(v) = cursor.parse::<usize>() {
+                    offset = v;
+                } else {
+                    return Err(RmcpErrorData::new(
+                        ErrorCode(400),
+                        "Invalid cursor".to_string(),
+                        None,
+                    ));
+                }
+            }
+        }
+
+        let page_size = 100usize;
+        match self.get_prompts_from_memory().await {
+            Ok(prompts) => {
+                let total = prompts.len();
+                let end = std::cmp::min(offset + page_size, total);
+                let slice = if offset < end {
+                    prompts[offset..end].to_vec()
+                } else {
+                    Vec::new()
+                };
+                let next = if end < total {
+                    Some(end.to_string())
+                } else {
+                    None
+                };
+                tracing::info!("Successfully listed {} prompts", total);
+                Ok(ListPromptsResult {
+                    prompts: slice,
+                    next_cursor: next,
+                })
+            }
+            Err(e) => {
+                tracing::error!("Failed to list prompts: {}", e);
+                Err(RmcpErrorData::new(
+                    ErrorCode(500),
+                    format!("Failed to list prompts: {}", e),
+                    None,
+                ))
+            }
+        }
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResult, RmcpErrorData> {
+        tracing::info!("Get prompt request received for name: {}", request.name);
+
+        // Parse the prompt name to extract server name and original name
+        let (server_name, original_name) =
+            self.parse_prompt_name(&request.name).ok_or_else(|| {
+                RmcpErrorData::new(
+                    ErrorCode(400),
+                    format!("Invalid prompt name format: {}", request.name),
+                    None,
+                )
+            })?;
+
+        tracing::info!(
+            "Routing prompt get to server: {}, original name: {}",
+            server_name,
+            original_name
+        );
+
+        // Use the MCP client manager to get the prompt
+        let arguments = request.arguments.map(|args| {
+            args.into_iter()
+                .map(|(k, v)| {
+                    let arg = rmcp::model::PromptArgument {
+                        name: k.clone(),
+                        title: v
+                            .get("title")
+                            .and_then(|t| t.as_str())
+                            .map(|s| s.to_string()),
+                        description: v
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .map(|s| s.to_string()),
+                        required: Some(
+                            v.get("required").and_then(|r| r.as_bool()).unwrap_or(false),
+                        ),
+                    };
+                    (k, arg)
+                })
+                .collect()
+        });
+        match self
+            .mcp_client_manager
+            .get_prompt(&server_name, &original_name, arguments)
+            .await
+        {
+            Ok(result) => {
+                tracing::info!(
+                    "Successfully got prompt '{}' from server '{}'",
+                    original_name,
+                    server_name
+                );
+                Ok(result)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to get prompt '{}' from server '{}': {}",
+                    original_name,
+                    server_name,
+                    e
+                );
+                Err(RmcpErrorData::new(
+                    ErrorCode(500),
+                    format!("Failed to get prompt: {}", e),
+                    None,
+                ))
+            }
+        }
     }
 
     async fn list_resources(
@@ -339,10 +587,105 @@ impl ServerHandler for McpAggregator {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, RmcpErrorData> {
-        Err(RmcpErrorData::new(
-            ErrorCode(501),
-            "Resources are not supported".to_string(),
-            None,
-        ))
+        tracing::info!("List resources request received");
+
+        let mut offset = 0usize;
+        if let Some(param) = _request {
+            if let Some(cursor) = param.cursor {
+                if let Ok(v) = cursor.parse::<usize>() {
+                    offset = v;
+                } else {
+                    return Err(RmcpErrorData::new(
+                        ErrorCode(400),
+                        "Invalid cursor".to_string(),
+                        None,
+                    ));
+                }
+            }
+        }
+
+        let page_size = 100usize;
+        match self.get_resources_from_memory().await {
+            Ok(resources) => {
+                let total = resources.len();
+                let end = std::cmp::min(offset + page_size, total);
+                let slice = if offset < end {
+                    resources[offset..end].to_vec()
+                } else {
+                    Vec::new()
+                };
+                let next = if end < total {
+                    Some(end.to_string())
+                } else {
+                    None
+                };
+                tracing::info!("Successfully listed {} resources", total);
+                Ok(ListResourcesResult {
+                    resources: slice,
+                    next_cursor: next,
+                })
+            }
+            Err(e) => {
+                tracing::error!("Failed to list resources: {}", e);
+                Err(RmcpErrorData::new(
+                    ErrorCode(500),
+                    format!("Failed to list resources: {}", e),
+                    None,
+                ))
+            }
+        }
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, RmcpErrorData> {
+        tracing::info!("Read resource request received for URI: {}", request.uri);
+
+        // Parse the URI to extract server name and original URI
+        let (server_name, original_uri) =
+            self.parse_resource_uri(&request.uri).ok_or_else(|| {
+                RmcpErrorData::new(
+                    ErrorCode(400),
+                    format!("Invalid resource URI format: {}", request.uri),
+                    None,
+                )
+            })?;
+
+        tracing::info!(
+            "Routing resource read to server: {}, original URI: {}",
+            server_name,
+            original_uri
+        );
+
+        // Use the MCP client manager to read the resource
+        match self
+            .mcp_client_manager
+            .read_resource(&server_name, &original_uri)
+            .await
+        {
+            Ok(result) => {
+                tracing::info!(
+                    "Successfully read resource '{}' from server '{}'",
+                    original_uri,
+                    server_name
+                );
+                Ok(result)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to read resource '{}' from server '{}': {}",
+                    original_uri,
+                    server_name,
+                    e
+                );
+                Err(RmcpErrorData::new(
+                    ErrorCode(500),
+                    format!("Failed to read resource: {}", e),
+                    None,
+                ))
+            }
+        }
     }
 }

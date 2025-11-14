@@ -16,6 +16,8 @@ pub struct McpServerManager {
     config: Arc<RwLock<AppConfig>>,
     pub version_cache: Arc<RwLock<HashMap<String, ServiceVersionCache>>>,
     pub tools_cache_entries: Arc<RwLock<HashMap<String, ToolsCacheEntry>>>,
+    pub resources_cache_entries: Arc<RwLock<HashMap<String, ResourcesCacheEntry>>>,
+    pub prompts_cache_entries: Arc<RwLock<HashMap<String, PromptsCacheEntry>>>,
     tools_cache_ttl: std::time::Duration,
 }
 
@@ -26,6 +28,8 @@ impl McpServerManager {
             config: Arc::new(RwLock::new(config)),
             version_cache: Arc::new(RwLock::new(HashMap::new())),
             tools_cache_entries: Arc::new(RwLock::new(HashMap::new())),
+            resources_cache_entries: Arc::new(RwLock::new(HashMap::new())),
+            prompts_cache_entries: Arc::new(RwLock::new(HashMap::new())),
             tools_cache_ttl: std::time::Duration::from_secs(600),
         }
     }
@@ -74,6 +78,136 @@ impl McpServerManager {
 
     pub async fn get_raw_cached_tools(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
         self.get_cached_tools_raw(server_name).await
+    }
+
+    // Resources cache management methods
+    pub async fn set_resources_cache_entry(
+        &self,
+        server_name: &str,
+        raw: Vec<rmcp::model::Resource>,
+    ) {
+        let now = chrono::Utc::now();
+        let infos: Vec<crate::types::McpResourceInfo> = raw
+            .iter()
+            .map(|resource| crate::types::McpResourceInfo {
+                id: resource.uri.to_string(),
+                uri: resource.uri.to_string(),
+                name: resource.name.to_string(),
+                description: resource.description.clone(),
+                mime_type: resource.mime_type.clone(),
+                enabled: true,
+                created_at: now.to_rfc3339(),
+                updated_at: now.to_rfc3339(),
+            })
+            .collect();
+        let count = infos.len();
+        let mut entries = self.resources_cache_entries.write().await;
+        entries.insert(
+            server_name.to_string(),
+            ResourcesCacheEntry {
+                raw,
+                infos: infos.clone(),
+                last_updated: now,
+                count,
+            },
+        );
+
+        // Use the cached fields for logging
+        tracing::debug!(
+            "Cached {} resources for server '{}' (updated at: {})",
+            count,
+            server_name,
+            now.to_rfc3339()
+        );
+    }
+
+    pub async fn get_cached_resources_raw(
+        &self,
+        server_name: &str,
+    ) -> Option<Vec<rmcp::model::Resource>> {
+        let entries = self.resources_cache_entries.read().await;
+        entries.get(server_name).map(|e| e.raw.clone())
+    }
+
+    pub async fn get_cached_resources_infos(
+        &self,
+        server_name: &str,
+    ) -> Option<Vec<crate::types::McpResourceInfo>> {
+        let entries = self.resources_cache_entries.read().await;
+        entries.get(server_name).map(|e| {
+            // Use the fields to avoid dead code warning
+            let _last_updated = e.last_updated;
+            let _count = e.count;
+            tracing::debug!(
+                "Resource cache for '{}': {} items, updated at {}",
+                server_name,
+                _count,
+                _last_updated.to_rfc3339()
+            );
+            e.infos.clone()
+        })
+    }
+
+    // Prompts cache management methods
+    pub async fn set_prompts_cache_entry(&self, server_name: &str, raw: Vec<rmcp::model::Prompt>) {
+        let now = chrono::Utc::now();
+        let infos: Vec<crate::types::McpPromptInfo> = raw
+            .iter()
+            .map(|prompt| crate::types::McpPromptInfo {
+                id: prompt.name.to_string(),
+                name: prompt.name.to_string(),
+                description: prompt.description.clone(),
+                enabled: true,
+                created_at: now.to_rfc3339(),
+                updated_at: now.to_rfc3339(),
+            })
+            .collect();
+        let count = infos.len();
+        let mut entries = self.prompts_cache_entries.write().await;
+        entries.insert(
+            server_name.to_string(),
+            PromptsCacheEntry {
+                raw,
+                infos: infos.clone(),
+                last_updated: now,
+                count,
+            },
+        );
+
+        // Use the cached fields for logging
+        tracing::debug!(
+            "Cached {} prompts for server '{}' (updated at: {})",
+            count,
+            server_name,
+            now.to_rfc3339()
+        );
+    }
+
+    pub async fn get_cached_prompts_raw(
+        &self,
+        server_name: &str,
+    ) -> Option<Vec<rmcp::model::Prompt>> {
+        let entries = self.prompts_cache_entries.read().await;
+        entries.get(server_name).map(|e| e.raw.clone())
+    }
+
+    pub async fn get_cached_prompts_infos(
+        &self,
+        server_name: &str,
+    ) -> Option<Vec<crate::types::McpPromptInfo>> {
+        let entries = self.prompts_cache_entries.read().await;
+        entries.get(server_name).map(|e| {
+            // Use the fields to avoid dead code warning
+            let _last_updated = e.last_updated;
+            let _count = e.count;
+            tracing::debug!(
+                "Prompt cache for '{}': {} items, updated at {}",
+                server_name,
+                _count,
+                _last_updated.to_rfc3339()
+            );
+            e.infos.clone()
+        })
     }
 
     pub async fn get_config(&self) -> AppConfig {
@@ -311,6 +445,34 @@ impl McpServerManager {
             tracing::info!("Service '{}' tool list updated", config.name);
         }
 
+        // Sync resources list
+        if let Err(e) = self
+            .sync_server_resources_from_service(&config.name, app_handle)
+            .await
+        {
+            tracing::warn!(
+                "Failed to get resources list for service '{}': {}",
+                config.name,
+                e
+            );
+        } else {
+            tracing::info!("Service '{}' resources list updated", config.name);
+        }
+
+        // Sync prompts list
+        if let Err(e) = self
+            .sync_server_prompts_from_service(&config.name, app_handle)
+            .await
+        {
+            tracing::warn!(
+                "Failed to get prompts list for service '{}': {}",
+                config.name,
+                e
+            );
+        } else {
+            tracing::info!("Service '{}' prompts list updated", config.name);
+        }
+
         Ok(())
     }
 
@@ -355,6 +517,42 @@ impl McpServerManager {
                     );
                 } else {
                     tracing::info!("Service '{}' tool list synced successfully", server_name);
+                }
+
+                // Automatically sync resources list for the updated service
+                tracing::info!(
+                    "Syncing resources list for updated service '{}'",
+                    server_name
+                );
+                if let Err(e) = self
+                    .sync_server_resources_from_service(&server_name, app_handle)
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to sync resources list for service '{}': {}",
+                        server_name,
+                        e
+                    );
+                } else {
+                    tracing::info!(
+                        "Service '{}' resources list synced successfully",
+                        server_name
+                    );
+                }
+
+                // Automatically sync prompts list for the updated service
+                tracing::info!("Syncing prompts list for updated service '{}'", server_name);
+                if let Err(e) = self
+                    .sync_server_prompts_from_service(&server_name, app_handle)
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to sync prompts list for service '{}': {}",
+                        server_name,
+                        e
+                    );
+                } else {
+                    tracing::info!("Service '{}' prompts list synced successfully", server_name);
                 }
             }
         } else {
@@ -413,6 +611,32 @@ impl McpServerManager {
                     tracing::warn!("Failed to sync tool list for service '{}': {}", name, e);
                 } else {
                     tracing::info!("Service '{}' tool list synced successfully", name);
+                }
+
+                // Automatically sync resources list for the enabled service
+                tracing::info!("Syncing resources list for enabled service '{}'", name);
+                if let Err(e) = self
+                    .sync_server_resources_from_service(name, app_handle)
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to sync resources list for service '{}': {}",
+                        name,
+                        e
+                    );
+                } else {
+                    tracing::info!("Service '{}' resources list synced successfully", name);
+                }
+
+                // Automatically sync prompts list for the enabled service
+                tracing::info!("Syncing prompts list for enabled service '{}'", name);
+                if let Err(e) = self
+                    .sync_server_prompts_from_service(name, app_handle)
+                    .await
+                {
+                    tracing::warn!("Failed to sync prompts list for service '{}': {}", name, e);
+                } else {
+                    tracing::info!("Service '{}' prompts list synced successfully", name);
                 }
             }
         } else {
@@ -545,6 +769,34 @@ impl McpServerManager {
                         tracing::info!("Service '{}' tool list updated", service_name);
                     }
 
+                    // Auto get and update resources list
+                    if let Err(e) = self
+                        .sync_server_resources_from_service(&service_name, app_handle)
+                        .await
+                    {
+                        tracing::warn!(
+                            "Failed to get resources list for service '{}': {}",
+                            service_name,
+                            e
+                        );
+                    } else {
+                        tracing::info!("Service '{}' resources list updated", service_name);
+                    }
+
+                    // Auto get and update prompts list
+                    if let Err(e) = self
+                        .sync_server_prompts_from_service(&service_name, app_handle)
+                        .await
+                    {
+                        tracing::warn!(
+                            "Failed to get prompts list for service '{}': {}",
+                            service_name,
+                            e
+                        );
+                    } else {
+                        tracing::info!("Service '{}' prompts list updated", service_name);
+                    }
+
                     success_count += 1;
                 }
                 Ok(false) => {
@@ -648,12 +900,210 @@ impl McpServerManager {
 
         Ok(())
     }
+
+    /// Sync resources list from MCP service and update in-memory cache
+    pub async fn sync_server_resources_from_service(
+        &self,
+        server_name: &str,
+        _app_handle: &tauri::AppHandle,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Starting to get resources list from service '{}'",
+            server_name
+        );
+
+        // Get service config
+        let services = self.mcp_servers.read().await;
+        let service_config = services
+            .get(server_name)
+            .ok_or_else(|| McpError::ServiceNotFound(server_name.to_string()))?
+            .clone();
+        drop(services);
+
+        // Connect to service
+        let _connection = MCP_CLIENT_MANAGER
+            .ensure_connection(&service_config, false)
+            .await
+            .map_err(|e| {
+                let error_msg = format!("{}", e);
+                tracing::error!(
+                    "Failed to connect to service '{}': {}",
+                    server_name,
+                    error_msg
+                );
+                McpError::ConnectionError(format!(
+                    "Failed to connect to service '{}': {}",
+                    server_name, error_msg
+                ))
+            })?;
+
+        // Get resources list
+        let resources = MCP_CLIENT_MANAGER
+            .list_resources(server_name)
+            .await
+            .map_err(|e| {
+                McpError::ServiceError(format!(
+                    "Failed to list resources from service '{}': {}",
+                    server_name, e
+                ))
+            })?;
+
+        // Process resources
+        if !resources.is_empty() {
+            tracing::info!(
+                "Got {} resources from service '{}'",
+                resources.len(),
+                server_name
+            );
+            self.set_resources_cache_entry(server_name, resources.clone())
+                .await;
+            tracing::info!(
+                "Updated in-memory resources list for service '{}'",
+                server_name
+            );
+        } else {
+            tracing::debug!("Service '{}' has no available resources", server_name);
+        }
+
+        Ok(())
+    }
+
+    /// Sync prompts list from MCP service and update in-memory cache
+    pub async fn sync_server_prompts_from_service(
+        &self,
+        server_name: &str,
+        _app_handle: &tauri::AppHandle,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Starting to get prompts list from service '{}'",
+            server_name
+        );
+
+        // Get service config
+        let services = self.mcp_servers.read().await;
+        let service_config = services
+            .get(server_name)
+            .ok_or_else(|| McpError::ServiceNotFound(server_name.to_string()))?
+            .clone();
+        drop(services);
+
+        // Connect to service
+        let _connection = MCP_CLIENT_MANAGER
+            .ensure_connection(&service_config, false)
+            .await
+            .map_err(|e| {
+                let error_msg = format!("{}", e);
+                tracing::error!(
+                    "Failed to connect to service '{}': {}",
+                    server_name,
+                    error_msg
+                );
+                McpError::ConnectionError(format!(
+                    "Failed to connect to service '{}': {}",
+                    server_name, error_msg
+                ))
+            })?;
+
+        // Get prompts list
+        let prompts = MCP_CLIENT_MANAGER
+            .list_prompts(server_name)
+            .await
+            .map_err(|e| {
+                McpError::ServiceError(format!(
+                    "Failed to list prompts from service '{}': {}",
+                    server_name, e
+                ))
+            })?;
+
+        // Process prompts
+        if !prompts.is_empty() {
+            tracing::info!(
+                "Got {} prompts from service '{}'",
+                prompts.len(),
+                server_name
+            );
+            self.set_prompts_cache_entry(server_name, prompts.clone())
+                .await;
+            tracing::info!(
+                "Updated in-memory prompts list for service '{}'",
+                server_name
+            );
+        } else {
+            tracing::debug!("Service '{}' has no available prompts", server_name);
+        }
+
+        Ok(())
+    }
+
+    /// Get resources list for server (from in-memory cache)
+    pub async fn list_mcp_server_resources(
+        &self,
+        server_name: &str,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<Vec<crate::types::McpResourceInfo>> {
+        // Try cache first
+        {
+            if let Some(list) = self.get_cached_resources_infos(server_name).await {
+                return Ok(list);
+            }
+        }
+
+        // Not cached: sync from service and cache
+        self.sync_server_resources_from_service(server_name, app_handle)
+            .await?;
+
+        let resources = self
+            .get_cached_resources_infos(server_name)
+            .await
+            .unwrap_or_default();
+        Ok(resources)
+    }
+
+    /// Get prompts list for server (from in-memory cache)
+    pub async fn list_mcp_server_prompts(
+        &self,
+        server_name: &str,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<Vec<crate::types::McpPromptInfo>> {
+        // Try cache first
+        {
+            if let Some(list) = self.get_cached_prompts_infos(server_name).await {
+                return Ok(list);
+            }
+        }
+
+        // Not cached: sync from service and cache
+        self.sync_server_prompts_from_service(server_name, app_handle)
+            .await?;
+
+        let prompts = self
+            .get_cached_prompts_infos(server_name)
+            .await
+            .unwrap_or_default();
+        Ok(prompts)
+    }
 }
 
 #[derive(Clone)]
 pub struct ToolsCacheEntry {
     pub raw: Vec<rmcp::model::Tool>,
     pub infos: Vec<crate::types::McpToolInfo>,
+    pub last_updated: chrono::DateTime<chrono::Utc>,
+    pub count: usize,
+}
+
+#[derive(Clone)]
+pub struct ResourcesCacheEntry {
+    pub raw: Vec<rmcp::model::Resource>,
+    pub infos: Vec<crate::types::McpResourceInfo>,
+    pub last_updated: chrono::DateTime<chrono::Utc>,
+    pub count: usize,
+}
+
+#[derive(Clone)]
+pub struct PromptsCacheEntry {
+    pub raw: Vec<rmcp::model::Prompt>,
+    pub infos: Vec<crate::types::McpPromptInfo>,
     pub last_updated: chrono::DateTime<chrono::Utc>,
     pub count: usize,
 }
