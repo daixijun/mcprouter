@@ -17,6 +17,62 @@ use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use axum::{
+    extract::Request,
+    http::StatusCode,
+    middleware::{self, Next},
+    response::Response,
+};
+
+/// Constant-time string comparison to prevent timing attacks
+fn constant_time_compare(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    let mut result = 0u8;
+    for (byte_a, byte_b) in a.bytes().zip(b.bytes()) {
+        result |= byte_a ^ byte_b;
+    }
+    result == 0
+}
+
+/// Bearer token authentication middleware
+async fn bearer_auth_middleware(
+    req: Request,
+    next: Next,
+    expected_token: Arc<String>,
+) -> Result<Response, StatusCode> {
+    // Extract Authorization header
+    let auth_header = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+
+    // Validate Bearer token format and value
+    match auth_header {
+        Some(header) if header.starts_with("Bearer ") => {
+            let provided_token = &header[7..]; // Skip "Bearer "
+
+            // Use constant-time comparison to prevent timing attacks
+            if constant_time_compare(provided_token, expected_token.as_str()) {
+                tracing::debug!("Authentication successful");
+                Ok(next.run(req).await)
+            } else {
+                tracing::warn!("Authentication failed: invalid token");
+                Err(StatusCode::UNAUTHORIZED)
+            }
+        }
+        Some(_) => {
+            tracing::warn!("Authentication failed: invalid Authorization header format");
+            Err(StatusCode::UNAUTHORIZED)
+        }
+        None => {
+            tracing::warn!("Authentication failed: missing Authorization header");
+            Err(StatusCode::UNAUTHORIZED)
+        }
+    }
+}
 
 /// MCP Aggregator Server - implements MCP protocol
 #[derive(Clone)]
@@ -71,8 +127,25 @@ impl McpAggregator {
         // Create StreamableHttpService
         let service = StreamableHttpService::new(service_factory, session_manager, server_config);
 
-        // 暴露 MCP 接口（不再套用鉴权中间件）
-        let router = axum::Router::new().nest_service("/mcp", service);
+        // Build router with conditional authentication middleware
+        let router = if self.config.auth {
+            if let Some(ref token) = self.config.bearer_token {
+                tracing::info!("Bearer token authentication enabled");
+                let token_arc = Arc::new(token.clone());
+
+                axum::Router::new()
+                    .nest_service("/mcp", service)
+                    .layer(middleware::from_fn(move |req, next| {
+                        bearer_auth_middleware(req, next, token_arc.clone())
+                    }))
+            } else {
+                tracing::warn!("Authentication enabled but no bearer_token configured, authentication disabled");
+                axum::Router::new().nest_service("/mcp", service)
+            }
+        } else {
+            tracing::info!("Authentication disabled");
+            axum::Router::new().nest_service("/mcp", service)
+        };
 
         // Bind TCP listener
         let tcp_listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
@@ -108,8 +181,9 @@ impl McpAggregator {
         });
 
         tracing::info!(
-            "MCP Aggregator started successfully on {} (timeout: {}s, max_connections: {})",
+            "MCP Aggregator started successfully on {} (auth: {}, timeout: {}s, max_connections: {})",
             addr,
+            self.config.auth,
             self.config.timeout_seconds,
             self.config.max_connections
         );
