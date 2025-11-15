@@ -228,7 +228,7 @@ impl McpAggregator {
                 let mut prefixed = Vec::new();
                 for mut prompt in cached {
                     let original_name = prompt.name.clone();
-                    prompt.name = format!("{}/{}", server_name, original_name).into();
+                    prompt.name = format!("{}/{}", server_name, original_name);
                     prefixed.push(prompt);
                 }
                 aggregated_prompts.extend(prefixed);

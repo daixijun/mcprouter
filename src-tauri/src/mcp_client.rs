@@ -167,7 +167,7 @@ impl McpClientManager {
             }
             Err(e) => {
                 // Store failed connection status with error message
-                let error_message = Some(e.to_string());
+                let error_message = e.to_string();
                 let failed_connection = McpConnection {
                     service_id: service_name.clone(),
                     server_info: None,
@@ -176,14 +176,14 @@ impl McpClientManager {
                         is_connected: false,
                         is_connecting: false,
                         last_connected: Some(chrono::Utc::now()),
-                        error_message: error_message.clone(),
+                        error_message: Some(error_message.clone()),
                     },
                 };
                 self.connections
                     .write()
                     .await
                     .insert(service_name.clone(), failed_connection);
-                Err(McpError::ConnectionError(error_message.unwrap_or_default()))
+                Err(McpError::ConnectionError(error_message))
             }
         };
 
@@ -710,7 +710,7 @@ impl McpClientManager {
                 })
                 .unwrap_or_default();
             let request = rmcp::model::Request::<_, _>::new(rmcp::model::GetPromptRequestParam {
-                name: name.to_string().into(),
+                name: name.to_string(),
                 arguments: Some(arguments_map),
             });
 
@@ -777,7 +777,6 @@ impl McpClientManager {
             let arguments_map = arguments
                 .map(|args| {
                     args.into_iter()
-                        .map(|(k, v)| (k, serde_json::Value::from(v)))
                         .collect::<serde_json::Map<_, _>>()
                 })
                 .unwrap_or_default();

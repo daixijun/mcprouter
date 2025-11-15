@@ -139,7 +139,7 @@ pub async fn import_mcp_servers_config(
                     description,
                     command,
                     args,
-                    transport: transport,
+                    transport,
                     url,
                     enabled: true,
                     env,

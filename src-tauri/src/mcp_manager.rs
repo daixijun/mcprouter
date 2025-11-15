@@ -210,6 +210,34 @@ impl McpServerManager {
         })
     }
 
+    /// Clear all cached data (tools, resources, prompts) for a specific server
+    pub async fn clear_server_cache(&self, server_name: &str) {
+        let mut tools_cache = self.tools_cache_entries.write().await;
+        let mut resources_cache = self.resources_cache_entries.write().await;
+        let mut prompts_cache = self.prompts_cache_entries.write().await;
+        let mut version_cache = self.version_cache.write().await;
+
+        // Clear tools cache
+        if tools_cache.remove(server_name).is_some() {
+            tracing::info!("Cleared tools cache for server '{}'", server_name);
+        }
+
+        // Clear resources cache
+        if resources_cache.remove(server_name).is_some() {
+            tracing::info!("Cleared resources cache for server '{}'", server_name);
+        }
+
+        // Clear prompts cache
+        if prompts_cache.remove(server_name).is_some() {
+            tracing::info!("Cleared prompts cache for server '{}'", server_name);
+        }
+
+        // Clear version cache
+        if version_cache.remove(server_name).is_some() {
+            tracing::info!("Cleared version cache for server '{}'", server_name);
+        }
+    }
+
     pub async fn get_config(&self) -> AppConfig {
         self.config.read().await.clone()
     }
@@ -370,8 +398,7 @@ impl McpServerManager {
             // If version not in server_info, try to get from cached_version
             let version = connection
                 .server_info
-                .as_ref()
-                .and_then(|info| Some(info.server_info.version.clone()));
+                .as_ref().map(|info| info.server_info.version.clone());
 
             if let Some(version_str) = version {
                 tracing::info!("Extracted version for service '{}': {}", name, version_str);
@@ -557,6 +584,21 @@ impl McpServerManager {
             }
         } else {
             tracing::info!("Service '{}' is currently disabled", server_name);
+
+            // Clear cached tools, resources, and prompts when service is disabled
+            self.clear_server_cache(&server_name).await;
+
+            // Disconnect from the service to release resources
+            tracing::info!("Disconnecting from disabled service '{}'", server_name);
+            if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(&server_name).await {
+                tracing::warn!(
+                    "Failed to disconnect from disabled service '{}': {}",
+                    server_name,
+                    e
+                );
+            } else {
+                tracing::info!("Successfully disconnected from service '{}'", server_name);
+            }
         }
 
         Ok(())
@@ -573,6 +615,10 @@ impl McpServerManager {
 
         tracing::info!("Config deleted successfully, syncing memory state");
         self.sync_with_config_file(app_handle).await?;
+
+        // Clear all cached data for the removed server
+        tracing::info!("Clearing cache for removed server '{}'", name);
+        self.clear_server_cache(name).await;
 
         Ok(())
     }
@@ -640,7 +686,21 @@ impl McpServerManager {
                 }
             }
         } else {
-            tracing::info!("Service '{}' is disabled", name);
+            tracing::info!("Service '{}' is disabled, clearing cache", name);
+            // Clear cached tools, resources, and prompts when service is disabled
+            self.clear_server_cache(name).await;
+
+            // Disconnect from the service to release resources
+            tracing::info!("Disconnecting from disabled service '{}'", name);
+            if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(name).await {
+                tracing::warn!(
+                    "Failed to disconnect from disabled service '{}': {}",
+                    name,
+                    e
+                );
+            } else {
+                tracing::info!("Successfully disconnected from service '{}'", name);
+            }
         }
 
         Ok(new_state)

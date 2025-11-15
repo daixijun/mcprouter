@@ -1,14 +1,8 @@
 use super::file_manager::{exists, read_dir, read_json, remove_file, write_json_atomic};
 use super::{get_mcp_server_config_path, ConfigError, Result};
 use crate::types::McpServerConfig;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
-
-// Tool storage structure removed (tools are managed in memory)
-
-/// MCP Server Storage Structure
-
-/// Repository cache entry
 
 /// MCP Server Repository
 #[derive(Debug, Clone)]
@@ -53,10 +47,8 @@ impl McpServerRepository {
         Ok(repository)
     }
 
-  
-  
     /// Load all server configs
-    fn load_all_servers(app_data_dir: &PathBuf) -> Result<Vec<crate::types::McpServerConfig>> {
+    fn load_all_servers(app_data_dir: &Path) -> Result<Vec<crate::types::McpServerConfig>> {
         let servers_dir = app_data_dir.join("config").join("mcp_servers");
 
         if !exists(&servers_dir) {
@@ -84,9 +76,6 @@ impl McpServerRepository {
     pub fn get_by_name(&self, name: &str) -> Option<&crate::types::McpServerConfig> {
         self.servers.iter().find(|s| s.name == name)
     }
-
-    /// Get server by ID
-
 
     /// Add new server
     pub async fn add(&mut self, config: McpServerConfig) -> Result<String> {
@@ -131,7 +120,6 @@ impl McpServerRepository {
 
         self.servers.push(server_file);
 
-  
         Ok(format!("MCP server '{}' added successfully", config.name))
     }
 
@@ -159,7 +147,6 @@ impl McpServerRepository {
             server.enabled = config.enabled;
             server.env = config.env;
             server.headers = config.headers;
-            
 
             // cleaning fields（bytransport type）
             server.clean_fields();
@@ -172,7 +159,6 @@ impl McpServerRepository {
 
         write_json_atomic(&server_path, server)?;
 
-  
         Ok(format!("MCP server '{}' updated successfully", server_name))
     }
 
@@ -192,7 +178,6 @@ impl McpServerRepository {
         // remove from memory
         self.servers.remove(server_index);
 
-  
         Ok(format!("MCP server '{}' deleted", name))
     }
 
@@ -222,17 +207,10 @@ impl McpServerRepository {
             new_state
         );
 
-  
         Ok(new_state)
     }
 
-
-
-
-
     // Tool persistence removed
-
-
 
     /// Get modifiable server by name
     fn get_by_name_mut(&mut self, name: &str) -> Option<&mut crate::types::McpServerConfig> {
