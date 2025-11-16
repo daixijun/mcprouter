@@ -4,6 +4,7 @@ pub mod dashboard;
 pub mod marketplace;
 pub mod mcp_server;
 pub mod settings;
+pub mod token_management;
 pub mod tool;
 
 // Re-export all command functions
@@ -13,4 +14,5 @@ pub use dashboard::*;
 pub use marketplace::*;
 pub use mcp_server::*;
 pub use settings::*;
+pub use token_management::*;
 pub use tool::*;

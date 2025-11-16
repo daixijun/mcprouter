@@ -43,6 +43,7 @@ A modern MCP (Model Context Protocol) Router built with Tauri, React and TypeScr
 
 - Optional Bearer token authentication for aggregator endpoints
 - Configurable authentication via `server.auth` setting
+- Dynamic Token Management system with creation, deletion, and usage statistics
 - Constant-time token comparison to prevent timing attacks
 - Secure configuration with validation and warnings for weak tokens
 - Full backward compatibility (authentication disabled by default)
@@ -79,6 +80,7 @@ src-tauri/src/
 │   ├── marketplace.rs   # Marketplace integration
 │   ├── mcp_server.rs    # MCP server operations
 │   ├── settings.rs      # System settings
+│   ├── token_management.rs  # Token management commands
 │   └── tool.rs          # Tool management
 ├── config/              # Configuration layer
 │   ├── mod.rs
@@ -87,6 +89,7 @@ src-tauri/src/
 ├── mcp_manager.rs       # MCP server lifecycle management
 ├── mcp_client.rs        # MCP client connection handling
 ├── aggregator.rs        # Request routing and aggregation
+├── token_manager.rs     # Token management system
 ├── marketplace/         # Marketplace providers
 │   ├── mod.rs
 │   └── providers/
@@ -111,7 +114,8 @@ src/
 │   ├── Dashboard.tsx          # System dashboard and statistics
 │   ├── McpServerManager.tsx   # MCP server management
 │   ├── Marketplace.tsx        # Marketplace browser
-│   └── Settings.tsx           # Application settings
+│   ├── Settings.tsx           # Application settings
+│   └── TokenManagement.tsx    # Token management
 ├── services/            # API service layer
 │   ├── api.ts                  # Tauri API client
 │   ├── config-service.ts       # Configuration management

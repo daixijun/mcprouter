@@ -43,6 +43,7 @@
 
 - 聚合器端点的可选 Bearer token 认证
 - 通过 `server.auth` 配置项控制认证
+- 动态 Token 管理系统，支持创建、删除和令牌使用统计
 - 防时序攻击的常量时间 token 比较
 - 安全配置验证和弱 token 警告
 - 完全向后兼容（默认禁用认证）
@@ -79,6 +80,7 @@ src-tauri/src/
 │   ├── marketplace.rs   # 市场集成
 │   ├── mcp_server.rs    # MCP 服务器操作
 │   ├── settings.rs      # 系统设置
+│   ├── token_management.rs  # Token 管理命令
 │   └── tool.rs          # 工具管理
 ├── config/              # 配置层
 │   ├── mod.rs
@@ -87,6 +89,7 @@ src-tauri/src/
 ├── mcp_manager.rs       # MCP 服务器生命周期管理
 ├── mcp_client.rs        # MCP 客户端连接处理
 ├── aggregator.rs        # 请求路由和聚合
+├── token_manager.rs     # Token 管理系统
 ├── marketplace/         # 市场提供商
 │   ├── mod.rs
 │   └── providers/
@@ -111,7 +114,8 @@ src/
 │   ├── Dashboard.tsx          # 系统仪表板和统计
 │   ├── McpServerManager.tsx   # MCP 服务器管理
 │   ├── Marketplace.tsx        # 市场浏览器
-│   └── Settings.tsx           # 应用设置
+│   ├── Settings.tsx           # 应用设置
+│   └── TokenManagement.tsx    # Token 管理
 ├── services/            # API 服务层
 │   ├── api.ts                  # Tauri API 客户端
 │   ├── config-service.ts       # 配置管理

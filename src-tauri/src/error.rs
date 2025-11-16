@@ -67,6 +67,9 @@ pub enum McpError {
     #[error("Resource not found: {0}")]
     NotFoundError(String),
 
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+
     #[error("Invalid configuration: {0}")]
     InvalidConfiguration(String),
 

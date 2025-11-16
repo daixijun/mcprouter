@@ -170,6 +170,7 @@ export interface SystemSettings {
     port: number
     max_connections: number
     timeout_seconds: number
+    auth?: boolean
   }
   logging: {
     level: 'trace' | 'debug' | 'info' | 'warn' | 'error'
@@ -217,3 +218,52 @@ export interface DashboardStats {
 
 export type ToolCallArguments = Record<string, any> | null
 export type ToolCallResult = Record<string, any> | null
+
+// Token Management Types
+export interface Token {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: number;
+  expires_at?: number;
+  last_used_at?: number;
+  usage_count: number;
+  is_expired: boolean;
+  enabled: boolean;
+}
+
+export interface CreateTokenRequest {
+  name: string;
+  description?: string;
+  expires_in?: number; // seconds
+}
+
+export interface CreateTokenResponse {
+  token: {
+    id: string;
+    value: string; // only returned on creation
+    name: string;
+    description?: string;
+    created_at: number;
+    expires_at?: number;
+  };
+}
+
+export interface TokenStats {
+  total_count: number;
+  active_count: number;
+  expired_count: number;
+  total_usage: number;
+  last_used?: number;
+}
+
+export interface CleanupResult {
+  removed_count: number;
+  message: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  token_info?: Token;
+  message: string;
+}

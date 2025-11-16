@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { App as AntdApp, ConfigProvider } from 'antd'
 import {
   Info,
+  Key,
   Menu,
   Monitor,
   Moon,
@@ -21,6 +22,7 @@ import Dashboard from './pages/Dashboard'
 import Marketplace from './pages/Marketplace'
 import McpServerManager from './pages/McpServerManager'
 import Settings from './pages/Settings'
+import TokenManagement from './pages/TokenManagement'
 import { getThemeConfig } from './theme/antd-config'
 
 // 内部应用组件，使用 Context
@@ -44,6 +46,7 @@ const AppContent = memo(() => {
     { id: 'overview', label: '概览', icon: Info },
     { id: 'servers', label: '服务管理', icon: Server },
     { id: 'market', label: 'MCP广场', icon: Package },
+    { id: 'tokens', label: 'Token管理', icon: Key },
     { id: 'settings', label: '设置', icon: SettingsIcon },
   ]
 
@@ -234,6 +237,7 @@ const AppContent = memo(() => {
                   {state.activeTab === 'overview' && <Dashboard />}
                   {state.activeTab === 'servers' && <McpServerManager />}
                   {state.activeTab === 'market' && <Marketplace />}
+                  {state.activeTab === 'tokens' && <TokenManagement />}
                   {state.activeTab === 'settings' && <Settings />}
                 </div>
               </div>

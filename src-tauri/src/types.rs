@@ -118,42 +118,20 @@ pub struct ServerConfig {
     pub port: u16,
     pub max_connections: usize,
     pub timeout_seconds: u64,
-    /// Enable Bearer token authentication for aggregator endpoints
     #[serde(default)]
-    pub auth: bool,
-    /// Bearer token for authentication (only used when auth = true)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bearer_token: Option<String>,
+    pub auth: bool, // Controls whether authentication is enabled
 }
 
 impl ServerConfig {
-    /// Validate authentication configuration
+    /// Validate server configuration
     pub fn validate(&self) -> Result<(), crate::config::ConfigError> {
-        // Check if auth is enabled but no token is provided
-        if self.auth && self.bearer_token.is_none() {
-            return Err(crate::config::ConfigError::Invalid(
-                "Authentication enabled (auth = true) but no bearer_token configured".to_string(),
-            ));
-        }
-
-        // Warn about weak tokens
-        if let Some(ref token) = self.bearer_token {
-            if token.len() < 16 {
-                tracing::warn!(
-                    "Bearer token is weak (length: {}). Recommend at least 32 characters for strong security.",
-                    token.len()
-                );
-            }
-
-            if token.chars().all(|c| c.is_ascii_alphanumeric()) {
-                tracing::warn!(
-                    "Bearer token contains only alphanumeric characters. \
-                    Recommend using cryptographically random tokens with special characters."
-                );
-            }
-        }
-
+        // No specific validation needed for now
         Ok(())
+    }
+
+    /// Check if authentication is enabled
+    pub fn is_auth_enabled(&self) -> bool {
+        self.auth
     }
 }
 
@@ -399,7 +377,7 @@ impl AppConfig {
             .unwrap_or_else(|_| ".".to_string());
         let app_data_dir = std::path::PathBuf::from(format!("{}/.mcprouter", home_dir));
 
-        let config_path = crate::config::get_app_config_path(&app_data_dir);
+        let config_path = app_data_dir.join("config.json");
 
         // Migration: read old path if new path not exists
         if !config_path.exists() {
@@ -433,7 +411,8 @@ impl AppConfig {
 
         let file = std::fs::File::open(&config_path).map_err(crate::config::ConfigError::Io)?;
         let reader = std::io::BufReader::new(file);
-        let config: AppConfig = serde_json::from_reader(reader).map_err(crate::config::ConfigError::Json)?;
+        let config: AppConfig =
+            serde_json::from_reader(reader).map_err(crate::config::ConfigError::Json)?;
 
         // Validate server configuration
         config.server.validate()?;
@@ -448,7 +427,7 @@ impl AppConfig {
             .unwrap_or_else(|_| ".".to_string());
         let app_data_dir = std::path::PathBuf::from(format!("{}/.mcprouter", home_dir));
 
-        let config_path = crate::config::get_app_config_path(&app_data_dir);
+        let config_path = app_data_dir.join("config.json");
 
         if let Some(parent) = config_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -465,8 +444,7 @@ impl Default for AppConfig {
                 port: 8000,
                 max_connections: 100,
                 timeout_seconds: 30,
-                auth: false,
-                bearer_token: None,
+                auth: false, // Default to false for backward compatibility
             },
             logging: Some(crate::types::LoggingSettings {
                 level: "info".to_string(),

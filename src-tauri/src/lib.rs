@@ -5,6 +5,7 @@ mod error;
 mod marketplace;
 mod mcp_client;
 mod mcp_manager;
+mod token_manager;
 mod types;
 
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use std::time::SystemTime;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
+use commands::token_management::{init_token_manager, TokenManagerState};
 use commands::*;
 use mcp_client::McpClientManager;
 use mcp_manager::McpServerManager;
@@ -51,6 +53,9 @@ static MCP_CLIENT_MANAGER: std::sync::LazyLock<Arc<McpClientManager>> = std::syn
 static AGGREGATOR: std::sync::LazyLock<
     Arc<std::sync::Mutex<Option<Arc<aggregator::McpAggregator>>>>,
 > = std::sync::LazyLock::new(|| Arc::new(std::sync::Mutex::new(None)));
+
+static TOKEN_MANAGER: std::sync::LazyLock<TokenManagerState> =
+    std::sync::LazyLock::new(|| Arc::new(tokio::sync::RwLock::new(None)));
 
 // Track application startup time
 static STARTUP_TIME: std::sync::LazyLock<SystemTime> = std::sync::LazyLock::new(SystemTime::now);
@@ -351,7 +356,13 @@ pub async fn run() {
             // Log after subscriber is initialized
             tracing::info!("Starting MCP Router");
 
-            // 2.5) Initialize aggregator with all required components
+            // 2.5) Initialize TokenManager (async task)
+            // Use ~/.mcprouter as the configuration directory for consistency
+            let home_dir = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| ".".to_string());
+            let config_dir = std::path::PathBuf::from(format!("{}/.mcprouter", home_dir));
+
             let config = AppConfig::load().unwrap_or_else(|e| {
                 tracing::error!(
                     "\n========================================\nERROR: Failed to load configuration file\n========================================\n{}\n\nThe application cannot start with an invalid configuration.\nPlease fix the config file at: ~/.mcprouter/config.json\nOr delete it to use default settings.\n",
@@ -363,21 +374,42 @@ pub async fn run() {
             let mcp_server_manager = SERVICE_MANAGER.clone();
             let mcp_client_manager = MCP_CLIENT_MANAGER.clone();
             let server_config = Arc::new(config.server.clone());
-            let aggregator = Arc::new(aggregator::McpAggregator::new(
-                mcp_server_manager,
-                mcp_client_manager,
-                server_config,
-            ));
 
-            // Store aggregator in global variable
-            {
-                let mut agg_guard = AGGREGATOR.lock().unwrap();
-                *agg_guard = Some(aggregator.clone());
-            }
-
-            // 3) Start aggregator AFTER logging is initialized
-            // Since we're in a non-async setup(), we need to spawn the async task
+            // 2.6) Initialize TokenManager and start aggregator in sequence
             tokio::spawn(async move {
+                // Initialize TokenManager
+                let token_manager = match init_token_manager(&config_dir).await {
+                    Ok(manager) => {
+                        tracing::info!("TokenManager initialized successfully");
+                        manager
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to initialize TokenManager: {}", e);
+                        std::process::exit(1);
+                    }
+                };
+
+                // Initialize global TOKEN_MANAGER state
+                {
+                    let mut token_manager_guard = TOKEN_MANAGER.write().await;
+                    *token_manager_guard = Some(token_manager.clone());
+                }
+
+                // Create aggregator with TokenManager
+                let aggregator = Arc::new(aggregator::McpAggregator::new(
+                    mcp_server_manager,
+                    mcp_client_manager,
+                    server_config,
+                    token_manager,
+                ));
+
+                // Store aggregator in global variable
+                {
+                    let mut agg_guard = AGGREGATOR.lock().unwrap();
+                    *agg_guard = Some(aggregator.clone());
+                }
+
+                // Start aggregator
                 if let Err(e) = aggregator.start().await {
                     tracing::error!(
                         "Failed to start MCP aggregator server: {}\n\
@@ -410,6 +442,9 @@ pub async fn run() {
             });
 
             // Tray helper moved to module scope (build_main_tray)
+
+            // Add TokenManager to Tauri app state (will be populated async)
+            app.manage(TOKEN_MANAGER.clone());
 
             // Ensure tray visibility based on config at startup
             let tray_enabled_start = config
@@ -503,6 +538,14 @@ pub async fn run() {
             get_dashboard_stats,
             get_local_ip_addresses,
             toggle_autostart,
+            // Token Management Commands
+            create_token,
+            list_tokens,
+            delete_token,
+            toggle_token,
+            get_token_stats,
+            cleanup_expired_tokens,
+            validate_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

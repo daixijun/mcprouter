@@ -10,7 +10,7 @@ import React, {
 
 // 状态类型定义
 export type ThemeMode = 'light' | 'dark' | 'auto'
-export type TabType = 'overview' | 'servers' | 'market' | 'settings'
+export type TabType = 'overview' | 'servers' | 'market' | 'settings' | 'tokens'
 
 interface AppState {
   themeMode: ThemeMode
@@ -208,6 +208,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
               setActiveTab('servers')
             } else if (targetTab === 'marketplace') {
               setActiveTab('market')
+            } else if (targetTab === 'tokens') {
+              setActiveTab('tokens')
             } else if (targetTab === 'settings') {
               setActiveTab('settings')
             }

@@ -1,6 +1,7 @@
 use crate::error::McpError;
 use crate::mcp_client::McpClientManager;
 use crate::mcp_manager::McpServerManager;
+use crate::token_manager::TokenManager;
 use crate::types::ServerConfig;
 use rmcp::model::{
     CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult,
@@ -24,24 +25,12 @@ use axum::{
     response::Response,
 };
 
-/// Constant-time string comparison to prevent timing attacks
-fn constant_time_compare(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
 
-    let mut result = 0u8;
-    for (byte_a, byte_b) in a.bytes().zip(b.bytes()) {
-        result |= byte_a ^ byte_b;
-    }
-    result == 0
-}
-
-/// Bearer token authentication middleware
-async fn bearer_auth_middleware(
+/// Dynamic Bearer token authentication middleware using TokenManager
+async fn dynamic_bearer_auth_middleware(
     req: Request,
     next: Next,
-    expected_token: Arc<String>,
+    token_manager: Arc<TokenManager>,
 ) -> Result<Response, StatusCode> {
     // Extract Authorization header
     let auth_header = req
@@ -50,27 +39,41 @@ async fn bearer_auth_middleware(
         .and_then(|value| value.to_str().ok());
 
     // Validate Bearer token format and value
-    match auth_header {
+    let token_value = match auth_header {
         Some(header) if header.starts_with("Bearer ") => {
-            let provided_token = &header[7..]; // Skip "Bearer "
-
-            // Use constant-time comparison to prevent timing attacks
-            if constant_time_compare(provided_token, expected_token.as_str()) {
-                tracing::debug!("Authentication successful");
-                Ok(next.run(req).await)
-            } else {
-                tracing::warn!("Authentication failed: invalid token");
-                Err(StatusCode::UNAUTHORIZED)
-            }
+            Some(&header[7..]) // Skip "Bearer "
         }
         Some(_) => {
             tracing::warn!("Authentication failed: invalid Authorization header format");
-            Err(StatusCode::UNAUTHORIZED)
+            return Err(StatusCode::UNAUTHORIZED);
         }
         None => {
             tracing::warn!("Authentication failed: missing Authorization header");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+    };
+
+    // Validate token using TokenManager
+    if let Some(token_value) = token_value {
+        if let Some(token_id) = token_manager.validate_token(token_value).await {
+            // Record usage statistics asynchronously
+            let manager_clone = token_manager.clone();
+            let token_id_clone = token_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = manager_clone.record_usage(&token_id_clone).await {
+                    tracing::error!("Failed to record token usage: {}", e);
+                }
+            });
+
+            tracing::debug!("Authentication successful for token: {}", token_id);
+            Ok(next.run(req).await)
+        } else {
+            tracing::warn!("Authentication failed: invalid token");
             Err(StatusCode::UNAUTHORIZED)
         }
+    } else {
+        tracing::warn!("Authentication failed: invalid Authorization header format");
+        Err(StatusCode::UNAUTHORIZED)
     }
 }
 
@@ -80,6 +83,7 @@ pub struct McpAggregator {
     mcp_server_manager: Arc<McpServerManager>,
     mcp_client_manager: Arc<McpClientManager>,
     config: Arc<ServerConfig>,
+    token_manager: Arc<TokenManager>,
     shutdown_signal: Arc<std::sync::Mutex<Option<CancellationToken>>>,
 }
 
@@ -88,11 +92,13 @@ impl McpAggregator {
         mcp_server_manager: Arc<McpServerManager>,
         mcp_client_manager: Arc<McpClientManager>,
         config: Arc<ServerConfig>,
+        token_manager: Arc<TokenManager>,
     ) -> Self {
         Self {
             mcp_server_manager,
             mcp_client_manager,
             config,
+            token_manager,
             shutdown_signal: Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -128,22 +134,19 @@ impl McpAggregator {
         let service = StreamableHttpService::new(service_factory, session_manager, server_config);
 
         // Build router with conditional authentication middleware
-        let router = if self.config.auth {
-            if let Some(ref token) = self.config.bearer_token {
-                tracing::info!("Bearer token authentication enabled");
-                let token_arc = Arc::new(token.clone());
-
-                axum::Router::new()
-                    .nest_service("/mcp", service)
-                    .layer(middleware::from_fn(move |req, next| {
-                        bearer_auth_middleware(req, next, token_arc.clone())
-                    }))
-            } else {
-                tracing::warn!("Authentication enabled but no bearer_token configured, authentication disabled");
-                axum::Router::new().nest_service("/mcp", service)
-            }
+        let router = if self.config.is_auth_enabled() {
+            tracing::info!("Authentication enabled with dynamic token management");
+            let token_manager = self.token_manager.clone();
+            axum::Router::new()
+                .nest_service("/mcp", service)
+                .layer(middleware::from_fn(move |req, next| {
+                    let token_manager = token_manager.clone();
+                    async move {
+                        dynamic_bearer_auth_middleware(req, next, token_manager).await
+                    }
+                }))
         } else {
-            tracing::info!("Authentication disabled");
+            tracing::info!("Authentication disabled - running without auth middleware");
             axum::Router::new().nest_service("/mcp", service)
         };
 
@@ -183,7 +186,7 @@ impl McpAggregator {
         tracing::info!(
             "MCP Aggregator started successfully on {} (auth: {}, timeout: {}s, max_connections: {})",
             addr,
-            self.config.auth,
+            if self.config.is_auth_enabled() { "enabled with dynamic tokens" } else { "disabled" },
             self.config.timeout_seconds,
             self.config.max_connections
         );

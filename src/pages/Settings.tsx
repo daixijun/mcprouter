@@ -29,6 +29,7 @@ const Settings: React.FC = memo(() => {
       port: 8850,
       max_connections: 100,
       timeout_seconds: 30,
+      auth: false,
     },
     logging: {
       level: 'info',
@@ -295,6 +296,39 @@ const Settings: React.FC = memo(() => {
                 max={300}
                 style={{ width: '100%', marginTop: '4px' }}
               />
+            </Col>
+            <Col xs={24}>
+              <Flex justify='space-between' align='center'>
+                <div>
+                  <Text strong>聚合接口认证鉴权</Text>
+                  <Text
+                    type='secondary'
+                    style={{
+                      fontSize: '14px',
+                      display: 'block',
+                      marginTop: '2px',
+                    }}>
+                    启用后，聚合接口需要使用有效的Bearer Token才能访问
+                  </Text>
+                </div>
+                <Switch
+                  checked={settings.server.auth || false}
+                  onChange={async (checked) => {
+                    handleServerSettingChange('auth', checked)
+                    // 立即保存设置
+                    try {
+                      const { ConfigService } = await import('../services/config-service')
+                      await ConfigService.saveSystemSettings(settings)
+                      message.success('认证设置已保存！')
+                    } catch (error) {
+                      console.error('Failed to save auth setting:', error)
+                      message.error('保存认证设置失败')
+                    }
+                  }}
+                  checkedChildren='启用'
+                  unCheckedChildren='禁用'
+                />
+              </Flex>
             </Col>
           </Row>
         </Card>

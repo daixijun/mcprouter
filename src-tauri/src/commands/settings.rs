@@ -1,9 +1,11 @@
 // System Settings Commands
 
+use crate::aggregator::McpAggregator;
 use crate::config as config_mod;
 use crate::error::{McpError, Result};
-use crate::{build_main_tray, types, AGGREGATOR, SERVICE_MANAGER};
+use crate::{build_main_tray, types, AGGREGATOR, SERVICE_MANAGER, MCP_CLIENT_MANAGER, TOKEN_MANAGER};
 use serde::Serialize;
+use std::sync::Arc;
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
@@ -40,6 +42,8 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
         port: u16,
         max_connections: usize,
         timeout_seconds: u64,
+        #[serde(default)]
+        auth: bool,
     }
 
     #[derive(Serialize)]
@@ -89,6 +93,7 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
             port: config.server.port,
             max_connections: config.server.max_connections,
             timeout_seconds: config.server.timeout_seconds,
+            auth: config.server.auth,
         },
         logging: config.logging.as_ref().map(|l| LoggingOut {
             level: l.level.clone(),
@@ -114,6 +119,9 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Result<String> {
     use serde_json::Value;
+
+    // Debug: Log the received settings
+    tracing::info!("save_settings called with data: {}", serde_json::to_string_pretty(&settings).unwrap_or_else(|_| "Failed to serialize".to_string()));
 
     // Snapshot old config before update
     let prev_config = SERVICE_MANAGER.get_config().await;
@@ -239,24 +247,38 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
 
             // Server config (support if provided at top-level payload)
             if let Some(Value::Object(server_obj)) = settings.get("server") {
+                tracing::info!("Processing server config: {:?}", server_obj);
+
                 if let Some(Value::String(host)) = server_obj.get("host") {
                     config.server.host = host.clone();
+                    tracing::info!("Updated host: {}", host);
                 }
                 if let Some(Value::Number(port)) = server_obj.get("port") {
                     if let Some(p) = port.as_u64() {
                         config.server.port = p as u16;
+                        tracing::info!("Updated port: {}", p);
                     }
                 }
                 if let Some(Value::Number(max_conn)) = server_obj.get("max_connections") {
                     if let Some(mc) = max_conn.as_u64() {
                         config.server.max_connections = mc as usize;
+                        tracing::info!("Updated max_connections: {}", mc);
                     }
                 }
                 if let Some(Value::Number(timeout)) = server_obj.get("timeout_seconds") {
                     if let Some(ts) = timeout.as_u64() {
                         config.server.timeout_seconds = ts;
+                        tracing::info!("Updated timeout_seconds: {}", ts);
                     }
                 }
+                if let Some(Value::Bool(auth)) = server_obj.get("auth") {
+                    config.server.auth = *auth;
+                    tracing::info!("Updated auth: {}", auth);
+                } else {
+                    tracing::warn!("auth field not found in server config or not a boolean");
+                }
+            } else {
+                tracing::warn!("No server config found in settings payload");
             }
 
             // Security settings removed
@@ -277,21 +299,60 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
     let server_config_changed = prev_config.server.host != config.server.host
         || prev_config.server.port != config.server.port
         || prev_config.server.max_connections != config.server.max_connections
-        || prev_config.server.timeout_seconds != config.server.timeout_seconds;
+        || prev_config.server.timeout_seconds != config.server.timeout_seconds
+        || prev_config.server.auth != config.server.auth;
 
     if server_config_changed {
-        tracing::info!("Server configuration changed (restarting aggregator)...");
-        // 获取聚合器的克隆，避免跨越 await 点持有锁
+        tracing::info!("Server configuration changed (restarting aggregator with new config)...");
+
+        // 停止现有的聚合器
         let aggregator_clone = {
             let aggregator_guard = AGGREGATOR.lock().unwrap();
             (*aggregator_guard).clone()
         };
-        // 锁在这里释放
 
-        if let Some(ref aggregator) = aggregator_clone {
+        if let Some(aggregator) = &aggregator_clone {
+            tracing::info!("Shutting down existing aggregator...");
             aggregator.trigger_shutdown().await;
+        }
+
+        // 等待一段时间确保完全关闭
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // 从最新配置创建新的聚合器
+        let new_config = SERVICE_MANAGER.get_config().await;
+        let server_config = Arc::new(new_config.server.clone());
+
+        // 获取 TokenManager
+        let token_manager = {
+            let token_manager_guard = TOKEN_MANAGER.read().await;
+            (*token_manager_guard).as_ref()
+                .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
+                .clone()
+        };
+
+        // 创建新的聚合器实例
+        tracing::info!("Creating new aggregator with updated configuration (auth: {})", server_config.auth);
+        let new_aggregator = Arc::new(McpAggregator::new(
+            SERVICE_MANAGER.clone(),
+            MCP_CLIENT_MANAGER.clone(),
+            server_config,
+            token_manager,
+        ));
+
+        // 更新全局聚合器状态
+        {
+            let mut aggregator_guard = AGGREGATOR.lock().unwrap();
+            *aggregator_guard = Some(new_aggregator.clone());
+        }
+
+        // 重新启动聚合器
+        tracing::info!("Starting new aggregator with new configuration...");
+        if let Err(e) = new_aggregator.start().await {
+            tracing::error!("Failed to start new aggregator: {}", e);
+            return Err(McpError::InternalError(format!("Failed to start aggregator: {}", e)));
         } else {
-            tracing::warn!("Aggregator not initialized, cannot trigger shutdown");
+            tracing::info!("Aggregator restarted successfully with new configuration");
         }
         if tray_changed {
             tracing::info!(

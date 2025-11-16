@@ -248,6 +248,8 @@ impl McpServerManager {
     {
         let mut config = self.config.write().await;
         f(&mut config);
+        // Save the updated configuration to file
+        config.save()?;
         Ok(())
     }
 
@@ -398,7 +400,8 @@ impl McpServerManager {
             // If version not in server_info, try to get from cached_version
             let version = connection
                 .server_info
-                .as_ref().map(|info| info.server_info.version.clone());
+                .as_ref()
+                .map(|info| info.server_info.version.clone());
 
             if let Some(version_str) = version {
                 tracing::info!("Extracted version for service '{}': {}", name, version_str);

@@ -1,72 +1,32 @@
-use super::file_manager::{exists, read_dir, read_json, remove_file, write_json_atomic};
-use super::{get_mcp_server_config_path, ConfigError, Result};
+use super::{ConfigError, Result};
 use crate::types::McpServerConfig;
-use std::path::{Path, PathBuf};
-use tauri::Manager;
 
 /// MCP Server Repository
 #[derive(Debug, Clone)]
 pub struct McpServerRepository {
-    app_data_dir: PathBuf,
     servers: Vec<crate::types::McpServerConfig>,
 }
 
 impl McpServerRepository {
-    /// Create new MCP server repository (no caching - always fresh data)
-    pub async fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
-        let app_data_dir = app_handle.path().app_data_dir().map_err(|e| {
-            tracing::error!("Failed to get application data directory: {:?}", e);
-            ConfigError::Invalid("Cannot get application data directory".to_string())
+    /// Create new MCP server repository (load from AppConfig)
+    pub async fn new(_app_handle: &tauri::AppHandle) -> Result<Self> {
+        // Load servers directly from AppConfig instead of separate files
+        let config = crate::AppConfig::load().map_err(|e| {
+            tracing::error!("Failed to load AppConfig: {}", e);
+            ConfigError::Invalid(format!("Cannot load AppConfig: {}", e))
         })?;
 
-        // Always load fresh data - no caching for real-time configuration updates
-        tracing::debug!("Creating fresh McpServerRepository (no caching)...");
-        tracing::debug!("✅ Got application data directory: {:?}", app_data_dir);
-
-        // Verify directory exists or can be created
-        if !app_data_dir.exists() {
-            tracing::warn!(
-                "⚠️ Application data directory does not exist, trying to create: {:?}",
-                app_data_dir
-            );
-            if let Err(e) = std::fs::create_dir_all(&app_data_dir) {
-                tracing::error!("❌ Failed to create application data directory: {}", e);
-            } else {
-                tracing::info!("✅ Application data directory created successfully");
-            }
-        }
-
-        let servers = Self::load_all_servers(&app_data_dir)?;
-        tracing::info!("✅ Loaded {} server configs from files", servers.len());
+        tracing::debug!("Creating fresh McpServerRepository (from AppConfig)...");
+        tracing::info!("✅ Loaded {} server configs from AppConfig", config.mcp_servers.len());
 
         let repository = Self {
-            app_data_dir: app_data_dir.clone(),
-            servers,
+            servers: config.mcp_servers,
         };
 
         Ok(repository)
     }
 
-    /// Load all server configs
-    fn load_all_servers(app_data_dir: &Path) -> Result<Vec<crate::types::McpServerConfig>> {
-        let servers_dir = app_data_dir.join("config").join("mcp_servers");
-
-        if !exists(&servers_dir) {
-            return Ok(Vec::new());
-        }
-
-        let mut servers = Vec::new();
-        let config_files = read_dir(&servers_dir)?;
-
-        for config_file in config_files {
-            if let Ok(server) = read_json::<_, crate::types::McpServerConfig>(&config_file) {
-                servers.push(server);
-            }
-        }
-
-        Ok(servers)
-    }
-
+    
     /// Get all servers
     pub fn get_all(&self) -> &[crate::types::McpServerConfig] {
         &self.servers
@@ -80,7 +40,6 @@ impl McpServerRepository {
     /// Add new server
     pub async fn add(&mut self, config: McpServerConfig) -> Result<String> {
         tracing::info!("Starting to add MCP server: {}", config.name);
-        tracing::info!("App data dir: {:?}", self.app_data_dir);
 
         // check if name already exists
         if self.get_by_name(&config.name).is_some() {
@@ -96,8 +55,8 @@ impl McpServerRepository {
             description: config.description,
             command: config.command,
             args: config.args,
-            env: config.env.clone(),             // Using new field name 'env'
-            transport: config.transport.clone(), // Using new field name 'type'
+            env: config.env.clone(),
+            transport: config.transport.clone(),
             url: config.url,
             headers: config.headers,
             enabled: config.enabled,
@@ -110,15 +69,15 @@ impl McpServerRepository {
             server_file.transport
         );
 
-        let server_path = get_mcp_server_config_path(&self.app_data_dir, &config.name);
-        tracing::info!("config file path: {:?}", server_path);
+        // Add to in-memory list
+        self.servers.push(server_file.clone());
 
-        // save to file
-        tracing::info!("Starting to write config file...");
-        write_json_atomic(&server_path, &server_file)?;
-        tracing::info!("Config file written successfully");
+        // Save to AppConfig
+        let mut app_config = crate::AppConfig::load()?;
+        app_config.mcp_servers = self.servers.clone();
+        app_config.save()?;
 
-        self.servers.push(server_file);
+        tracing::info!("Config saved successfully to AppConfig");
 
         Ok(format!("MCP server '{}' added successfully", config.name))
     }
@@ -129,8 +88,6 @@ impl McpServerRepository {
     pub async fn update(&mut self, name: &str, config: McpServerConfig) -> Result<String> {
         // Clone required fields first to avoid borrow conflicts
         let server_name = config.name.clone();
-
-        let server_path = get_mcp_server_config_path(&self.app_data_dir, &server_name);
 
         // modify data structure
         {
@@ -152,12 +109,10 @@ impl McpServerRepository {
             server.clean_fields();
         }
 
-        // save to file
-        let server = self
-            .get_by_name(&server_name)
-            .ok_or_else(|| ConfigError::Invalid(format!("server not found: {}", name)))?;
-
-        write_json_atomic(&server_path, server)?;
+        // Save to AppConfig
+        let mut app_config = crate::AppConfig::load()?;
+        app_config.mcp_servers = self.servers.clone();
+        app_config.save()?;
 
         Ok(format!("MCP server '{}' updated successfully", server_name))
     }
@@ -171,12 +126,13 @@ impl McpServerRepository {
             .position(|s| s.name == name)
             .ok_or_else(|| ConfigError::Invalid(format!("server not found: {}", name)))?;
 
-        // delete config file
-        let server_path = get_mcp_server_config_path(&self.app_data_dir, name);
-        remove_file(&server_path)?;
-
         // remove from memory
         self.servers.remove(server_index);
+
+        // Save to AppConfig
+        let mut app_config = crate::AppConfig::load()?;
+        app_config.mcp_servers = self.servers.clone();
+        app_config.save()?;
 
         Ok(format!("MCP server '{}' deleted", name))
     }
@@ -197,9 +153,10 @@ impl McpServerRepository {
         // cleaning fields（bytransport type）
         server_mut.clean_fields();
 
-        // save changes
-        let server_path = get_mcp_server_config_path(&self.app_data_dir, name);
-        write_json_atomic(&server_path, server_mut)?;
+        // Save to AppConfig
+        let mut app_config = crate::AppConfig::load()?;
+        app_config.mcp_servers = self.servers.clone();
+        app_config.save()?;
 
         tracing::info!(
             "✅ Server '{}' enabled status updated to: {}",
