@@ -32,6 +32,3 @@ pub fn write_json_atomic<P: AsRef<Path>, T: serde::Serialize>(path: P, data: &T)
 
     Ok(())
 }
-
-
-

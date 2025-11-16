@@ -1,10 +1,12 @@
 mod aggregator;
+mod auth_context;
 mod commands;
 mod config;
 mod error;
 mod marketplace;
 mod mcp_client;
 mod mcp_manager;
+mod session_manager;
 mod token_manager;
 mod types;
 
@@ -50,7 +52,7 @@ static MCP_CLIENT_MANAGER: std::sync::LazyLock<Arc<McpClientManager>> = std::syn
     },
 );
 
-static AGGREGATOR: std::sync::LazyLock<
+pub static AGGREGATOR: std::sync::LazyLock<
     Arc<std::sync::Mutex<Option<Arc<aggregator::McpAggregator>>>>,
 > = std::sync::LazyLock::new(|| Arc::new(std::sync::Mutex::new(None)));
 
@@ -446,6 +448,9 @@ pub async fn run() {
             // Add TokenManager to Tauri app state (will be populated async)
             app.manage(TOKEN_MANAGER.clone());
 
+            // Add AGGREGATOR to Tauri app state for permission management
+            app.manage(AGGREGATOR.clone());
+
             // Ensure tray visibility based on config at startup
             let tray_enabled_start = config
                 .settings
@@ -540,12 +545,15 @@ pub async fn run() {
             toggle_autostart,
             // Token Management Commands
             create_token,
+            update_token,
             list_tokens,
             delete_token,
             toggle_token,
             get_token_stats,
             cleanup_expired_tokens,
             validate_token,
+            // Permission Management Commands
+            get_available_permissions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,7 +3,9 @@
 use crate::aggregator::McpAggregator;
 use crate::config as config_mod;
 use crate::error::{McpError, Result};
-use crate::{build_main_tray, types, AGGREGATOR, SERVICE_MANAGER, MCP_CLIENT_MANAGER, TOKEN_MANAGER};
+use crate::{
+    build_main_tray, types, AGGREGATOR, MCP_CLIENT_MANAGER, SERVICE_MANAGER, TOKEN_MANAGER,
+};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -121,7 +123,11 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
     use serde_json::Value;
 
     // Debug: Log the received settings
-    tracing::info!("save_settings called with data: {}", serde_json::to_string_pretty(&settings).unwrap_or_else(|_| "Failed to serialize".to_string()));
+    tracing::info!(
+        "save_settings called with data: {}",
+        serde_json::to_string_pretty(&settings)
+            .unwrap_or_else(|_| "Failed to serialize".to_string())
+    );
 
     // Snapshot old config before update
     let prev_config = SERVICE_MANAGER.get_config().await;
@@ -326,13 +332,17 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         // 获取 TokenManager
         let token_manager = {
             let token_manager_guard = TOKEN_MANAGER.read().await;
-            (*token_manager_guard).as_ref()
+            (*token_manager_guard)
+                .as_ref()
                 .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
                 .clone()
         };
 
         // 创建新的聚合器实例
-        tracing::info!("Creating new aggregator with updated configuration (auth: {})", server_config.auth);
+        tracing::info!(
+            "Creating new aggregator with updated configuration (auth: {})",
+            server_config.auth
+        );
         let new_aggregator = Arc::new(McpAggregator::new(
             SERVICE_MANAGER.clone(),
             MCP_CLIENT_MANAGER.clone(),
@@ -350,7 +360,10 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         tracing::info!("Starting new aggregator with new configuration...");
         if let Err(e) = new_aggregator.start().await {
             tracing::error!("Failed to start new aggregator: {}", e);
-            return Err(McpError::InternalError(format!("Failed to start aggregator: {}", e)));
+            return Err(McpError::InternalError(format!(
+                "Failed to start aggregator: {}",
+                e
+            )));
         } else {
             tracing::info!("Aggregator restarted successfully with new configuration");
         }

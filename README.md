@@ -44,6 +44,9 @@ A modern MCP (Model Context Protocol) Router built with Tauri, React and TypeScr
 - Optional Bearer token authentication for aggregator endpoints
 - Configurable authentication via `server.auth` setting
 - Dynamic Token Management system with creation, deletion, and usage statistics
+- **Fine-grained Token Permissions**: Control access to specific tools, resources, and prompts
+- **Permission Pattern Matching**: Support for wildcard patterns (`*`, `server/*`, `server/tool`)
+- **Session-level Permission Caching**: High-performance permission validation
 - Constant-time token comparison to prevent timing attacks
 - Secure configuration with validation and warnings for weak tokens
 - Full backward compatibility (authentication disabled by default)
@@ -90,6 +93,9 @@ src-tauri/src/
 ├── mcp_client.rs        # MCP client connection handling
 ├── aggregator.rs        # Request routing and aggregation
 ├── token_manager.rs     # Token management system
+├── session_manager.rs   # Session-level permission caching
+├── auth_context.rs      # Authentication context and permission validation
+├── connection_mapper.rs # HTTP to MCP connection mapping
 ├── marketplace/         # Marketplace providers
 │   ├── mod.rs
 │   └── providers/
@@ -185,6 +191,43 @@ curl http://127.0.0.1:8000/mcp
 curl -H "Authorization: Bearer your-secret-token-here" \
   http://127.0.0.1:8000/mcp
 ```
+
+#### Token Permission Management
+
+MCPRouter supports fine-grained permission control for tokens, allowing you to restrict access to specific tools, resources, and prompts:
+
+```json
+{
+  "tokens": [
+    {
+      "name": "read-only-token",
+      "token": "ro-secret-token-here",
+      "allowed_tools": ["server/list_tools", "server/read_resource"],
+      "allowed_resources": ["server/data/*"],
+      "allowed_prompts": ["server/summary"]
+    },
+    {
+      "name": "admin-token",
+      "token": "admin-secret-token-here",
+      "allowed_tools": ["*"],
+      "allowed_resources": ["*"],
+      "allowed_prompts": ["*"]
+    }
+  ]
+}
+```
+
+**Permission Patterns:**
+- `*` - Allows access to all tools/resources/prompts
+- `server/*` - Allows access to all tools under the `server` namespace
+- `server/tool` - Allows access to a specific tool only
+- `server/path/*` - Allows access to all resources under a specific path
+
+**Permission Validation:**
+- Permissions are validated at both HTTP and MCP protocol layers
+- Session-level caching provides high-performance validation
+- Detailed audit logging for security monitoring
+- Automatic fallback to deny for unspecified permissions
 
 ## Development
 

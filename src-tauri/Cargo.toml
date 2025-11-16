@@ -77,6 +77,7 @@ base64 = "0.22.1"
 tracing-appender = "0.2.3"
 rand = "0.8"
 sha2 = "0.10"
+dashmap = "6.1"
 
 [dev-dependencies]
 tempfile = "3.8"

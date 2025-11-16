@@ -44,6 +44,9 @@
 - 聚合器端点的可选 Bearer token 认证
 - 通过 `server.auth` 配置项控制认证
 - 动态 Token 管理系统，支持创建、删除和令牌使用统计
+- **细粒度 Token 权限**：控制对特定工具、资源和提示的访问权限
+- **权限模式匹配**：支持通配符模式（`*`、`server/*`、`server/tool`）
+- **会话级权限缓存**：高性能权限验证
 - 防时序攻击的常量时间 token 比较
 - 安全配置验证和弱 token 警告
 - 完全向后兼容（默认禁用认证）
@@ -90,6 +93,9 @@ src-tauri/src/
 ├── mcp_client.rs        # MCP 客户端连接处理
 ├── aggregator.rs        # 请求路由和聚合
 ├── token_manager.rs     # Token 管理系统
+├── session_manager.rs   # 会话级权限缓存
+├── auth_context.rs      # 认证上下文和权限验证
+├── connection_mapper.rs # HTTP 到 MCP 连接映射
 ├── marketplace/         # 市场提供商
 │   ├── mod.rs
 │   └── providers/
@@ -185,6 +191,43 @@ curl http://127.0.0.1:8000/mcp
 curl -H "Authorization: Bearer your-secret-token-here" \
   http://127.0.0.1:8000/mcp
 ```
+
+#### Token 权限管理
+
+MCPRouter 支持细粒度的权限控制，允许您限制对特定工具、资源和提示的访问：
+
+```json
+{
+  "tokens": [
+    {
+      "name": "只读token",
+      "token": "ro-secret-token-here",
+      "allowed_tools": ["server/list_tools", "server/read_resource"],
+      "allowed_resources": ["server/data/*"],
+      "allowed_prompts": ["server/summary"]
+    },
+    {
+      "name": "管理员token",
+      "token": "admin-secret-token-here",
+      "allowed_tools": ["*"],
+      "allowed_resources": ["*"],
+      "allowed_prompts": ["*"]
+    }
+  ]
+}
+```
+
+**权限模式：**
+- `*` - 允许访问所有工具/资源/提示
+- `server/*` - 允许访问 `server` 命名空间下的所有工具
+- `server/tool` - 仅允许访问特定工具
+- `server/path/*` - 允许访问特定路径下的所有资源
+
+**权限验证：**
+- 权限在 HTTP 和 MCP 协议层均进行验证
+- 会话级缓存提供高性能验证
+- 详细的审计日志用于安全监控
+- 未指定的权限自动拒绝访问
 
 ## 开发
 

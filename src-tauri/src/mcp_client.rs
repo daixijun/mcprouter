@@ -775,10 +775,7 @@ impl McpClientManager {
             let peer = client_arc.peer();
 
             let arguments_map = arguments
-                .map(|args| {
-                    args.into_iter()
-                        .collect::<serde_json::Map<_, _>>()
-                })
+                .map(|args| args.into_iter().collect::<serde_json::Map<_, _>>())
                 .unwrap_or_default();
             let request = rmcp::model::Request::<_, _>::new(rmcp::model::CallToolRequestParam {
                 name: name.to_string().into(),

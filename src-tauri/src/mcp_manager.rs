@@ -1145,6 +1145,102 @@ impl McpServerManager {
             .unwrap_or_default();
         Ok(prompts)
     }
+
+    /// Get all available tools from all cached servers for permission management
+    pub async fn get_all_available_tools(&self) -> Vec<String> {
+        let entries = self.tools_cache_entries.read().await;
+        let mut all_tools = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for tool_info in &cache_entry.infos {
+                all_tools.push(format!("{}/{}", server_name, tool_info.name));
+            }
+        }
+
+        all_tools.sort();
+        all_tools
+    }
+
+    /// Get all available tools with descriptions for permission management
+    pub async fn get_all_available_tools_with_descriptions(&self) -> Vec<(String, String)> {
+        let entries = self.tools_cache_entries.read().await;
+        let mut all_tools = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for tool_info in &cache_entry.infos {
+                let tool_id = format!("{}/{}", server_name, tool_info.name);
+                let description = tool_info.description.clone();
+                all_tools.push((tool_id, description));
+            }
+        }
+
+        all_tools.sort_by(|a, b| a.0.cmp(&b.0));
+        all_tools
+    }
+
+    /// Get all available resources from all cached servers for permission management
+    pub async fn get_all_available_resources(&self) -> Vec<String> {
+        let entries = self.resources_cache_entries.read().await;
+        let mut all_resources = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for resource_info in &cache_entry.infos {
+                all_resources.push(format!("{}/{}", server_name, resource_info.name));
+            }
+        }
+
+        all_resources.sort();
+        all_resources
+    }
+
+    /// Get all available resources with descriptions for permission management
+    pub async fn get_all_available_resources_with_descriptions(&self) -> Vec<(String, String)> {
+        let entries = self.resources_cache_entries.read().await;
+        let mut all_resources = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for resource_info in &cache_entry.infos {
+                let resource_id = format!("{}/{}", server_name, resource_info.name);
+                let description = resource_info.description.clone().unwrap_or_default();
+                all_resources.push((resource_id, description));
+            }
+        }
+
+        all_resources.sort_by(|a, b| a.0.cmp(&b.0));
+        all_resources
+    }
+
+    /// Get all available prompts from all cached servers for permission management
+    pub async fn get_all_available_prompts(&self) -> Vec<String> {
+        let entries = self.prompts_cache_entries.read().await;
+        let mut all_prompts = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for prompt_info in &cache_entry.infos {
+                all_prompts.push(format!("{}/{}", server_name, prompt_info.name));
+            }
+        }
+
+        all_prompts.sort();
+        all_prompts
+    }
+
+    /// Get all available prompts with descriptions for permission management
+    pub async fn get_all_available_prompts_with_descriptions(&self) -> Vec<(String, String)> {
+        let entries = self.prompts_cache_entries.read().await;
+        let mut all_prompts = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for prompt_info in &cache_entry.infos {
+                let prompt_id = format!("{}/{}", server_name, prompt_info.name);
+                let description = prompt_info.description.clone().unwrap_or_default();
+                all_prompts.push((prompt_id, description));
+            }
+        }
+
+        all_prompts.sort_by(|a, b| a.0.cmp(&b.0));
+        all_prompts
+    }
 }
 
 #[derive(Clone)]

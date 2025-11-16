@@ -230,12 +230,20 @@ export interface Token {
   usage_count: number;
   is_expired: boolean;
   enabled: boolean;
+  // Permission fields
+  allowed_tools?: string[];
+  allowed_resources?: string[];
+  allowed_prompts?: string[];
 }
 
 export interface CreateTokenRequest {
   name: string;
   description?: string;
   expires_in?: number; // seconds
+  // Permission fields
+  allowed_tools?: string[];
+  allowed_resources?: string[];
+  allowed_prompts?: string[];
 }
 
 export interface CreateTokenResponse {
@@ -247,6 +255,31 @@ export interface CreateTokenResponse {
     created_at: number;
     expires_at?: number;
   };
+}
+
+export interface UpdateTokenRequest {
+  id: string;
+  name?: string;
+  description?: string;
+  // Permission fields - use optional nested types to distinguish between "don't update" and "set to undefined"
+  allowed_tools?: string[] | undefined;
+  allowed_resources?: string[] | undefined;
+  allowed_prompts?: string[] | undefined;
+}
+
+export interface UpdateTokenResponse {
+  token: Token;
+}
+
+export interface PermissionItem {
+  id: string;
+  description: string;
+}
+
+export interface AvailablePermissions {
+  tools: PermissionItem[];
+  resources: PermissionItem[];
+  prompts: PermissionItem[];
 }
 
 export interface TokenStats {

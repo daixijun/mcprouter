@@ -27,9 +27,23 @@ pub struct Token {
     pub usage_count: u64,            // Usage count statistics
     #[serde(default = "default_enabled")]
     pub enabled: bool, // Whether this token is enabled for authentication
+    // Permission fields for fine-grained access control
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>, // e.g., ["filesystem/*", "database/query"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_resources: Option<Vec<String>>, // e.g., ["filesystem/logs/*"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompts: Option<Vec<String>>, // e.g., ["codegen/*"]
 }
 
 impl Token {
+    /// Determine if this token has no explicit permission configuration
+    fn is_unrestricted(&self) -> bool {
+        self.allowed_tools.is_none()
+            && self.allowed_resources.is_none()
+            && self.allowed_prompts.is_none()
+    }
+
     /// Check if token is expired
     pub fn is_expired(&self) -> bool {
         if let Some(expires_at) = self.expires_at {
@@ -38,6 +52,102 @@ impl Token {
         } else {
             false
         }
+    }
+
+    /// Check if token has permission to access a specific tool
+    pub fn has_tool_permission(&self, tool_name: &str) -> bool {
+        match &self.allowed_tools {
+            None => self.is_unrestricted(), // No restrictions configured anywhere => allow all
+            Some(allowed) => allowed
+                .iter()
+                .any(|pattern| self.matches_pattern(pattern, tool_name)),
+        }
+    }
+
+    /// Check if token has permission to access a specific resource
+    pub fn has_resource_permission(&self, resource_uri: &str) -> bool {
+        match &self.allowed_resources {
+            None => self.is_unrestricted(), // Only unrestricted tokens get implicit access
+            Some(allowed) => allowed
+                .iter()
+                .any(|pattern| self.matches_pattern(pattern, resource_uri)),
+        }
+    }
+
+    /// Check if token has permission to access a specific prompt
+    pub fn has_prompt_permission(&self, prompt_name: &str) -> bool {
+        match &self.allowed_prompts {
+            None => self.is_unrestricted(), // Require explicit prompts list once any permissions are set
+            Some(allowed) => allowed
+                .iter()
+                .any(|pattern| self.matches_pattern(pattern, prompt_name)),
+        }
+    }
+
+    /// Pattern matching function for permissions
+    fn matches_pattern(&self, pattern: &str, item: &str) -> bool {
+        match pattern {
+            "*" => true, // Global wildcard
+            _ if pattern.ends_with("/*") => {
+                // Server wildcard: "server/*" matches "server/tool"
+                let server = &pattern[..pattern.len() - 2];
+                item.starts_with(&format!("{}/", server))
+            }
+            _ => pattern == item, // Exact match
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Token;
+
+    fn base_token() -> Token {
+        Token {
+            id: "tok-test".into(),
+            value: "mcp-test".into(),
+            name: "test".into(),
+            description: None,
+            created_at: 0,
+            expires_at: None,
+            last_used_at: None,
+            usage_count: 0,
+            enabled: true,
+            allowed_tools: None,
+            allowed_resources: None,
+            allowed_prompts: None,
+        }
+    }
+
+    #[test]
+    fn unrestricted_token_allows_everything() {
+        let token = base_token();
+        assert!(token.has_tool_permission("any/tool"));
+        assert!(token.has_resource_permission("any/resource"));
+        assert!(token.has_prompt_permission("any/prompt"));
+    }
+
+    #[test]
+    fn restricting_tools_disallows_other_categories_by_default() {
+        let mut token = base_token();
+        token.allowed_tools = Some(vec!["server/tool_a".into()]);
+
+        assert!(token.has_tool_permission("server/tool_a"));
+        assert!(!token.has_tool_permission("server/tool_b"));
+        assert!(!token.has_prompt_permission("server/prompt_a"));
+        assert!(!token.has_resource_permission("server/resource"));
+    }
+
+    #[test]
+    fn explicit_wildcard_can_allow_category_when_other_permissions_set() {
+        let mut token = base_token();
+        token.allowed_prompts = Some(vec!["server/prompt_a".into()]);
+        token.allowed_tools = Some(vec!["*".into()]);
+
+        assert!(token.has_tool_permission("another/tool"));
+        assert!(token.has_prompt_permission("server/prompt_a"));
+        assert!(!token.has_prompt_permission("server/prompt_b"));
+        assert!(!token.has_resource_permission("server/resource"));
     }
 }
 
@@ -52,7 +162,7 @@ impl Default for TokenStorage {
     fn default() -> Self {
         Self {
             tokens: HashMap::new(),
-            version: 1,
+            version: 2,
         }
     }
 }
@@ -103,11 +213,26 @@ impl TokenManager {
     }
 
     /// Create a new token with given parameters
+    #[allow(dead_code)]
     pub async fn create(
         &self,
         name: String,
         description: Option<String>,
         expires_in: Option<u64>, // Duration in seconds from now
+    ) -> Result<Token> {
+        self.create_with_permissions(name, description, expires_in, None, None, None)
+            .await
+    }
+
+    /// Create a new token with permissions
+    pub async fn create_with_permissions(
+        &self,
+        name: String,
+        description: Option<String>,
+        expires_in: Option<u64>, // Duration in seconds from now
+        allowed_tools: Option<Vec<String>>,
+        allowed_resources: Option<Vec<String>>,
+        allowed_prompts: Option<Vec<String>>,
     ) -> Result<Token> {
         // Validate input
         if name.trim().is_empty() {
@@ -152,6 +277,10 @@ impl TokenManager {
             last_used_at: None,
             usage_count: 0,
             enabled: true,
+            // Use provided permission fields
+            allowed_tools,
+            allowed_resources,
+            allowed_prompts,
         };
 
         // Add to storage
@@ -184,6 +313,9 @@ impl TokenManager {
                 usage_count: token.usage_count,
                 is_expired: token.is_expired(),
                 enabled: token.enabled,
+                allowed_tools: token.allowed_tools.clone(),
+                allowed_resources: token.allowed_resources.clone(),
+                allowed_prompts: token.allowed_prompts.clone(),
             });
         }
 
@@ -224,6 +356,17 @@ impl TokenManager {
         }
 
         None
+    }
+
+    /// Get token by ID for permission validation
+    #[allow(dead_code)]
+    pub async fn get_token_by_id(&self, token_id: &str) -> Result<Token> {
+        let tokens = self.tokens.read().await;
+
+        tokens
+            .get(token_id)
+            .cloned()
+            .ok_or_else(|| McpError::NotFound(format!("Token with ID '{}' not found", token_id)))
     }
 
     /// Record usage statistics for a token
@@ -288,6 +431,97 @@ impl TokenManager {
         }
     }
 
+    /// Update an existing token's permissions and metadata
+    pub async fn update_token(
+        &self,
+        token_id: &str,
+        name: Option<String>,
+        description: Option<String>,
+        allowed_tools: Option<Option<Vec<String>>>,
+        allowed_resources: Option<Option<Vec<String>>>,
+        allowed_prompts: Option<Option<Vec<String>>>,
+    ) -> Result<Token> {
+        let mut tokens = self.tokens.write().await;
+
+        // Check if token exists first
+        if !tokens.contains_key(token_id) {
+            return Err(McpError::NotFound(format!(
+                "Token with ID '{}' not found",
+                token_id
+            )));
+        }
+
+        // Check for duplicate names if name is being updated
+        if let Some(ref new_name) = name {
+            if tokens
+                .values()
+                .any(|t| t.id != token_id && t.name == *new_name)
+            {
+                return Err(McpError::ValidationError(
+                    "Token name already exists".to_string(),
+                ));
+            }
+        }
+
+        // Now get mutable reference and update
+        if let Some(token) = tokens.get_mut(token_id) {
+            // Update name if provided
+            if let Some(new_name) = name {
+                if new_name.trim().is_empty() {
+                    return Err(McpError::ValidationError(
+                        "Token name cannot be empty".to_string(),
+                    ));
+                }
+                if new_name.len() > 100 {
+                    return Err(McpError::ValidationError(
+                        "Token name too long (max 100 chars)".to_string(),
+                    ));
+                }
+                token.name = new_name;
+            }
+
+            // Update description if provided
+            if let Some(new_desc) = description {
+                if new_desc.len() > 500 {
+                    return Err(McpError::ValidationError(
+                        "Description too long (max 500 chars)".to_string(),
+                    ));
+                }
+                token.description = Some(new_desc);
+            }
+
+            // Update permissions if provided
+            if let Some(new_tools) = allowed_tools {
+                token.allowed_tools = new_tools;
+            }
+            if let Some(new_resources) = allowed_resources {
+                token.allowed_resources = new_resources;
+            }
+            if let Some(new_prompts) = allowed_prompts {
+                token.allowed_prompts = new_prompts;
+            }
+
+            let updated_token = token.clone();
+            drop(tokens);
+
+            // Save to file
+            self.save().await?;
+
+            tracing::info!(
+                "Updated token '{}' with ID: {}",
+                updated_token.name,
+                token_id
+            );
+
+            Ok(updated_token)
+        } else {
+            Err(McpError::NotFound(format!(
+                "Token with ID '{}' not found",
+                token_id
+            )))
+        }
+    }
+
     /// Clean up expired tokens and return the count of removed tokens
     pub async fn cleanup_expired(&self) -> Result<usize> {
         let mut tokens = self.tokens.write().await;
@@ -310,7 +544,7 @@ impl TokenManager {
         let tokens = self.tokens.read().await;
         let storage = TokenStorage {
             tokens: tokens.clone(),
-            version: 1,
+            version: 2,
         };
 
         let content = serde_json::to_string_pretty(&storage)
@@ -362,16 +596,40 @@ impl TokenManager {
             .map_err(|e| McpError::InternalError(format!("Failed to parse tokens file: {}", e)))?;
 
         // Validate version compatibility
-        if storage.version != 1 {
-            return Err(McpError::InternalError(format!(
-                "Unsupported token storage version: {}",
-                storage.version
-            )));
+        match storage.version {
+            1 => {
+                // Version 1: Add permission fields with None values for backward compatibility
+                let mut migrated_tokens = HashMap::new();
+                for (id, mut token) in storage.tokens {
+                    // Set permission fields to None (unrestricted access)
+                    token.allowed_tools = None;
+                    token.allowed_resources = None;
+                    token.allowed_prompts = None;
+                    migrated_tokens.insert(id, token);
+                }
+
+                let mut tokens = self.tokens.write().await;
+                *tokens = migrated_tokens;
+
+                tracing::info!(
+                    "Migrated {} tokens from version 1 to version 2",
+                    tokens.len()
+                );
+            }
+            2 => {
+                // Version 2: Current version, load directly
+                let mut tokens = self.tokens.write().await;
+                *tokens = storage.tokens;
+            }
+            _ => {
+                return Err(McpError::InternalError(format!(
+                    "Unsupported token storage version: {}",
+                    storage.version
+                )));
+            }
         }
 
-        let mut tokens = self.tokens.write().await;
-        *tokens = storage.tokens;
-
+        let tokens = self.tokens.read().await;
         tracing::info!("Loaded {} tokens from storage", tokens.len());
 
         Ok(())
@@ -390,6 +648,10 @@ pub struct TokenInfo {
     pub usage_count: u64,
     pub is_expired: bool,
     pub enabled: bool,
+    // Permission fields for API responses
+    pub allowed_tools: Option<Vec<String>>,
+    pub allowed_resources: Option<Vec<String>>,
+    pub allowed_prompts: Option<Vec<String>>,
 }
 
 /// Constant-time string comparison to prevent timing attacks

@@ -1,0 +1,399 @@
+import {
+  ApiOutlined,
+  CloseOutlined,
+  DownOutlined,
+  FileTextOutlined,
+  FolderOutlined,
+  SearchOutlined,
+  SelectOutlined,
+  UpOutlined,
+} from '@ant-design/icons'
+import {
+  Button,
+  Card,
+  Checkbox,
+  Divider,
+  Input,
+  Space,
+  Tooltip,
+  Typography,
+} from 'antd'
+import type { CheckboxGroupProps } from 'antd/es/checkbox'
+import React, { useMemo, useState } from 'react'
+import { PermissionItem } from '../types'
+
+const { Search } = Input
+const { Text } = Typography
+
+interface PermissionTabProps {
+  type: 'tools' | 'resources' | 'prompts'
+  permissions: string[]
+  selectedPermissions: string[]
+  onChange: (permissions: string[]) => void
+  disabled?: boolean
+  searchText?: string
+  permissionItems?: PermissionItem[]
+}
+
+const PermissionTab: React.FC<PermissionTabProps> = ({
+  type,
+  permissions,
+  selectedPermissions,
+  onChange,
+  disabled = false,
+  searchText = '',
+  permissionItems = [],
+}) => {
+  const [searchValue, setSearchValue] = useState(searchText)
+  const [expandedServers, setExpandedServers] = useState<string[]>([])
+
+  // 根据权限ID获取描述信息
+  const getPermissionDescription = (permissionId: string): string => {
+    const item = permissionItems.find((item) => item.id === permissionId)
+    return item?.description || ''
+  }
+
+  // 获取权限类型对应的图标
+  const getTypeIcon = () => {
+    switch (type) {
+      case 'tools':
+        return <ApiOutlined />
+      case 'resources':
+        return <FolderOutlined />
+      case 'prompts':
+        return <FileTextOutlined />
+      default:
+        return <ApiOutlined />
+    }
+  }
+
+  // 按服务名称分组权限
+  const groupedPermissions = useMemo(() => {
+    const groups: Record<string, string[]> = {}
+
+    permissions.forEach((permission) => {
+      const [server, ...rest] = permission.split('/')
+      if (server && rest.length > 0) {
+        if (!groups[server]) {
+          groups[server] = []
+        }
+        groups[server].push(permission)
+      }
+    })
+
+    return Object.entries(groups)
+      .map(([server, serverPermissions]) => ({
+        server,
+        permissions: serverPermissions,
+        selectedCount: serverPermissions.filter((p) =>
+          selectedPermissions.includes(p),
+        ).length,
+      }))
+      .sort((a, b) => a.server.localeCompare(b.server))
+  }, [permissions, selectedPermissions])
+
+  // 过滤后的分组权限
+  const filteredGroups = useMemo(() => {
+    if (!searchValue.trim()) return groupedPermissions
+
+    const searchTerm = searchValue.toLowerCase()
+    return groupedPermissions
+      .map((group) => ({
+        ...group,
+        permissions: group.permissions.filter(
+          (permission) =>
+            permission.toLowerCase().includes(searchTerm) ||
+            group.server.toLowerCase().includes(searchTerm),
+        ),
+      }))
+      .filter((group) => group.permissions.length > 0)
+  }, [groupedPermissions, searchValue])
+
+  // 全选/反选/清空操作
+  const handleSelectAll = () => {
+    const allPermissions = filteredGroups.flatMap((group) => group.permissions)
+    onChange([...new Set([...selectedPermissions, ...allPermissions])])
+  }
+
+  const handleSelectNone = () => {
+    const permissionsToRemove = filteredGroups.flatMap(
+      (group) => group.permissions,
+    )
+    onChange(
+      selectedPermissions.filter((p) => !permissionsToRemove.includes(p)),
+    )
+  }
+
+  const handleInvert = () => {
+    const permissionsToToggle = filteredGroups.flatMap(
+      (group) => group.permissions,
+    )
+    const newSelected = selectedPermissions.filter(
+      (p) => !permissionsToToggle.includes(p),
+    )
+    const newToAdd = permissionsToToggle.filter(
+      (p) => !selectedPermissions.includes(p),
+    )
+    onChange([...new Set([...newSelected, ...newToAdd])])
+  }
+
+  // 服务器级别的选择操作
+  const handleServerSelect = (server: string, checked: boolean) => {
+    const group = groupedPermissions.find((g) => g.server === server)
+    if (!group) return
+
+    if (checked) {
+      // 选中服务器下的所有权限
+      const serverPermissions = group.permissions
+      onChange([...new Set([...selectedPermissions, ...serverPermissions])])
+    } else {
+      // 取消选中服务器下的所有权限
+      onChange(
+        selectedPermissions.filter((p) => !group.permissions.includes(p)),
+      )
+    }
+  }
+
+  // 权限级别的选择操作
+  const handlePermissionChange: CheckboxGroupProps['onChange'] = (
+    checkedValues,
+  ) => {
+    onChange(checkedValues as string[])
+  }
+
+  // 切换服务器展开状态
+  const toggleServerExpanded = (server: string) => {
+    setExpandedServers((prev) =>
+      prev.includes(server)
+        ? prev.filter((s) => s !== server)
+        : [...prev, server],
+    )
+  }
+
+  // 展开/收起所有服务器
+  const expandAll = () => {
+    setExpandedServers(filteredGroups.map((g) => g.server))
+  }
+
+  const collapseAll = () => {
+    setExpandedServers([])
+  }
+
+  const allSelectedCount = filteredGroups.reduce(
+    (sum, group) => sum + group.selectedCount,
+    0,
+  )
+  const totalCount = filteredGroups.reduce(
+    (sum, group) => sum + group.permissions.length,
+    0,
+  )
+  const allSelected = allSelectedCount === totalCount && totalCount > 0
+
+  return (
+    <div>
+      {/* 操作栏 */}
+      <Card size='small' style={{ marginBottom: 16 }}>
+        <Space direction='vertical' style={{ width: '100%' }}>
+          {/* 搜索框 */}
+          <Search
+            placeholder='搜索权限或服务名称...'
+            allowClear
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            prefix={<SearchOutlined />}
+          />
+
+          {/* 批量操作按钮 */}
+          <Space wrap>
+            <Button
+              size='small'
+              icon={<SelectOutlined />}
+              onClick={handleSelectAll}
+              disabled={disabled || totalCount === 0 || allSelected}>
+              全选当前页
+            </Button>
+            <Button
+              size='small'
+              icon={<CloseOutlined />}
+              onClick={handleSelectNone}
+              disabled={disabled || allSelectedCount === 0}>
+              清空当前页
+            </Button>
+            <Button
+              size='small'
+              onClick={handleInvert}
+              disabled={disabled || totalCount === 0}>
+              反选
+            </Button>
+            <Divider type='vertical' />
+            <Button size='small' onClick={expandAll} disabled={disabled}>
+              展开全部
+            </Button>
+            <Button size='small' onClick={collapseAll} disabled={disabled}>
+              收起全部
+            </Button>
+          </Space>
+
+          {/* 统计信息 */}
+          <Space>
+            <Text type='secondary'>
+              {getTypeIcon()}
+              {type === 'tools' && '工具'}
+              {type === 'resources' && '资源'}
+              {type === 'prompts' && '提示词'}
+              权限: 已选择 {allSelectedCount} / {totalCount} 项
+            </Text>
+            {filteredGroups.length < groupedPermissions.length && (
+              <Text type='warning'>
+                (筛选后显示 {filteredGroups.length} /{' '}
+                {groupedPermissions.length} 个服务)
+              </Text>
+            )}
+          </Space>
+        </Space>
+      </Card>
+
+      {/* 权限列表 */}
+      {filteredGroups.length === 0 ? (
+        <Card size='small'>
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            {searchValue ? '没有找到匹配的权限' : '暂无可用的权限'}
+          </div>
+        </Card>
+      ) : (
+        <div>
+          {filteredGroups.map((group) => {
+            const isServerSelected =
+              group.selectedCount === group.permissions.length
+            const isServerIndeterminate =
+              group.selectedCount > 0 &&
+              group.selectedCount < group.permissions.length
+            const isExpanded = expandedServers.includes(group.server)
+
+            return (
+              <Card
+                key={group.server}
+                size='small'
+                style={{ marginBottom: 8, overflow: 'hidden' }}
+                title={
+                  <Space>
+                    <Checkbox
+                      checked={isServerSelected}
+                      indeterminate={isServerIndeterminate}
+                      onChange={(e) =>
+                        handleServerSelect(group.server, e.target.checked)
+                      }
+                      disabled={disabled}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '4px',
+                        }}>
+                        <Text strong>{group.server}</Text>
+                        <Text type='secondary'>
+                          ({group.selectedCount}/{group.permissions.length})
+                        </Text>
+                        {(() => {
+                          const serverDescription = permissionItems.find(
+                            (item) => item.id.startsWith(group.server + '/'),
+                          )?.description
+                          if (!serverDescription) return null
+
+                          return (
+                            <Tooltip title={serverDescription} placement='top'>
+                              <Text
+                                type='secondary'
+                                ellipsis
+                                style={{
+                                  fontSize: '12px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  flex: 1,
+                                  minWidth: 0,
+                                }}>
+                                - {serverDescription}
+                              </Text>
+                            </Tooltip>
+                          )
+                        })()}
+                      </div>
+                    </Checkbox>
+                  </Space>
+                }
+                extra={
+                  <Button
+                    type='text'
+                    size='small'
+                    icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
+                    onClick={() => toggleServerExpanded(group.server)}>
+                    {isExpanded ? '收起' : '展开'}
+                  </Button>
+                }>
+                {isExpanded && (
+                  <Checkbox.Group
+                    value={group.permissions.filter((p) =>
+                      selectedPermissions.includes(p),
+                    )}
+                    onChange={handlePermissionChange}
+                    disabled={disabled}
+                    style={{ width: '100%' }}>
+                    <Space direction='vertical' style={{ width: '100%' }}>
+                      {group.permissions.map((permission) => (
+                        <div key={permission} style={{ paddingLeft: 24 }}>
+                          <Checkbox value={permission}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: '4px',
+                              }}>
+                              <Text>
+                                {permission.split('/')[1] || permission}
+                              </Text>
+                              {(() => {
+                                const description =
+                                  getPermissionDescription(permission)
+                                if (!description) return null
+
+                                return (
+                                  <Tooltip
+                                    title={description}
+                                    placement='right'>
+                                    <Text
+                                      type='secondary'
+                                      ellipsis
+                                      style={{
+                                        fontSize: '11px',
+                                        fontStyle: 'italic',
+                                        overflow: 'hidden',
+                                        // textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        flex: 1,
+                                        minWidth: 0,
+                                      }}>
+                                      - {description}
+                                    </Text>
+                                  </Tooltip>
+                                )
+                              })()}
+                            </div>
+                          </Checkbox>
+                        </div>
+                      ))}
+                    </Space>
+                  </Checkbox.Group>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default PermissionTab

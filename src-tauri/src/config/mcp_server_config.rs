@@ -17,7 +17,10 @@ impl McpServerRepository {
         })?;
 
         tracing::debug!("Creating fresh McpServerRepository (from AppConfig)...");
-        tracing::info!("✅ Loaded {} server configs from AppConfig", config.mcp_servers.len());
+        tracing::info!(
+            "✅ Loaded {} server configs from AppConfig",
+            config.mcp_servers.len()
+        );
 
         let repository = Self {
             servers: config.mcp_servers,
@@ -26,7 +29,6 @@ impl McpServerRepository {
         Ok(repository)
     }
 
-    
     /// Get all servers
     pub fn get_all(&self) -> &[crate::types::McpServerConfig] {
         &self.servers

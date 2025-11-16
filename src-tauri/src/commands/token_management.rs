@@ -1,10 +1,10 @@
 use crate::error::{McpError, Result};
-use crate::token_manager::{TokenManager, Token, TokenInfo};
+use crate::token_manager::{Token, TokenInfo, TokenManager};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
-use std::path::PathBuf;
 
 /// Request for creating a new token
 #[derive(Debug, Serialize, Deserialize)]
@@ -12,11 +12,33 @@ pub struct CreateTokenRequest {
     pub name: String,
     pub description: Option<String>,
     pub expires_in: Option<u64>, // Duration in seconds from now
+    // Permission fields
+    pub allowed_tools: Option<Vec<String>>, // e.g., ["filesystem/*", "database/query"]
+    pub allowed_resources: Option<Vec<String>>, // e.g., ["filesystem/logs/*"]
+    pub allowed_prompts: Option<Vec<String>>, // e.g., ["codegen/*"]
+}
+
+/// Request for updating an existing token
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTokenRequest {
+    pub id: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    // Permission fields - use Option<Option<T>> to distinguish between "don't update" and "set to None"
+    pub allowed_tools: Option<Option<Vec<String>>>,
+    pub allowed_resources: Option<Option<Vec<String>>>,
+    pub allowed_prompts: Option<Option<Vec<String>>>,
 }
 
 /// Response containing the created token
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTokenResponse {
+    pub token: Token,
+}
+
+/// Response containing the updated token
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTokenResponse {
     pub token: Token,
 }
 
@@ -40,27 +62,61 @@ pub async fn create_token(
 ) -> Result<CreateTokenResponse> {
     let token_manager_guard = state.read().await;
 
-    let token_manager = token_manager_guard.as_ref()
+    let token_manager = token_manager_guard
+        .as_ref()
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
-    let token = token_manager.create(
-        request.name,
-        request.description,
-        request.expires_in,
-    ).await?;
+    let token = token_manager
+        .create_with_permissions(
+            request.name,
+            request.description,
+            request.expires_in,
+            request.allowed_tools,
+            request.allowed_resources,
+            request.allowed_prompts,
+        )
+        .await?;
 
     Ok(CreateTokenResponse { token })
 }
 
-/// List all tokens (without actual values for security)
+/// Update an existing token
 #[tauri::command]
-pub async fn list_tokens(
+pub async fn update_token(
+    request: UpdateTokenRequest,
     state: State<'_, TokenManagerState>,
-) -> Result<Vec<TokenInfo>> {
+) -> Result<UpdateTokenResponse> {
     let token_manager_guard = state.read().await;
 
-    let token_manager = token_manager_guard.as_ref()
+    let token_manager = token_manager_guard
+        .as_ref()
+        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
+        .clone();
+
+    let updated_token = token_manager
+        .update_token(
+            &request.id,
+            request.name,
+            request.description,
+            request.allowed_tools,
+            request.allowed_resources,
+            request.allowed_prompts,
+        )
+        .await?;
+
+    Ok(UpdateTokenResponse {
+        token: updated_token,
+    })
+}
+
+/// List all tokens (without actual values for security)
+#[tauri::command]
+pub async fn list_tokens(state: State<'_, TokenManagerState>) -> Result<Vec<TokenInfo>> {
+    let token_manager_guard = state.read().await;
+
+    let token_manager = token_manager_guard
+        .as_ref()
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
@@ -71,13 +127,11 @@ pub async fn list_tokens(
 
 /// Delete a token by ID
 #[tauri::command]
-pub async fn delete_token(
-    token_id: String,
-    state: State<'_, TokenManagerState>,
-) -> Result<()> {
+pub async fn delete_token(token_id: String, state: State<'_, TokenManagerState>) -> Result<()> {
     let token_manager_guard = state.read().await;
 
-    let token_manager = token_manager_guard.as_ref()
+    let token_manager = token_manager_guard
+        .as_ref()
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
@@ -88,13 +142,11 @@ pub async fn delete_token(
 
 /// Toggle a token's enabled status
 #[tauri::command]
-pub async fn toggle_token(
-    token_id: String,
-    state: State<'_, TokenManagerState>,
-) -> Result<bool> {
+pub async fn toggle_token(token_id: String, state: State<'_, TokenManagerState>) -> Result<bool> {
     let token_manager_guard = state.read().await;
 
-    let token_manager = token_manager_guard.as_ref()
+    let token_manager = token_manager_guard
+        .as_ref()
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
@@ -103,9 +155,7 @@ pub async fn toggle_token(
 
 /// Get token statistics
 #[tauri::command]
-pub async fn get_token_stats(
-    state: State<'_, TokenManagerState>,
-) -> Result<TokenStats> {
+pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<TokenStats> {
     tracing::info!("get_token_stats called");
 
     let token_manager_guard = state.read().await;
@@ -119,7 +169,9 @@ pub async fn get_token_stats(
         }
         None => {
             tracing::error!("TokenManager not initialized in state");
-            return Err(McpError::InternalError("TokenManager not initialized".to_string()));
+            return Err(McpError::InternalError(
+                "TokenManager not initialized".to_string(),
+            ));
         }
     };
 
@@ -135,12 +187,15 @@ pub async fn get_token_stats(
     let total_usage: u64 = tokens.iter().map(|t| t.usage_count).sum();
 
     // Find most recently used token
-    let last_used = tokens.iter()
-        .filter_map(|t| t.last_used_at)
-        .max();
+    let last_used = tokens.iter().filter_map(|t| t.last_used_at).max();
 
-    tracing::info!("TokenStats calculated: total={}, active={}, expired={}, usage={}",
-        total_count, active_count, expired_count, total_usage);
+    tracing::info!(
+        "TokenStats calculated: total={}, active={}, expired={}, usage={}",
+        total_count,
+        active_count,
+        expired_count,
+        total_usage
+    );
 
     let stats = TokenStats {
         total_count,
@@ -165,12 +220,11 @@ pub async fn get_token_stats(
 
 /// Clean up expired tokens
 #[tauri::command]
-pub async fn cleanup_expired_tokens(
-    state: State<'_, TokenManagerState>,
-) -> Result<CleanupResult> {
+pub async fn cleanup_expired_tokens(state: State<'_, TokenManagerState>) -> Result<CleanupResult> {
     let token_manager_guard = state.read().await;
 
-    let token_manager = token_manager_guard.as_ref()
+    let token_manager = token_manager_guard
+        .as_ref()
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
@@ -211,7 +265,8 @@ pub async fn validate_token(
 ) -> Result<ValidationResult> {
     let token_manager_guard = state.read().await;
 
-    let token_manager = token_manager_guard.as_ref()
+    let token_manager = token_manager_guard
+        .as_ref()
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
