@@ -553,8 +553,6 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             checked={record.enabled}
             loading={togglingServers.has(record.name)}
             onChange={() => handleToggleServer(record.name)}
-            checkedChildren={t('mcp_server.status.enabled')}
-            unCheckedChildren={t('mcp_server.status.disabled')}
           />
           <Button
             size='small'

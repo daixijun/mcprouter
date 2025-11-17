@@ -83,7 +83,10 @@ const Settings: React.FC = memo(() => {
       const { ConfigService } = await import('../services/config-service')
       // 添加超时处理，防止请求卡住
       const timeoutPromise = new Promise<SystemSettings>((_, reject) => {
-        setTimeout(() => reject(new Error(t('settings.errors.load_settings_timeout'))), 10000)
+        setTimeout(
+          () => reject(new Error(t('settings.errors.load_settings_timeout'))),
+          10000,
+        )
       })
 
       const loadedSettings = await Promise.race([
@@ -97,7 +100,9 @@ const Settings: React.FC = memo(() => {
     } catch (error) {
       console.error('Failed to load settings:', error)
       const errorMessage =
-        error instanceof Error ? error.message : t('settings.errors.load_system_settings_failed')
+        error instanceof Error
+          ? error.message
+          : t('settings.errors.load_system_settings_failed')
       message.error(errorMessage)
     } finally {
       setLoading(false)
@@ -321,14 +326,16 @@ const Settings: React.FC = memo(() => {
                         '../services/config-service'
                       )
                       await ConfigService.saveSystemSettings(settings)
-                      message.success(t('settings.messages.auth_settings_saved'))
+                      message.success(
+                        t('settings.messages.auth_settings_saved'),
+                      )
                     } catch (error) {
                       console.error('Failed to save auth setting:', error)
-                      message.error(t('settings.errors.save_auth_settings_failed'))
+                      message.error(
+                        t('settings.errors.save_auth_settings_failed'),
+                      )
                     }
                   }}
-                  checkedChildren={t('settings.common.enabled')}
-                  unCheckedChildren={t('settings.common.disabled')}
                 />
               </Flex>
             </Col>
@@ -393,8 +400,6 @@ const Settings: React.FC = memo(() => {
                     onChange={(checked) =>
                       handleSystemTraySettingChange('enabled', checked)
                     }
-                    checkedChildren={t('settings.common.enabled')}
-                    unCheckedChildren={t('settings.common.disabled')}
                   />
                 </Flex>
 
@@ -424,8 +429,6 @@ const Settings: React.FC = memo(() => {
                     onChange={(checked) =>
                       handleSystemTraySettingChange('close_to_tray', checked)
                     }
-                    checkedChildren={t('settings.common.enabled')}
-                    unCheckedChildren={t('settings.common.disabled')}
                     disabled={!settings.settings?.system_tray?.enabled}
                   />
                 </Flex>
@@ -446,8 +449,6 @@ const Settings: React.FC = memo(() => {
                   <Switch
                     checked={autostartEnabled}
                     onChange={toggleAutostart}
-                    checkedChildren={t('settings.common.enabled')}
-                    unCheckedChildren={t('settings.common.disabled')}
                   />
                 </Flex>
               </Flex>

@@ -399,14 +399,12 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
                       )}
                     </div>
                   </Flex>
-                  <Switch
-                    checked={tool.enabled}
-                    onChange={(checked) => handleToggleTool(tool.name, checked)}
-                    loading={updating === tool.name}
-                    checkedChildren='启用'
-                    unCheckedChildren='禁用'
-                    size='small'
-                  />
+                <Switch
+                  checked={tool.enabled}
+                  onChange={(checked) => handleToggleTool(tool.name, checked)}
+                  loading={updating === tool.name}
+                  size='small'
+                />
                 </Flex>
               </Card>
             ))}
