@@ -1,8 +1,8 @@
 import { GlobalOutlined } from '@ant-design/icons'
-import { Select, Space, Typography, message } from 'antd'
+import { App as AntdApp, Select, Space, Typography } from 'antd'
 import React, { useState } from 'react'
-import { LANGUAGE_OPTIONS } from '../constants/language'
 import { useTranslation } from 'react-i18next'
+import { LANGUAGE_OPTIONS } from '../constants/language'
 
 const { Text } = Typography
 const { Option } = Select
@@ -24,6 +24,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
 }) => {
   const { i18n, t } = useTranslation()
   const [loading, setLoading] = useState(false)
+  const { message } = AntdApp.useApp()
 
   const handleLanguageChange = async (newLanguage: string) => {
     if (newLanguage === i18n.language) return

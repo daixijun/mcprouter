@@ -13,6 +13,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import {
   Alert,
+  App as AntdApp,
   Button,
   Card,
   Col,
@@ -30,7 +31,6 @@ import {
   Tag,
   Tooltip,
   Typography,
-  message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import React, { useEffect, useState } from 'react'
@@ -48,6 +48,7 @@ const { Text, Paragraph } = Typography
 
 const TokenManagement: React.FC = () => {
   const { t } = useTranslation()
+  const { message } = AntdApp.useApp()
   const [tokens, setTokens] = useState<Token[]>([])
   const [stats, setStats] = useState<TokenStats | null>(null)
   const [loading, setLoading] = useState(false)
@@ -249,15 +250,6 @@ const TokenManagement: React.FC = () => {
   const handleEditToken = async (token: Token) => {
     setEditingToken(token)
     await fetchAvailablePermissions()
-    editForm.setFieldsValue({
-      name: token.name,
-      description: token.description,
-      permissions: {
-        allowed_tools: token.allowed_tools || [],
-        allowed_resources: token.allowed_resources || [],
-        allowed_prompts: token.allowed_prompts || [],
-      },
-    })
     setEditModalVisible(true)
   }
 
@@ -520,7 +512,11 @@ const TokenManagement: React.FC = () => {
         onClose={() => {
           setCreateModalVisible(false)
           setCreatedToken(null)
-          form.resetFields()
+        }}
+        afterOpenChange={(open) => {
+          if (open) {
+            form.resetFields()
+          }
         }}
         footer={null}
         width='80%'
@@ -567,11 +563,7 @@ const TokenManagement: React.FC = () => {
               name='permissions'
               label={t('token.form.permissions')}
               tooltip={t('token.form.permissions_tooltip')}>
-              <PermissionSelector
-                value={form.getFieldValue('permissions')}
-                onChange={(permissions) => form.setFieldsValue({ permissions })}
-                availablePermissions={availablePermissions}
-              />
+              <PermissionSelector availablePermissions={availablePermissions} />
             </Form.Item>
 
             <Form.Item>
@@ -649,7 +641,6 @@ const TokenManagement: React.FC = () => {
               <Button
                 onClick={() => {
                   setCreatedToken(null)
-                  form.resetFields()
                 }}>
                 {t('token.actions.create_another')}
               </Button>
@@ -658,7 +649,6 @@ const TokenManagement: React.FC = () => {
                 onClick={async () => {
                   setCreateModalVisible(false)
                   setCreatedToken(null)
-                  form.resetFields()
                   await fetchTokens()
                   await fetchStats()
                 }}>
@@ -718,7 +708,6 @@ const TokenManagement: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={async () => {
             setCreatedToken(null)
-            form.resetFields()
             await fetchAvailablePermissions()
             setCreateModalVisible(true)
           }}>
@@ -758,7 +747,6 @@ const TokenManagement: React.FC = () => {
                     onClick={() => {
                       setCreatedToken(null)
                       setCreateModalVisible(true)
-                      form.resetFields()
                     }}>
                     {t('token.empty.create_first')}
                   </Button>
@@ -791,7 +779,6 @@ const TokenManagement: React.FC = () => {
         onClose={() => {
           setEditModalVisible(false)
           setEditingToken(null)
-          editForm.resetFields()
         }}
         footer={
           <div style={{ textAlign: 'right' }}>
@@ -800,7 +787,6 @@ const TokenManagement: React.FC = () => {
                 onClick={() => {
                   setEditModalVisible(false)
                   setEditingToken(null)
-                  editForm.resetFields()
                 }}>
                 {t('token.actions.cancel')}
               </Button>
@@ -814,18 +800,21 @@ const TokenManagement: React.FC = () => {
           </div>
         }
         width='70%'
-        placement='right'>
-        <Form
-          form={editForm}
-          layout='vertical'
-          onFinish={handleUpdateToken}
-          initialValues={{
-            name: editingToken?.name,
-            description: editingToken?.description,
-            allowed_tools: editingToken?.allowed_tools || [],
-            allowed_resources: editingToken?.allowed_resources || [],
-            allowed_prompts: editingToken?.allowed_prompts || [],
-          }}>
+        placement='right'
+        afterOpenChange={(open) => {
+          if (open && editingToken) {
+            editForm.setFieldsValue({
+              name: editingToken.name,
+              description: editingToken.description,
+              permissions: {
+                allowed_tools: editingToken.allowed_tools || [],
+                allowed_resources: editingToken.allowed_resources || [],
+                allowed_prompts: editingToken.allowed_prompts || [],
+              },
+            })
+          }
+        }}>
+        <Form form={editForm} layout='vertical' onFinish={handleUpdateToken}>
           <Form.Item
             name='name'
             label={t('token.form.name')}
@@ -855,13 +844,7 @@ const TokenManagement: React.FC = () => {
             name='permissions'
             label={t('token.form.permissions')}
             tooltip={t('token.form.permissions_tooltip')}>
-            <PermissionSelector
-              value={editForm.getFieldValue('permissions')}
-              onChange={(permissions) =>
-                editForm.setFieldsValue({ permissions })
-              }
-              availablePermissions={availablePermissions}
-            />
+            <PermissionSelector availablePermissions={availablePermissions} />
           </Form.Item>
         </Form>
       </Drawer>
