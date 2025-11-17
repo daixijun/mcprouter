@@ -874,12 +874,12 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                   rows={12}
                   style={{ marginTop: '4px' }}
                 />
-                <Text
-                  type='secondary'
+                <div
                   style={{
                     fontSize: '12px',
                     marginTop: '4px',
                     display: 'block',
+                    color: 'rgba(0, 0, 0, 0.45)',
                   }}
                   dangerouslySetInnerHTML={{
                     __html: t('mcp_server.form.json_config_help'),
