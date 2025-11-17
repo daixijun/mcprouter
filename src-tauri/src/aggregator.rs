@@ -544,7 +544,7 @@ impl McpAggregator {
         let mut aggregated_tools: Vec<McpTool> = Vec::new();
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
         let servers = servers_lock.read().await;
-        tracing::info!("Found {} MCP servers in memory", servers.len());
+        tracing::debug!("Found {} MCP servers in memory", servers.len());
         for (name, config) in servers.iter() {
             tracing::info!(
                 "Server '{}' - enabled: {}, transport: {:?}, tools: {}",
@@ -621,7 +621,7 @@ impl McpAggregator {
         let mut aggregated_prompts: Vec<rmcp::model::Prompt> = Vec::new();
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
         let servers = servers_lock.read().await;
-        tracing::info!("Found {} MCP servers in memory for prompts", servers.len());
+        tracing::debug!("Found {} MCP servers in memory for prompts", servers.len());
 
         for (server_name, server_config) in servers.iter() {
             if !server_config.enabled {
@@ -1182,7 +1182,7 @@ impl ServerHandler for McpAggregator {
         _request: InitializeRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, RmcpErrorData> {
-        tracing::info!("Initialize request received");
+        tracing::debug!("Initialize request received");
 
         Ok(InitializeResult {
             protocol_version: ProtocolVersion::default(),
@@ -1315,7 +1315,7 @@ impl ServerHandler for McpAggregator {
         request: CallToolRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, RmcpErrorData> {
-        tracing::info!("Call tool request received for name: {}", request.name);
+        tracing::debug!("Call tool request received for name: {}", request.name);
 
         // 如果认证未启用，允许所有工具调用
         if !self.config.is_auth_enabled() {
@@ -1354,7 +1354,7 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            tracing::info!("工具 {} 权限验证通过", request.name);
+            tracing::debug!("工具 {} 权限验证通过", request.name);
         }
 
         // Parse the tool name to extract server name and original name
@@ -1409,7 +1409,7 @@ impl ServerHandler for McpAggregator {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, RmcpErrorData> {
-        tracing::info!("List prompts request received");
+        tracing::debug!("List prompts request received");
 
         // 如果认证未启用，返回所有提示词
         if !self.config.is_auth_enabled() {
@@ -1484,7 +1484,7 @@ impl ServerHandler for McpAggregator {
                 } else {
                     None
                 };
-                tracing::info!("成功列出 {} 个有权限的提示词", total);
+                tracing::debug!("成功列出 {} 个有权限的提示词", total);
                 Ok(ListPromptsResult {
                     prompts: slice,
                     next_cursor: next,
@@ -1506,7 +1506,7 @@ impl ServerHandler for McpAggregator {
         request: GetPromptRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, RmcpErrorData> {
-        tracing::info!("Get prompt request received for name: {}", request.name);
+        tracing::debug!("Get prompt request received for name: {}", request.name);
 
         // 如果认证未启用，允许所有提示词获取
         if !self.config.is_auth_enabled() {
@@ -1545,7 +1545,7 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            tracing::info!("提示词 {} 权限验证通过", request.name);
+            tracing::debug!("提示词 {} 权限验证通过", request.name);
         }
 
         // Parse the prompt name to extract server name and original name
@@ -1620,7 +1620,7 @@ impl ServerHandler for McpAggregator {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, RmcpErrorData> {
-        tracing::info!("List resources request received");
+        tracing::debug!("List resources request received");
 
         // 如果认证未启用，返回所有资源
         if !self.config.is_auth_enabled() {
@@ -1695,7 +1695,7 @@ impl ServerHandler for McpAggregator {
                 } else {
                     None
                 };
-                tracing::info!("成功列出 {} 个有权限的资源", total);
+                tracing::debug!("成功列出 {} 个有权限的资源", total);
                 Ok(ListResourcesResult {
                     resources: slice,
                     next_cursor: next,
@@ -1717,7 +1717,7 @@ impl ServerHandler for McpAggregator {
         request: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, RmcpErrorData> {
-        tracing::info!("Read resource request received for URI: {}", request.uri);
+        tracing::debug!("Read resource request received for URI: {}", request.uri);
 
         // 如果认证未启用，允许所有资源读取
         if !self.config.is_auth_enabled() {
@@ -1756,7 +1756,7 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            tracing::info!("资源 {} 权限验证通过", request.uri);
+            tracing::debug!("资源 {} 权限验证通过", request.uri);
         }
 
         // Parse the URI to extract server name and original URI

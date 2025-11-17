@@ -156,15 +156,15 @@ pub async fn toggle_token(token_id: String, state: State<'_, TokenManagerState>)
 /// Get token statistics
 #[tauri::command]
 pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<TokenStats> {
-    tracing::info!("get_token_stats called");
+    tracing::debug!("get_token_stats called");
 
     let token_manager_guard = state.read().await;
-    tracing::info!("TokenManager state lock acquired");
+    tracing::debug!("TokenManager state lock acquired");
 
     // Check if TokenManager is initialized
     let token_manager = match token_manager_guard.as_ref() {
         Some(manager) => {
-            tracing::info!("TokenManager is initialized, getting reference");
+            tracing::debug!("TokenManager is initialized, getting reference");
             manager.clone()
         }
         None => {
@@ -175,10 +175,10 @@ pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<Toke
         }
     };
 
-    tracing::info!("TokenManager reference obtained, calling list()");
+    tracing::debug!("TokenManager reference obtained, calling list()");
 
     let tokens = token_manager.list().await?;
-    tracing::info!("Token list retrieved, count: {}", tokens.len());
+    tracing::debug!("Token list retrieved, count: {}", tokens.len());
 
     let total_count = tokens.len();
     let active_count = tokens.iter().filter(|t| !t.is_expired).count();
@@ -189,7 +189,7 @@ pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<Toke
     // Find most recently used token
     let last_used = tokens.iter().filter_map(|t| t.last_used_at).max();
 
-    tracing::info!(
+    tracing::debug!(
         "TokenStats calculated: total={}, active={}, expired={}, usage={}",
         total_count,
         active_count,
@@ -208,7 +208,7 @@ pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<Toke
     // Debug serialization
     match serde_json::to_string(&stats) {
         Ok(json) => {
-            tracing::info!("TokenStats serialized to JSON: {}", json);
+            tracing::debug!("TokenStats serialized to JSON: {}", json);
         }
         Err(e) => {
             tracing::error!("Failed to serialize TokenStats: {}", e);

@@ -262,7 +262,7 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         }
     }
 
-    tracing::info!("System tray initialized successfully");
+    tracing::debug!("System tray initialized successfully");
     Ok(())
 }
 
@@ -346,8 +346,26 @@ pub async fn run() {
             use tracing_subscriber::fmt;
 
             let subscriber = tracing_subscriber::registry()
-                .with(fmt::layer().with_filter(tracing_level)) // Log to stdout/stderr with level filter
-                .with(fmt::layer().with_writer(non_blocking).with_ansi(false).with_filter(tracing_level)); // Log to file without ANSI codes with level filter
+                .with(
+                    fmt::layer()
+                        .with_target(false)
+                        .with_level(false)
+                        .with_file(false)
+                        .with_line_number(false)
+                        .event_format(fmt::format().compact())
+                        .with_filter(tracing_level),
+                )
+                .with(
+                    fmt::layer()
+                        .with_writer(non_blocking)
+                        .with_ansi(false)
+                        .with_target(false)
+                        .with_level(false)
+                        .with_file(false)
+                        .with_line_number(false)
+                        .event_format(fmt::format().compact())
+                        .with_filter(tracing_level),
+                );
 
             tracing::subscriber::set_global_default(subscriber)
                 .expect("Failed to set tracing subscriber");
@@ -433,7 +451,7 @@ pub async fn run() {
                         tracing::info!("MCP services loaded");
 
                         // 5) 自动连接所有启用的服务
-                        tracing::info!("🚀 Starting auto-connect services at startup...");
+                        tracing::info!("Auto-connect enabled services");
                         if let Err(e) = SERVICE_MANAGER.auto_connect_enabled_services(&app_handle).await {
                             tracing::error!("Failed to auto-connect services: {}", e);
                         }
@@ -493,7 +511,7 @@ pub async fn run() {
                             // Prevent the window from closing and hide instead
                             api.prevent_close();
                             let _ = window_clone.hide();
-                            tracing::info!("Window minimized to tray (runtime config)");
+                            tracing::debug!("Window minimized to tray (runtime config)");
                         }
                     }
                 });
@@ -509,7 +527,7 @@ pub async fn run() {
                         && tray_enabled_start;
                 if should_minimize_on_start {
                     let _ = main_window.hide();
-                    tracing::info!("Window hidden on startup due to configuration");
+                    tracing::debug!("Window hidden on startup due to configuration");
                 }
             }
 

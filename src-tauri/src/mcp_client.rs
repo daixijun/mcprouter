@@ -217,7 +217,7 @@ impl McpClientManager {
             }
         }
 
-        tracing::info!("Creating STDIO MCP service: {}", service_config.name);
+        tracing::debug!("Creating STDIO MCP service: {}", service_config.name);
 
         // Create transport
         let mut command_builder = Command::new(command);
@@ -264,7 +264,7 @@ impl McpClientManager {
             McpError::InvalidConfiguration("SSE service requires URL".to_string())
         })?;
 
-        tracing::info!("Creating SSE MCP service: {}", url);
+        tracing::debug!("Creating SSE MCP service: {}", url);
 
         // Create a custom reqwest client with authentication headers if provided
         let client = create_sse_reqwest_client(service_config.headers.as_ref())?;
@@ -314,7 +314,7 @@ impl McpClientManager {
             McpError::InvalidConfiguration("HTTP service requires URL".to_string())
         })?;
 
-        tracing::info!("Creating HTTP MCP service: {}", url);
+        tracing::debug!("Creating HTTP MCP service: {}", url);
         tracing::debug!("Service '{}' URL: {}", service_config.name, url);
 
         // Log custom headers if present
@@ -417,7 +417,7 @@ impl McpClientManager {
         }
 
         if let Some(ref client_arc) = connection.client {
-            tracing::info!(
+            tracing::debug!(
                 "Attempting to fetch tools from rmcp client {}",
                 connection_id
             );
@@ -453,7 +453,7 @@ impl McpClientManager {
                 }
             };
 
-            tracing::info!(
+            tracing::debug!(
                 "Successfully fetched {} tools from {} ({}ms)",
                 result.tools.len(),
                 connection_id,
@@ -492,7 +492,7 @@ impl McpClientManager {
         }
 
         if let Some(ref client_arc) = connection.client {
-            tracing::info!(
+            tracing::debug!(
                 "Attempting to fetch resources from rmcp client {}",
                 connection_id
             );
@@ -523,7 +523,7 @@ impl McpClientManager {
                 }
             };
 
-            tracing::info!(
+            tracing::debug!(
                 "Successfully fetched {} resources from {} ({}ms)",
                 result.resources.len(),
                 connection_id,
@@ -556,7 +556,7 @@ impl McpClientManager {
         }
 
         if let Some(ref client_arc) = connection.client {
-            tracing::info!(
+            tracing::debug!(
                 "Attempting to fetch prompts from rmcp client {}",
                 connection_id
             );
@@ -587,7 +587,7 @@ impl McpClientManager {
                 }
             };
 
-            tracing::info!(
+            tracing::debug!(
                 "Successfully fetched {} prompts from {} ({}ms)",
                 result.prompts.len(),
                 connection_id,
@@ -629,7 +629,7 @@ impl McpClientManager {
         }
 
         if let Some(ref client_arc) = connection.client {
-            tracing::info!(
+            tracing::debug!(
                 "Attempting to read resource '{}' from rmcp client {}",
                 uri,
                 connection_id
@@ -660,7 +660,7 @@ impl McpClientManager {
                 }
             };
 
-            tracing::info!(
+            tracing::debug!(
                 "Successfully read resource '{}' from {} ({}ms, {} contents)",
                 uri,
                 connection_id,
@@ -694,7 +694,7 @@ impl McpClientManager {
         }
 
         if let Some(ref client_arc) = connection.client {
-            tracing::info!(
+            tracing::debug!(
                 "Attempting to get prompt '{}' from rmcp client {}",
                 name,
                 connection_id
@@ -732,7 +732,7 @@ impl McpClientManager {
                 }
             };
 
-            tracing::info!(
+            tracing::debug!(
                 "Successfully got prompt '{}' from {} ({}ms, {} messages)",
                 name,
                 connection_id,
@@ -766,7 +766,7 @@ impl McpClientManager {
         }
 
         if let Some(ref client_arc) = connection.client {
-            tracing::info!(
+            tracing::debug!(
                 "Attempting to call tool '{}' from rmcp client {}",
                 name,
                 connection_id
@@ -800,7 +800,7 @@ impl McpClientManager {
                 }
             };
 
-            tracing::info!(
+            tracing::debug!(
                 "Successfully called tool '{}' from {} ({}ms, {} content items)",
                 name,
                 connection_id,

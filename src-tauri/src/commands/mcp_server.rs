@@ -64,7 +64,7 @@ pub async fn add_mcp_server(
         .map(|hdrs| hdrs.into_iter().collect::<HashMap<String, String>>());
 
     // Use the provided name as the service identifier
-    tracing::info!(
+    tracing::debug!(
         "Adding service: {} with transport: {:?}",
         request.name,
         service_transport
@@ -75,7 +75,7 @@ pub async fn add_mcp_server(
         service_transport,
         ServiceTransport::Sse | ServiceTransport::Http
     ) {
-        tracing::info!(
+        tracing::debug!(
             "Adding HTTP server: {} with URL: {:?}",
             request.name,
             request.url
@@ -109,7 +109,7 @@ pub async fn add_mcp_server(
     };
 
     // Add service using the service manager
-    tracing::info!(
+    tracing::debug!(
         "Calling SERVICE_MANAGER.add_mcp_server to add service: {}",
         request.name
     );
@@ -153,7 +153,7 @@ pub async fn update_mcp_server(
         .headers
         .map(|hdrs| hdrs.into_iter().collect::<HashMap<String, String>>());
 
-    tracing::info!(
+    tracing::debug!(
         "Updating service: {} with transport: {:?}",
         request.name,
         service_transport
@@ -222,13 +222,13 @@ pub async fn list_mcp_server_tools(
     app_handle: tauri::AppHandle,
     name: String,
 ) -> Result<Vec<crate::types::McpToolInfo>> {
-    tracing::info!("Getting tool list for server '{}'", name);
+    tracing::debug!("Getting tool list for server '{}'", name);
     match SERVICE_MANAGER
         .list_mcp_server_tools(&name, &app_handle)
         .await
     {
         Ok(tools) => {
-            tracing::info!("Successfully retrieved {} tools", tools.len());
+            tracing::debug!("Successfully retrieved {} tools", tools.len());
             Ok(tools)
         }
         Err(e) => {
@@ -262,13 +262,13 @@ pub async fn list_mcp_server_resources(
     app_handle: tauri::AppHandle,
     name: String,
 ) -> Result<Vec<crate::types::McpResourceInfo>> {
-    tracing::info!("Getting resource list for server '{}'", name);
+    tracing::debug!("Getting resource list for server '{}'", name);
     match SERVICE_MANAGER
         .list_mcp_server_resources(&name, &app_handle)
         .await
     {
         Ok(resources) => {
-            tracing::info!("Successfully retrieved {} resources", resources.len());
+            tracing::debug!("Successfully retrieved {} resources", resources.len());
             Ok(resources)
         }
         Err(e) => {
@@ -283,13 +283,13 @@ pub async fn list_mcp_server_prompts(
     app_handle: tauri::AppHandle,
     name: String,
 ) -> Result<Vec<crate::types::McpPromptInfo>> {
-    tracing::info!("Getting prompt list for server '{}'", name);
+    tracing::debug!("Getting prompt list for server '{}'", name);
     match SERVICE_MANAGER
         .list_mcp_server_prompts(&name, &app_handle)
         .await
     {
         Ok(prompts) => {
-            tracing::info!("Successfully retrieved {} prompts", prompts.len());
+            tracing::debug!("Successfully retrieved {} prompts", prompts.len());
             Ok(prompts)
         }
         Err(e) => {

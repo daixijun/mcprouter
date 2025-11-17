@@ -126,7 +126,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
     use serde_json::Value;
 
     // Debug: Log the received settings
-    tracing::info!(
+    tracing::debug!(
         "save_settings called with data: {}",
         serde_json::to_string_pretty(&settings)
             .unwrap_or_else(|_| "Failed to serialize".to_string())
@@ -204,7 +204,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                     // If system tray is disabled, automatically disable "close to tray" feature
                     if !*enabled {
                         tray_mut.close_to_tray = Some(false);
-                        tracing::info!(
+                        tracing::debug!(
                             "System tray disabled, automatically disabling close-to-tray feature"
                         );
                     }
@@ -262,33 +262,33 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
 
             // Server config (support if provided at top-level payload)
             if let Some(Value::Object(server_obj)) = settings.get("server") {
-                tracing::info!("Processing server config: {:?}", server_obj);
+                tracing::debug!("Processing server config: {:?}", server_obj);
 
                 if let Some(Value::String(host)) = server_obj.get("host") {
                     config.server.host = host.clone();
-                    tracing::info!("Updated host: {}", host);
+                    tracing::debug!("Updated host: {}", host);
                 }
                 if let Some(Value::Number(port)) = server_obj.get("port") {
                     if let Some(p) = port.as_u64() {
                         config.server.port = p as u16;
-                        tracing::info!("Updated port: {}", p);
+                        tracing::debug!("Updated port: {}", p);
                     }
                 }
                 if let Some(Value::Number(max_conn)) = server_obj.get("max_connections") {
                     if let Some(mc) = max_conn.as_u64() {
                         config.server.max_connections = mc as usize;
-                        tracing::info!("Updated max_connections: {}", mc);
+                        tracing::debug!("Updated max_connections: {}", mc);
                     }
                 }
                 if let Some(Value::Number(timeout)) = server_obj.get("timeout_seconds") {
                     if let Some(ts) = timeout.as_u64() {
                         config.server.timeout_seconds = ts;
-                        tracing::info!("Updated timeout_seconds: {}", ts);
+                        tracing::debug!("Updated timeout_seconds: {}", ts);
                     }
                 }
                 if let Some(Value::Bool(auth)) = server_obj.get("auth") {
                     config.server.auth = *auth;
-                    tracing::info!("Updated auth: {}", auth);
+                    tracing::debug!("Updated auth: {}", auth);
                 } else {
                     tracing::warn!("auth field not found in server config or not a boolean");
                 }
@@ -327,7 +327,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         };
 
         if let Some(aggregator) = &aggregator_clone {
-            tracing::info!("Shutting down existing aggregator...");
+            tracing::debug!("Shutting down existing aggregator...");
             aggregator.trigger_shutdown().await;
         }
 
@@ -348,7 +348,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         };
 
         // 创建新的聚合器实例
-        tracing::info!(
+        tracing::debug!(
             "Creating new aggregator with updated configuration (auth: {})",
             server_config.auth
         );
@@ -377,7 +377,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             tracing::info!("Aggregator restarted successfully with new configuration");
         }
         if tray_changed {
-            tracing::info!(
+            tracing::debug!(
                 "System tray configuration changed during server restart, enabled: {}",
                 tray_new
             );
@@ -385,20 +385,20 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             if tray_new {
                 if let Some(tray) = app.tray_by_id("main_tray") {
                     let _ = tray.set_visible(true);
-                    tracing::info!("Tray visibility updated: visible");
+                    tracing::debug!("Tray visibility updated: visible");
                 } else {
                     // Rebuild tray if it was not created at startup
                     if let Err(e) = build_main_tray(&app) {
                         tracing::error!("Failed to rebuild system tray: {}", e);
                     } else {
-                        tracing::info!("System tray rebuilt and made visible");
+                        tracing::debug!("System tray rebuilt and made visible");
                     }
                 }
             } else {
                 if let Some(tray) = app.tray_by_id("main_tray") {
                     let _ = tray.set_visible(false);
                 }
-                tracing::info!("Tray icon hidden after aggregator restart");
+                tracing::debug!("Tray icon hidden after aggregator restart");
             }
 
             // Config has been automatically saved to file via SERVICE_MANAGER.update_config
@@ -409,25 +409,25 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         ))
     } else {
         if tray_changed {
-            tracing::info!("System tray configuration changed, enabled: {}", tray_new);
+            tracing::debug!("System tray configuration changed, enabled: {}", tray_new);
 
             if tray_new {
                 if let Some(tray) = app.tray_by_id("main_tray") {
                     let _ = tray.set_visible(true);
-                    tracing::info!("Tray visibility updated: visible");
+                    tracing::debug!("Tray visibility updated: visible");
                 } else {
                     // Rebuild tray if it was not created at startup
                     if let Err(e) = build_main_tray(&app) {
                         tracing::error!("Failed to rebuild system tray: {}", e);
                     } else {
-                        tracing::info!("System tray rebuilt and made visible");
+                        tracing::debug!("System tray rebuilt and made visible");
                     }
                 }
             } else {
                 if let Some(tray) = app.tray_by_id("main_tray") {
                     let _ = tray.set_visible(false);
                 }
-                tracing::info!("Tray icon hidden");
+                tracing::debug!("Tray icon hidden");
             }
 
             // Config has been automatically saved to file via SERVICE_MANAGER.update_config
@@ -489,9 +489,10 @@ pub async fn get_language_preference() -> Result<Option<String>> {
 pub async fn save_language_preference(language: String) -> Result<String> {
     // Validate language
     if !["zh-CN", "en-US"].contains(&language.as_str()) {
-        return Err(McpError::ConfigError(
-            format!("Unsupported language: {}", language)
-        ));
+        return Err(McpError::ConfigError(format!(
+            "Unsupported language: {}",
+            language
+        )));
     }
 
     // Update language preference
