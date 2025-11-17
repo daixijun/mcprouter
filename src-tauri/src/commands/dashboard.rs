@@ -3,8 +3,8 @@
 use crate::config;
 use crate::error::{McpError, Result};
 use crate::{AGGREGATOR, MCP_CLIENT_MANAGER, SERVICE_MANAGER, STARTUP_TIME};
+use serde::{Deserialize, Serialize};
 use std::time::UNIX_EPOCH;
-use serde::{Serialize, Deserialize};
 
 /// Aggregator status enumeration
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,7 +30,9 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
     // Calculate failed services count (enabled but failed to connect)
     let failed_services = services
         .iter()
-        .filter(|s| s.enabled && (s.status == "failed" || s.status == "disconnected" || s.status == "error"))
+        .filter(|s| {
+            s.enabled && (s.status == "failed" || s.status == "disconnected" || s.status == "error")
+        })
         .count();
 
     // Get active connections from MCP_CLIENT_MANAGER
@@ -79,7 +81,7 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
     let aggregator_endpoint = format!("http://{}:{}/mcp", server_config.host, server_config.port);
 
     // Determine aggregator status
-    let aggregator_status = if let Some(ref aggregator) = aggregator_clone {
+    let aggregator_status = if aggregator_clone.is_some() {
         // Check if aggregator is actually running by looking at its statistics
         match aggregator_stats.get("status").and_then(|v| v.as_str()) {
             Some("running") | Some("active") => AggregatorStatus::Running,
@@ -87,7 +89,8 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
             Some("error") | Some("failed") => AggregatorStatus::Error,
             _ => {
                 // If no explicit status, infer from connection count
-                let connected_services = aggregator_stats.get("connected_services")
+                let connected_services = aggregator_stats
+                    .get("connected_services")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
                 if connected_services > 0 {
