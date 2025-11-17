@@ -25,6 +25,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ToolManager from '../components/ToolManager'
 import { McpServerService } from '../services/mcp-server-service'
 import type { McpServerInfo } from '../types'
@@ -39,6 +40,7 @@ interface McpServerManagerProps {
 const McpServerManager: React.FC<McpServerManagerProps> = ({
   onServiceChange,
 }) => {
+  const { t } = useTranslation()
   const { notification, message } = App.useApp()
   const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([])
   const [showAddService, setShowAddService] = useState(false)
@@ -78,7 +80,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       setMcpServers(servers)
     } catch (error) {
       console.error('Failed to fetch MCP servers:', error)
-      message.error('获取 MCP 服务器列表失败')
+      message.error(t('mcp_server.messages.fetch_servers_failed'))
     } finally {
       setLoading(false)
     }
@@ -91,7 +93,14 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       const newState = await McpServerService.toggleMcpServer(serverName)
 
-      message.success(`服务器 "${serverName}" 已${newState ? '启用' : '禁用'}`)
+      message.success(
+        t('mcp_server.messages.toggle_server_success', {
+          name: serverName,
+          action: newState
+            ? t('mcp_server.status.enabled')
+            : t('mcp_server.status.disabled'),
+        }),
+      )
 
       // 后端已经等待操作完成，现在重新加载服务列表
       await fetchMcpServers()
@@ -100,7 +109,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       console.error('Failed to toggle server:', error)
 
       // 提取错误信息，处理不同类型的错误
-      let errorMessage = '切换服务器状态失败，请检查服务配置'
+      let errorMessage = t('mcp_server.messages.toggle_server_failed')
 
       if (error instanceof Error) {
         errorMessage = error.message
@@ -120,7 +129,9 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       // 使用 notification 显示详细的错误信息
       notification.error({
-        message: `服务器 "${serverName}" 操作失败`,
+        message: t('mcp_server.messages.server_operation_failed', {
+          name: serverName,
+        }),
         description: errorMessage,
         placement: 'topRight',
         duration: 5,
@@ -143,10 +154,10 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       await McpServerService.removeMcpServer(serverName)
       await fetchMcpServers()
       onServiceChange?.()
-      message.success('服务器已删除')
+      message.success(t('mcp_server.messages.delete_server_success'))
     } catch (error) {
       console.error('Failed to delete server:', error)
-      message.error('删除服务器失败')
+      message.error(t('mcp_server.messages.delete_server_failed'))
     }
   }
 
@@ -202,12 +213,16 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             !configData.mcpServers ||
             typeof configData.mcpServers !== 'object'
           ) {
-            setJsonError('配置格式错误：必须包含 mcpServers 对象')
+            setJsonError(
+              t('mcp_server.messages.config_format_error_mcp_servers_missing'),
+            )
             return
           }
 
           if (Object.keys(configData.mcpServers).length === 0) {
-            setJsonError('配置格式错误：mcpServers 对象不能为空')
+            setJsonError(
+              t('mcp_server.messages.config_format_error_mcp_servers_empty'),
+            )
             return
           }
 
@@ -223,9 +238,11 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         } catch (error: any) {
           console.error('Failed to import JSON config:', error)
           if (error.code === 'JSON_PARSE_ERROR') {
-            setJsonError('JSON 格式无效，请检查配置')
+            setJsonError(t('mcp_server.messages.json_invalid'))
           } else {
-            setJsonError(error.message || '导入配置失败，请检查配置格式')
+            setJsonError(
+              error.message || t('mcp_server.messages.import_config_failed'),
+            )
           }
           return
         }
@@ -254,11 +271,11 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         setShowAddService(false)
         resetForm()
         onServiceChange?.()
-        message.success('服务已添加')
+        message.success(t('mcp_server.messages.add_service_success'))
       }
     } catch (error) {
       console.error('Failed to add service:', error)
-      message.error('添加服务失败')
+      message.error(t('mcp_server.messages.add_service_failed'))
     }
   }
 
@@ -302,7 +319,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         editingService.enabled,
       )
 
-      message.success('服务已更新')
+      message.success(t('mcp_server.messages.update_service_success'))
       setShowEditService(false)
       setEditingService(null)
       resetForm()
@@ -310,7 +327,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       await fetchMcpServers()
     } catch (error) {
       console.error('Failed to update service:', error)
-      message.error('更新服务失败')
+      message.error(t('mcp_server.messages.update_service_failed'))
     }
   }
 
@@ -333,7 +350,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   // Define table columns
   const columns: TableProps<McpServerInfo>['columns'] = [
     {
-      title: '服务名称',
+      title: t('mcp_server.table.service_name'),
       dataIndex: 'name',
       key: 'name',
       width: 250,
@@ -353,7 +370,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     },
 
     {
-      title: '协议',
+      title: t('mcp_server.table.protocol'),
       dataIndex: 'type',
       key: 'type',
       width: 100,
@@ -388,15 +405,15 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       // },
     },
     {
-      title: '状态',
+      title: t('mcp_server.table.status'),
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 120,
       filters: [
-        { text: '已连接', value: 'connected' },
-        { text: '连接中', value: 'connecting' },
-        { text: '已断开', value: 'disconnected' },
-        { text: '连接失败', value: 'failed' },
+        { text: t('mcp_server.status.connected'), value: 'connected' },
+        { text: t('mcp_server.status.connecting'), value: 'connecting' },
+        { text: t('mcp_server.status.disconnected'), value: 'disconnected' },
+        { text: t('mcp_server.status.failed'), value: 'failed' },
       ],
       onFilter: (value, record: McpServerInfo) => record.status === value,
       render: (status: string, record: McpServerInfo) => {
@@ -406,25 +423,25 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
               return {
                 color: 'success',
                 icon: <CheckCircle size={12} />,
-                text: '已连接',
+                text: t('mcp_server.status.connected'),
               }
             case 'connecting':
               return {
                 color: 'processing',
                 icon: <RotateCcw size={12} />,
-                text: '连接中',
+                text: t('mcp_server.status.connecting'),
               }
             case 'failed':
               return {
                 color: 'error',
                 icon: <AlertCircle size={12} />,
-                text: '连接失败',
+                text: t('mcp_server.status.failed'),
               }
             default:
               return {
                 color: 'default',
                 icon: <XCircle size={12} />,
-                text: '已断开',
+                text: t('mcp_server.status.disconnected'),
               }
           }
         }
@@ -452,16 +469,18 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       },
     },
     {
-      title: '版本',
+      title: t('mcp_server.table.version'),
       dataIndex: 'version',
       key: 'version',
       width: 80,
       render: (version: string) => (
-        <Text style={{ fontSize: '12px' }}>{version || '-'}</Text>
+        <Text style={{ fontSize: '12px' }}>
+          {version || t('mcp_server.empty.no_version')}
+        </Text>
       ),
     },
     {
-      title: '工具数量',
+      title: t('mcp_server.table.tool_count'),
       dataIndex: 'tool_count',
       key: 'tool_count',
       width: 80,
@@ -472,7 +491,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       ),
     },
     {
-      title: '命令/URL',
+      title: t('mcp_server.table.command_url'),
       key: 'commandOrUrl',
       width: 350,
       render: (_, record: McpServerInfo) => {
@@ -507,21 +526,23 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             </Typography.Link>
           )
         }
-        return <>-</>
+        return <>{t('mcp_server.empty.no_command_url')}</>
       },
     },
     {
-      title: '描述',
+      title: t('mcp_server.table.description'),
       dataIndex: 'description',
       key: 'description',
       width: 200,
       ellipsis: true,
       render: (text: string) => (
-        <Text style={{ fontSize: '12px' }}>{text || '-'}</Text>
+        <Text style={{ fontSize: '12px' }}>
+          {text || t('mcp_server.empty.no_description')}
+        </Text>
       ),
     },
     {
-      title: '操作',
+      title: t('mcp_server.table.actions'),
       key: 'actions',
       width: 120,
       fixed: 'right',
@@ -532,8 +553,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             checked={record.enabled}
             loading={togglingServers.has(record.name)}
             onChange={() => handleToggleServer(record.name)}
-            checkedChildren='启用'
-            unCheckedChildren='禁用'
+            checkedChildren={t('mcp_server.status.enabled')}
+            unCheckedChildren={t('mcp_server.status.disabled')}
           />
           <Button
             size='small'
@@ -551,10 +572,12 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             onClick={() => handleEditServer(record)}
           />
           <Popconfirm
-            title='删除服务'
-            description={`确定要删除服务 "${record.name}" 吗？此操作不可撤销。`}
-            okText='确认'
-            cancelText='取消'
+            title={t('mcp_server.modals.delete_service_confirm')}
+            description={t('mcp_server.modals.delete_service_description', {
+              name: record.name,
+            })}
+            okText={t('mcp_server.modals.delete_service_ok')}
+            cancelText={t('mcp_server.modals.delete_service_cancel')}
             okType='danger'
             onConfirm={() => handleDeleteServer(record.name)}>
             <Button
@@ -572,7 +595,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   if (loading && mcpServers.length === 0) {
     return (
       <Flex justify='center' align='center' style={{ height: '256px' }}>
-        <Button loading>加载 MCP 服务器...</Button>
+        <Button loading>{t('mcp_server.messages.loading_servers')}</Button>
       </Flex>
     )
   }
@@ -584,13 +607,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         <Flex justify='flex-end'>
           <Space>
             <Button icon={<RotateCcw size={16} />} onClick={fetchMcpServers}>
-              刷新
+              {t('mcp_server.actions.refresh')}
             </Button>
             <Button
               type='primary'
               icon={<Plus size={16} />}
               onClick={() => setShowAddService(true)}>
-              添加服务
+              {t('mcp_server.actions.add_service')}
             </Button>
           </Space>
         </Flex>
@@ -612,16 +635,16 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 align='center'
                 style={{ textAlign: 'center', padding: '32px 16px' }}>
                 <Title level={4} style={{ marginBottom: '8px' }}>
-                  暂无 MCP 服务
+                  {t('mcp_server.messages.no_services_title')}
                 </Title>
                 <Text type='secondary' style={{ marginBottom: '16px' }}>
-                  添加您的第一个 MCP 服务来开始使用
+                  {t('mcp_server.messages.no_services_description')}
                 </Text>
                 <Button
                   onClick={() => setShowAddService(true)}
                   type='primary'
                   icon={<Plus size={16} />}>
-                  添加服务
+                  {t('mcp_server.messages.add_first_service')}
                 </Button>
               </Flex>
             ),
@@ -631,7 +654,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       {/* Add Service Modal */}
       <Modal
-        title='添加 MCP 服务'
+        title={t('mcp_server.modals.add_service_title')}
         open={showAddService}
         onCancel={() => {
           setShowAddService(false)
@@ -639,10 +662,10 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         }}
         footer={[
           <Button key='cancel' onClick={() => setShowAddService(false)}>
-            取消
+            {t('mcp_server.actions.cancel')}
           </Button>,
           <Button key='add' type='primary' onClick={handleAddService}>
-            添加服务
+            {t('mcp_server.actions.add_service')}
           </Button>,
         ]}
         width={640}>
@@ -653,12 +676,12 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
               type={addServiceMode === 'form' ? 'primary' : 'text'}
               onClick={() => setAddServiceMode('form')}
               style={{ marginRight: '8px' }}>
-              表单配置
+              {t('mcp_server.form.form_config')}
             </Button>
             <Button
               type={addServiceMode === 'json' ? 'primary' : 'text'}
               onClick={() => setAddServiceMode('json')}>
-              JSON 配置
+              {t('mcp_server.form.json_config')}
             </Button>
           </Flex>
 
@@ -666,7 +689,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             <Flex vertical gap='middle'>
               <div>
                 <Text strong>
-                  服务名称 <Text type='danger'>*</Text>
+                  {t('mcp_server.form.service_name')}{' '}
+                  <Text type='danger'>*</Text>
                 </Text>
                 <Input
                   value={newServiceConfig.name}
@@ -676,13 +700,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       name: e.target.value,
                     })
                   }
-                  placeholder='例如: my-mcp-server'
+                  placeholder={t('mcp_server.form.service_name_placeholder')}
                   style={{ marginTop: '4px' }}
                 />
               </div>
 
               <div>
-                <Text strong>描述</Text>
+                <Text strong>{t('mcp_server.form.description')}</Text>
                 <Input
                   value={newServiceConfig.description}
                   onChange={(e) =>
@@ -691,14 +715,15 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       description: e.target.value,
                     })
                   }
-                  placeholder='服务的简要描述'
+                  placeholder={t('mcp_server.form.description_placeholder')}
                   style={{ marginTop: '4px' }}
                 />
               </div>
 
               <div>
                 <Text strong>
-                  传输协议 <Text type='danger'>*</Text>
+                  {t('mcp_server.form.transport_protocol')}{' '}
+                  <Text type='danger'>*</Text>
                 </Text>
                 <Select
                   value={newServiceConfig.type}
@@ -709,9 +734,15 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                     })
                   }
                   options={[
-                    { value: 'stdio', label: 'STDIO (标准输入输出)' },
-                    { value: 'sse', label: 'SSE (服务器发送事件)' },
-                    { value: 'http', label: 'Streamable HTTP' },
+                    {
+                      value: 'stdio',
+                      label: t('mcp_server.protocol_types.stdio'),
+                    },
+                    { value: 'sse', label: t('mcp_server.protocol_types.sse') },
+                    {
+                      value: 'http',
+                      label: t('mcp_server.protocol_types.http'),
+                    },
                   ]}
                   style={{ marginTop: '4px', width: '100%' }}
                 />
@@ -721,7 +752,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 <>
                   <div>
                     <Text strong>
-                      命令 <Text type='danger'>*</Text>
+                      {t('mcp_server.form.command')}{' '}
+                      <Text type='danger'>*</Text>
                     </Text>
                     <Input
                       value={newServiceConfig.command}
@@ -731,13 +763,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                           command: e.target.value,
                         })
                       }
-                      placeholder='例如: python main.py'
+                      placeholder={t('mcp_server.form.command_placeholder')}
                       style={{ marginTop: '4px' }}
                     />
                   </div>
 
                   <div>
-                    <Text strong>参数</Text>
+                    <Text strong>{t('mcp_server.form.args')}</Text>
                     <Input
                       value={newServiceConfig.args}
                       onChange={(e) =>
@@ -746,13 +778,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                           args: e.target.value,
                         })
                       }
-                      placeholder='例如: --port 3000 --debug'
+                      placeholder={t('mcp_server.form.args_placeholder')}
                       style={{ marginTop: '4px' }}
                     />
                   </div>
 
                   <div>
-                    <Text strong>环境变量</Text>
+                    <Text strong>{t('mcp_server.form.env_vars')}</Text>
                     <TextArea
                       value={newServiceConfig.env}
                       onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -761,9 +793,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                           env: e.target.value,
                         })
                       }
-                      placeholder={
-                        'API_KEY=your-api-key\nDEBUG=true\nPORT=3000'
-                      }
+                      placeholder={t('mcp_server.form.env_vars_placeholder')}
                       rows={4}
                       style={{ marginTop: '4px' }}
                     />
@@ -774,7 +804,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                         marginTop: '4px',
                         display: 'block',
                       }}>
-                      键值对格式，每行一个，例如: API_KEY=your-api-key
+                      {t('mcp_server.form.env_vars_help')}
                     </Text>
                   </div>
                 </>
@@ -785,7 +815,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 <>
                   <div>
                     <Text strong>
-                      服务 URL <Text type='danger'>*</Text>
+                      {t('mcp_server.form.service_url')}{' '}
+                      <Text type='danger'>*</Text>
                     </Text>
                     <Input
                       value={newServiceConfig.url}
@@ -795,13 +826,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                           url: e.target.value,
                         })
                       }
-                      placeholder='例如: http://localhost:3000/mcp'
+                      placeholder={t('mcp_server.form.service_url_placeholder')}
                       style={{ marginTop: '4px' }}
                     />
                   </div>
 
                   <div>
-                    <Text strong>Headers</Text>
+                    <Text strong>{t('mcp_server.form.headers')}</Text>
                     <TextArea
                       value={newServiceConfig.headers}
                       onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -810,9 +841,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                           headers: e.target.value,
                         })
                       }
-                      placeholder={
-                        'Authorization=Bearer token\nContent-Type=application/json\nX-Custom-Header=value'
-                      }
+                      placeholder={t('mcp_server.form.headers_placeholder')}
                       rows={4}
                       style={{ marginTop: '4px' }}
                     />
@@ -823,7 +852,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                         marginTop: '4px',
                         display: 'block',
                       }}>
-                      键值对格式，每行一个，例如: Content-Type=application/json
+                      {t('mcp_server.form.headers_help')}
                     </Text>
                   </div>
                 </>
@@ -833,40 +862,15 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             <Flex vertical gap='middle'>
               <div>
                 <Text strong>
-                  JSON 配置 <Text type='danger'>*</Text>
+                  {t('mcp_server.form.json_config')}{' '}
+                  <Text type='danger'>*</Text>
                 </Text>
                 <TextArea
                   value={jsonConfig}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                     setJsonConfig(e.target.value)
                   }
-                  placeholder={`{
-  "mcpServers": {
-    "stdio-example": {
-      "command": "python server.py",
-      "args": ["--port", "3000"],
-      "description": "STDIO服务示例",
-      "env": {
-        "API_KEY": "your-api-key",
-        "DEBUG": "true"
-      }
-    },
-    "sse-example": {
-      "url": "http://localhost:3000/sse",
-      "description": "SSE服务示例（URL以/sse结尾）",
-      "headers": {
-        "Authorization": "Bearer your-token"
-      }
-    },
-    "http-example": {
-      "url": "http://localhost:3000/mcp",
-      "description": "HTTP服务示例",
-      "headers": {
-        "Content-Type": "application/json"
-      }
-    }
-  }
-}`}
+                  placeholder={t('mcp_server.form.json_placeholder')}
                   rows={12}
                   style={{ marginTop: '4px' }}
                 />
@@ -876,16 +880,11 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                     fontSize: '12px',
                     marginTop: '4px',
                     display: 'block',
-                  }}>
-                  <strong>配置说明：</strong>
-                  <br />• 必须包含 <code>mcpServers</code> 对象
-                  <br />• 传输协议自动检测：有 <code>url</code>{' '}
-                  字段时根据路径判断（<code>/sse</code>
-                  结尾为SSE，否则为HTTP），有 <code>command</code> 字段时为STDIO
-                  <br />• 可选字段：<code>transport</code>（显式指定）、
-                  <code>description</code>、<code>env</code>（环境变量）、
-                  <code>headers</code>、<code>args</code>
-                </Text>
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: t('mcp_server.form.json_config_help'),
+                  }}
+                />
               </div>
               {jsonError && (
                 <Text type='danger' style={{ fontSize: '14px' }}>
@@ -899,7 +898,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       {/* Edit Service Modal */}
       <Modal
-        title='编辑 MCP 服务'
+        title={t('mcp_server.modals.edit_service_title')}
         open={showEditService}
         onCancel={() => {
           setShowEditService(false)
@@ -908,16 +907,16 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         }}
         footer={[
           <Button key='cancel' onClick={() => setShowEditService(false)}>
-            取消
+            {t('mcp_server.actions.cancel')}
           </Button>,
           <Button key='save' type='primary' onClick={handleUpdateService}>
-            保存更改
+            {t('mcp_server.actions.save_changes')}
           </Button>,
         ]}
         width={640}>
         <Flex vertical gap='middle'>
           <div>
-            <Text strong>服务名称</Text>
+            <Text strong>{t('mcp_server.form.service_name')}</Text>
             <Input
               value={newServiceConfig.name}
               onChange={(e) =>
@@ -932,7 +931,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           </div>
 
           <div>
-            <Text strong>描述</Text>
+            <Text strong>{t('mcp_server.form.description')}</Text>
             <Input
               value={newServiceConfig.description}
               onChange={(e) =>
@@ -941,13 +940,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                   description: e.target.value,
                 })
               }
-              placeholder='服务的简要描述'
+              placeholder={t('mcp_server.form.description_placeholder')}
               style={{ marginTop: '4px' }}
             />
           </div>
 
           <div>
-            <Text strong>传输协议</Text>
+            <Text strong>{t('mcp_server.form.transport_protocol')}</Text>
             <Select
               value={newServiceConfig.type}
               onChange={(value) =>
@@ -957,9 +956,9 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 })
               }
               options={[
-                { value: 'stdio', label: 'STDIO (标准输入输出)' },
-                { value: 'sse', label: 'SSE (服务器发送事件)' },
-                { value: 'http', label: 'Streamable HTTP' },
+                { value: 'stdio', label: t('mcp_server.protocol_types.stdio') },
+                { value: 'sse', label: t('mcp_server.protocol_types.sse') },
+                { value: 'http', label: t('mcp_server.protocol_types.http') },
               ]}
               style={{ marginTop: '4px', width: '100%' }}
             />
@@ -968,7 +967,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           {newServiceConfig.type === 'stdio' && (
             <>
               <div>
-                <Text strong>命令</Text>
+                <Text strong>{t('mcp_server.form.command')}</Text>
                 <Input
                   value={newServiceConfig.command}
                   onChange={(e) =>
@@ -977,13 +976,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       command: e.target.value,
                     })
                   }
-                  placeholder='例如: python main.py'
+                  placeholder={t('mcp_server.form.command_placeholder')}
                   style={{ marginTop: '4px' }}
                 />
               </div>
 
               <div>
-                <Text strong>参数</Text>
+                <Text strong>{t('mcp_server.form.args')}</Text>
                 <Input
                   value={newServiceConfig.args}
                   onChange={(e) =>
@@ -992,13 +991,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       args: e.target.value,
                     })
                   }
-                  placeholder='例如: --port 3000 --debug'
+                  placeholder={t('mcp_server.form.args_placeholder')}
                   style={{ marginTop: '4px' }}
                 />
               </div>
 
               <div>
-                <Text strong>环境变量</Text>
+                <Text strong>{t('mcp_server.form.env_vars')}</Text>
                 <TextArea
                   value={newServiceConfig.env}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -1007,7 +1006,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       env: e.target.value,
                     })
                   }
-                  placeholder={'API_KEY=your-api-key\nDEBUG=true\nPORT=3000'}
+                  placeholder={t('mcp_server.form.env_vars_placeholder')}
                   rows={4}
                   style={{ marginTop: '4px' }}
                 />
@@ -1018,7 +1017,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                     marginTop: '4px',
                     display: 'block',
                   }}>
-                  键值对格式，每行一个，例如: API_KEY=your-api-key
+                  {t('mcp_server.form.env_vars_help')}
                 </Text>
               </div>
             </>
@@ -1028,7 +1027,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             newServiceConfig.type === 'http') && (
             <>
               <div>
-                <Text strong>服务 URL</Text>
+                <Text strong>{t('mcp_server.form.service_url')}</Text>
                 <Input
                   value={newServiceConfig.url}
                   onChange={(e) =>
@@ -1037,13 +1036,13 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       url: e.target.value,
                     })
                   }
-                  placeholder='例如: http://localhost:3000/mcp'
+                  placeholder={t('mcp_server.form.service_url_placeholder')}
                   style={{ marginTop: '4px' }}
                 />
               </div>
 
               <div>
-                <Text strong>Headers</Text>
+                <Text strong>{t('mcp_server.form.headers')}</Text>
                 <TextArea
                   value={newServiceConfig.headers}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -1052,9 +1051,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       headers: e.target.value,
                     })
                   }
-                  placeholder={
-                    'Authorization=Bearer token\nContent-Type=application/json\nX-Custom-Header=value'
-                  }
+                  placeholder={t('mcp_server.form.headers_placeholder')}
                   rows={4}
                   style={{ marginTop: '4px' }}
                 />
@@ -1065,7 +1062,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                     marginTop: '4px',
                     display: 'block',
                   }}>
-                  键值对格式，每行一个，例如: Content-Type=application/json
+                  {t('mcp_server.form.headers_help')}
                 </Text>
               </div>
             </>
@@ -1075,7 +1072,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       {/* Tools Modal */}
       <Modal
-        title='管理 MCP 服务器工具'
+        title={t('mcp_server.modals.manage_tools_title')}
         open={showToolsModal}
         onCancel={() => {
           setShowToolsModal(false)

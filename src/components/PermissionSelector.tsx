@@ -6,6 +6,7 @@ import {
 import type { TabsProps } from 'antd'
 import { Badge, Card, Space, Tabs, Typography } from 'antd'
 import React, { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AvailablePermissions } from '../types'
 import PermissionTab from './PermissionTab'
 
@@ -32,6 +33,7 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
   availablePermissions,
   disabled = false,
 }) => {
+  const { t } = useTranslation()
   const [searchText] = useState('')
 
   // 计算各类型的权限统计
@@ -75,7 +77,7 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       label: (
         <Space>
           <AppstoreOutlined />
-          <span>工具权限</span>
+          <span>{t('token.permissions.tools_permission')}</span>
           <Badge
             count={permissionStats.tools.selected}
             showZero
@@ -106,7 +108,7 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       label: (
         <Space>
           <DatabaseOutlined />
-          <span>资源权限</span>
+          <span>{t('token.permissions.resources_permission')}</span>
           <Badge
             count={permissionStats.resources.selected}
             showZero
@@ -138,7 +140,7 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       label: (
         <Space>
           <MessageOutlined />
-          <span>提示词权限</span>
+          <span>{t('token.permissions.prompts_permission')}</span>
           <Badge
             count={permissionStats.prompts.selected}
             showZero
@@ -168,16 +170,16 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
 
   return (
     <Card
-      title='权限配置'
+      title={t('token.permissions.configuration')}
       size='small'
       extra={
         <Space>
           <Text type='secondary'>
-            总计:{' '}
+            {t('token.permissions.total')}:{' '}
             {permissionStats.tools.selected +
               permissionStats.resources.selected +
               permissionStats.prompts.selected}{' '}
-            项权限
+            {t('token.permissions.items_count')}
           </Text>
         </Space>
       }>

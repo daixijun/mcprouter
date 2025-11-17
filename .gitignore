@@ -27,3 +27,5 @@ dist-ssr
 IFLOW.md
 target/
 .trae/
+openspec/changes
+openspec/specs

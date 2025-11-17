@@ -12,16 +12,16 @@ import {
   Typography,
 } from 'antd'
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import InstallConfirmModal from '../components/InstallConfirmModal'
 import ServiceDetail from '../components/ServiceDetail'
-import { useErrorContext } from '../contexts/ErrorContext'
 import { MarketplaceApi } from '../services/marketplace-service'
 import type { MarketplaceService, MarketplaceServiceListItem } from '../types'
 
 const { Title, Text, Paragraph } = Typography
 
 const Marketplace: React.FC = memo(() => {
-  const { addError } = useErrorContext()
+  const { t } = useTranslation()
   const { message } = App.useApp()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -123,11 +123,11 @@ const Marketplace: React.FC = memo(() => {
       hasMoreRef.current = result.has_more
     } catch (error) {
       console.error('Failed to load initial services:', error)
-      addError('加载服务失败，请检查网络连接或稍后重试。')
+      message.error(t('marketplace.messages.load_services_failed'))
     } finally {
       setLoading(false)
     }
-  }, [addError])
+  }, [message.error])
 
   const searchServices = useCallback(
     async (isReset = false) => {
@@ -188,7 +188,7 @@ const Marketplace: React.FC = memo(() => {
           return
         }
         console.error('Failed to search services:', error)
-        addError(`搜索服务失败: ${error}`)
+        message.error(t('marketplace.messages.search_failed', { error }))
       } finally {
         setLoading(false)
         setLoadingMore(false)
@@ -199,7 +199,7 @@ const Marketplace: React.FC = memo(() => {
         }
       }
     },
-    [searchQuery, modelScopePagination.page, addError],
+    [searchQuery, modelScopePagination.page, message.error],
   )
 
   useEffect(() => {
@@ -256,7 +256,7 @@ const Marketplace: React.FC = memo(() => {
           )
           schema = detailedService.env_schema
         } catch (e) {
-          console.warn('获取服务详情失败:', e)
+          console.warn(t('marketplace.messages.get_service_details_failed'), e)
         }
       }
 
@@ -277,18 +277,18 @@ const Marketplace: React.FC = memo(() => {
           pendingInstallService.id,
           envEntries.length > 0 ? envEntries : undefined,
         )
-        message.success(`服务 "${pendingInstallService.name}" 安装成功！`)
+        message.success(t('marketplace.messages.install_success', { name: pendingInstallService.name }))
         setShowInstallModal(false)
         setPendingInstallService(null)
         setEnvSchema(null)
       } catch (error) {
         console.error('安装失败:', error)
-        addError('安装失败，请检查日志获取详细信息。')
+        message.error(t('marketplace.messages.install_failed'))
       } finally {
         setIsInstalling(false)
       }
     },
-    [pendingInstallService, addError],
+    [pendingInstallService, message.error],
   )
 
   const handleCancelInstall = useCallback(() => {
@@ -307,8 +307,8 @@ const Marketplace: React.FC = memo(() => {
         setSelectedService(details) // Set the full service details
       } catch (error) {
         console.error('Failed to load service details:', error)
-        addError(
-          `加载服务 "${service.name}" 详情失败，请检查网络连接或稍后重试。`,
+        message.error(
+          t('marketplace.messages.load_service_details_failed', { name: service.name }),
         )
         setSelectedService(null) // Clear on error
         setViewMode('list') // Back to list on error
@@ -316,7 +316,7 @@ const Marketplace: React.FC = memo(() => {
         setLoadingDetail(false)
       }
     },
-    [addError],
+    [message.error],
   )
 
   const handleBackToList = useCallback(() => {
@@ -326,7 +326,7 @@ const Marketplace: React.FC = memo(() => {
 
   const getPlatformBadgeColor = useCallback((platform: string) => {
     switch (platform) {
-      case '魔搭社区':
+      case t('marketplace.platforms.modelscope'):
         return 'var(--color-platform-mada)'
       default:
         return 'var(--color-platform-default)'
@@ -335,11 +335,11 @@ const Marketplace: React.FC = memo(() => {
 
   const getPlatformIcon = useCallback((platform: string) => {
     switch (platform) {
-      case '魔搭社区':
+      case t('marketplace.platforms.modelscope'):
         return (
           <img
             src={'https://g.alicdn.com/sail-web/maas/2.9.94/favicon/128.ico'}
-            alt='魔搭社区'
+            alt={t('marketplace.platforms.modelscope')}
             style={{
               width: '16px',
               height: '16px',
@@ -441,10 +441,10 @@ const Marketplace: React.FC = memo(() => {
             </Flex>
           </Badge>
           {service.is_verified && (
-            <Badge color='var(--color-success)'>✅ 已验证</Badge>
+            <Badge color='var(--color-success)'>{t('marketplace.badges.verified')}</Badge>
           )}
           {service.is_hosted && (
-            <Badge color='var(--color-primary)'>🖥️ 托管</Badge>
+            <Badge color='var(--color-primary)'>{t('marketplace.badges.hosted')}</Badge>
           )}
         </Flex>
 
@@ -478,7 +478,7 @@ const Marketplace: React.FC = memo(() => {
             {/* Search Bar */}
             <Card>
               <Input
-                placeholder='🔍 搜索 MCP 服务...'
+                placeholder={t('marketplace.search.placeholder')}
                 defaultValue={searchQuery}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 style={{ width: '100%' }}
@@ -492,7 +492,7 @@ const Marketplace: React.FC = memo(() => {
                   justify='center'
                   align='center'
                   style={{ padding: '48px 16px' }}>
-                  <Spin size='large' tip='正在加载精彩的 MCP 服务...' />
+                  <Spin size='large' tip={t('marketplace.status.loading_services')} />
                 </Flex>
               ) : services.length > 0 ? (
                 <>
@@ -519,7 +519,7 @@ const Marketplace: React.FC = memo(() => {
                         size='large'
                         onClick={handleLoadMore}
                         loading={loadingMore}>
-                        {loadingMore ? '加载中...' : '加载更多服务'}
+                        {loadingMore ? t('marketplace.actions.loading_more') : t('marketplace.actions.load_more')}
                       </Button>
                     </Flex>
                   )}
@@ -531,12 +531,12 @@ const Marketplace: React.FC = memo(() => {
                       align='center'
                       style={{ marginTop: '32px', textAlign: 'center' }}>
                       <Text type='secondary'>
-                        已显示全部 {services.length} 个服务
+                        {t('marketplace.messages.show_all_services', { count: services.length })}
                       </Text>
                       <Text
                         type='warning'
                         style={{ marginTop: '8px', fontSize: '14px' }}>
-                        ⚠️ 由于官方接口限制，最多能获取 100 条数据
+                        {t('marketplace.messages.data_limit_warning')}
                       </Text>
                     </Flex>
                   )}
@@ -550,9 +550,9 @@ const Marketplace: React.FC = memo(() => {
                     😔
                   </div>
                   <Title level={4} style={{ marginBottom: '8px' }}>
-                    未找到服务
+                    {t('marketplace.empty.title')}
                   </Title>
-                  <Text type='secondary'>请尝试调整您的搜索词或分类筛选。</Text>
+                  <Text type='secondary'>{t('marketplace.empty.description')}</Text>
                 </Flex>
               )}
             </div>
@@ -568,7 +568,7 @@ const Marketplace: React.FC = memo(() => {
         />
       )}
 
-      {/* 安装确认模态框 */}
+      {/* Install confirmation modal */}
       <InstallConfirmModal
         isOpen={showInstallModal}
         onClose={handleCancelInstall}

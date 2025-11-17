@@ -13,13 +13,13 @@ import {
   Typography,
 } from 'antd'
 import { memo, useCallback, useEffect, useState } from 'react'
-import { useErrorContext } from '../contexts/ErrorContext'
+import { useTranslation } from 'react-i18next'
 import type { SystemSettings } from '../types'
 
 const { Title, Text } = Typography
 
 const Settings: React.FC = memo(() => {
-  const { addError } = useErrorContext()
+  const { t } = useTranslation()
   const { message } = App.useApp()
 
   // State
@@ -58,11 +58,11 @@ const Settings: React.FC = memo(() => {
       setLocalIPs(ips)
     } catch (error) {
       console.error('Failed to load local IPs:', error)
-      addError('获取本地IP地址失败')
+      message.error(t('settings.errors.load_local_ips_failed'))
     } finally {
       setLoadingIPs(false)
     }
-  }, [addError])
+  }, [message.error])
 
   // Data fetching
   useEffect(() => {
@@ -83,7 +83,7 @@ const Settings: React.FC = memo(() => {
       const { ConfigService } = await import('../services/config-service')
       // 添加超时处理，防止请求卡住
       const timeoutPromise = new Promise<SystemSettings>((_, reject) => {
-        setTimeout(() => reject(new Error('加载设置超时')), 10000)
+        setTimeout(() => reject(new Error(t('settings.errors.load_settings_timeout'))), 10000)
       })
 
       const loadedSettings = await Promise.race([
@@ -97,12 +97,12 @@ const Settings: React.FC = memo(() => {
     } catch (error) {
       console.error('Failed to load settings:', error)
       const errorMessage =
-        error instanceof Error ? error.message : '加载系统设置失败'
-      addError(errorMessage)
+        error instanceof Error ? error.message : t('settings.errors.load_system_settings_failed')
+      message.error(errorMessage)
     } finally {
       setLoading(false)
     }
-  }, [addError])
+  }, [message.error])
 
   const saveSettings = useCallback(async () => {
     console.log('=== SAVE SETTINGS START ===')
@@ -130,7 +130,7 @@ const Settings: React.FC = memo(() => {
       // 不再重新加载设置，避免页面刷新
       // 状态已经通过 handleSystemTraySettingChange 的即时更新保持同步
 
-      message.success('设置保存成功！系统配置已更新。')
+      message.success(t('settings.messages.save_success'))
       console.log('=== SAVE SETTINGS SUCCESS ===')
     } catch (error) {
       console.error('=== SAVE SETTINGS ERROR ===')
@@ -141,12 +141,12 @@ const Settings: React.FC = memo(() => {
         (error as Error)?.message || String(error),
       )
       console.error('Error stack:', (error as Error)?.stack || 'No stack trace')
-      addError('保存设置失败')
+      message.error(t('settings.errors.save_settings_failed'))
     } finally {
       console.log('=== SAVE SETTINGS FINALLY ===')
       setSaving(false)
     }
-  }, [settings, addError])
+  }, [settings, message.error])
 
   // Handler functions
   const handleServerSettingChange = useCallback((key: string, value: any) => {
@@ -198,7 +198,7 @@ const Settings: React.FC = memo(() => {
           console.log('System tray settings updated immediately')
 
           // 显示成功提示
-          message.success('系统托盘设置已更新')
+          message.success(t('settings.messages.tray_settings_updated'))
 
           // 不重新加载设置，因为状态已经更新，避免可能的页面刷新
           // 如果后端返回的数据有差异，可以在响应后更新特定字段
@@ -206,14 +206,14 @@ const Settings: React.FC = memo(() => {
           console.log('=== IMMEDIATE TRAY SETTINGS SUCCESS ===')
         } catch (error) {
           console.error('Failed to update system tray settings:', error)
-          addError('更新系统托盘设置失败')
+          message.error(t('settings.errors.update_tray_settings_failed'))
 
           // 如果保存失败，恢复原来的状态
           setSettings(settings)
         }
       }
     },
-    [settings, addError],
+    [settings, message.error],
   )
 
   const toggleAutostart = useCallback(async () => {
@@ -225,16 +225,16 @@ const Settings: React.FC = memo(() => {
       message.success(result)
     } catch (error) {
       console.error('Failed to toggle autostart:', error)
-      addError('切换开机自启失败')
+      message.error(t('settings.errors.toggle_autostart_failed'))
     }
-  }, [autostartEnabled, addError])
+  }, [autostartEnabled, message.error])
 
   // security removed
 
   if (loading) {
     return (
       <Flex justify='center' align='center' style={{ height: '256px' }}>
-        <Button loading>加载设置...</Button>
+        <Button loading>{t('settings.loading')}</Button>
       </Flex>
     )
   }
@@ -248,21 +248,21 @@ const Settings: React.FC = memo(() => {
       <Flex vertical gap='large' style={{ flex: 1 }}>
         {/* Server Settings */}
         <Card>
-          <Title level={4}>服务器配置</Title>
+          <Title level={4}>{t('settings.server.title')}</Title>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={12}>
-              <Text strong>服务器地址</Text>
+              <Text strong>{t('settings.server.host')}</Text>
               <Select
                 value={settings.server.host}
                 onChange={(value) => handleServerSettingChange('host', value)}
                 loading={loadingIPs}
                 style={{ width: '100%', marginTop: '4px' }}
-                placeholder='选择服务器地址'
+                placeholder={t('settings.server.select_host')}
                 options={localIPs.map((ip) => ({ value: ip, label: ip }))}
               />
             </Col>
             <Col xs={24} md={12}>
-              <Text strong>端口</Text>
+              <Text strong>{t('settings.server.port')}</Text>
               <InputNumber
                 value={settings.server.port}
                 onChange={(value) =>
@@ -274,7 +274,7 @@ const Settings: React.FC = memo(() => {
               />
             </Col>
             <Col xs={24} md={12}>
-              <Text strong>最大连接数</Text>
+              <Text strong>{t('settings.server.max_connections')}</Text>
               <InputNumber
                 value={settings.server.max_connections}
                 onChange={(value) =>
@@ -286,7 +286,7 @@ const Settings: React.FC = memo(() => {
               />
             </Col>
             <Col xs={24} md={12}>
-              <Text strong>超时时间（秒）</Text>
+              <Text strong>{t('settings.server.timeout')}</Text>
               <InputNumber
                 value={settings.server.timeout_seconds}
                 onChange={(value) =>
@@ -300,7 +300,7 @@ const Settings: React.FC = memo(() => {
             <Col xs={24}>
               <Flex justify='space-between' align='center'>
                 <div>
-                  <Text strong>聚合接口认证鉴权</Text>
+                  <Text strong>{t('settings.server.auth.title')}</Text>
                   <Text
                     type='secondary'
                     style={{
@@ -308,7 +308,7 @@ const Settings: React.FC = memo(() => {
                       display: 'block',
                       marginTop: '2px',
                     }}>
-                    启用后，聚合接口需要使用有效的Bearer Token才能访问
+                    {t('settings.server.auth.description')}
                   </Text>
                 </div>
                 <Switch
@@ -317,16 +317,18 @@ const Settings: React.FC = memo(() => {
                     handleServerSettingChange('auth', checked)
                     // 立即保存设置
                     try {
-                      const { ConfigService } = await import('../services/config-service')
+                      const { ConfigService } = await import(
+                        '../services/config-service'
+                      )
                       await ConfigService.saveSystemSettings(settings)
-                      message.success('认证设置已保存！')
+                      message.success(t('settings.messages.auth_settings_saved'))
                     } catch (error) {
                       console.error('Failed to save auth setting:', error)
-                      message.error('保存认证设置失败')
+                      message.error(t('settings.errors.save_auth_settings_failed'))
                     }
                   }}
-                  checkedChildren='启用'
-                  unCheckedChildren='禁用'
+                  checkedChildren={t('settings.common.enabled')}
+                  unCheckedChildren={t('settings.common.disabled')}
                 />
               </Flex>
             </Col>
@@ -335,10 +337,10 @@ const Settings: React.FC = memo(() => {
 
         {/* Logging Settings */}
         <Card>
-          <Title level={4}>日志配置</Title>
+          <Title level={4}>{t('settings.logging.title')}</Title>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={12}>
-              <Text strong>日志级别</Text>
+              <Text strong>{t('settings.logging.level')}</Text>
               <Select
                 style={{ width: '100%', marginTop: '4px' }}
                 value={settings.logging.level}
@@ -353,7 +355,7 @@ const Settings: React.FC = memo(() => {
               />
             </Col>
             <Col xs={24} md={12}>
-              <Text strong>日志文件名</Text>
+              <Text strong>{t('settings.logging.file_name')}</Text>
               <Input
                 value={settings.logging.file_name}
                 onChange={(e) =>
@@ -368,14 +370,14 @@ const Settings: React.FC = memo(() => {
 
         {/* Application Settings */}
         <Card>
-          <Title level={4}>应用配置</Title>
+          <Title level={4}>{t('settings.app.title')}</Title>
           <Flex vertical gap='large'>
             <div>
-              <Title level={5}>系统托盘</Title>
+              <Title level={5}>{t('settings.app.system_tray.title')}</Title>
               <Flex vertical gap='middle'>
                 <Flex justify='space-between' align='center'>
                   <div>
-                    <Text strong>启用系统托盘</Text>
+                    <Text strong>{t('settings.app.system_tray.enable')}</Text>
                     <Text
                       type='secondary'
                       style={{
@@ -383,7 +385,7 @@ const Settings: React.FC = memo(() => {
                         display: 'block',
                         marginTop: '2px',
                       }}>
-                      在系统托盘显示应用图标
+                      {t('settings.app.system_tray.enable_description')}
                     </Text>
                   </div>
                   <Switch
@@ -391,8 +393,8 @@ const Settings: React.FC = memo(() => {
                     onChange={(checked) =>
                       handleSystemTraySettingChange('enabled', checked)
                     }
-                    checkedChildren='启用'
-                    unCheckedChildren='禁用'
+                    checkedChildren={t('settings.common.enabled')}
+                    unCheckedChildren={t('settings.common.disabled')}
                   />
                 </Flex>
 
@@ -405,7 +407,7 @@ const Settings: React.FC = memo(() => {
                           ? 'secondary'
                           : undefined
                       }>
-                      关闭到托盘
+                      {t('settings.app.system_tray.close_to_tray')}
                     </Text>
                     <Text
                       type='secondary'
@@ -414,7 +416,7 @@ const Settings: React.FC = memo(() => {
                         display: 'block',
                         marginTop: '2px',
                       }}>
-                      关闭窗口时最小化到托盘
+                      {t('settings.app.system_tray.close_to_tray_description')}
                     </Text>
                   </div>
                   <Switch
@@ -422,15 +424,15 @@ const Settings: React.FC = memo(() => {
                     onChange={(checked) =>
                       handleSystemTraySettingChange('close_to_tray', checked)
                     }
-                    checkedChildren='启用'
-                    unCheckedChildren='禁用'
+                    checkedChildren={t('settings.common.enabled')}
+                    unCheckedChildren={t('settings.common.disabled')}
                     disabled={!settings.settings?.system_tray?.enabled}
                   />
                 </Flex>
 
                 <Flex justify='space-between' align='center'>
                   <div>
-                    <Text strong>开机自启</Text>
+                    <Text strong>{t('settings.app.autostart.title')}</Text>
                     <Text
                       type='secondary'
                       style={{
@@ -438,14 +440,14 @@ const Settings: React.FC = memo(() => {
                         display: 'block',
                         marginTop: '2px',
                       }}>
-                      系统启动时自动运行应用
+                      {t('settings.app.autostart.description')}
                     </Text>
                   </div>
                   <Switch
                     checked={autostartEnabled}
                     onChange={toggleAutostart}
-                    checkedChildren='启用'
-                    unCheckedChildren='禁用'
+                    checkedChildren={t('settings.common.enabled')}
+                    unCheckedChildren={t('settings.common.disabled')}
                   />
                 </Flex>
               </Flex>
@@ -473,7 +475,7 @@ const Settings: React.FC = memo(() => {
           type='primary'
           size='large'
           style={{ minWidth: '120px' }}>
-          {saving ? '保存中...' : '保存设置'}
+          {saving ? t('settings.common.saving') : t('settings.actions.save')}
         </Button>
       </div>
     </Flex>

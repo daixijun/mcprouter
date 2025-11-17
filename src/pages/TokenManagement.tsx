@@ -34,6 +34,7 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import PermissionSelector from '../components/PermissionSelector'
 import {
   AvailablePermissions,
@@ -46,6 +47,7 @@ import {
 const { Text, Paragraph } = Typography
 
 const TokenManagement: React.FC = () => {
+  const { t } = useTranslation()
   const [tokens, setTokens] = useState<Token[]>([])
   const [stats, setStats] = useState<TokenStats | null>(null)
   const [loading, setLoading] = useState(false)
@@ -56,12 +58,12 @@ const TokenManagement: React.FC = () => {
     name: string
     description?: string
   } | null>(null)
-    const [editModalVisible, setEditModalVisible] = useState(false)
+  const [editModalVisible, setEditModalVisible] = useState(false)
   const [editingToken, setEditingToken] = useState<Token | null>(null)
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
 
-  // 权限选项状态
+  // Permission options state
   const [availablePermissions, setAvailablePermissions] =
     useState<AvailablePermissions>({
       tools: [],
@@ -81,7 +83,7 @@ const TokenManagement: React.FC = () => {
       const response = await invoke<Token[]>('list_tokens')
       setTokens(response)
     } catch (error) {
-      message.error('Failed to load tokens: ' + error)
+      message.error(t('token.messages.load_tokens_failed') + ': ' + error)
     } finally {
       setLoading(false)
     }
@@ -147,17 +149,17 @@ const TokenManagement: React.FC = () => {
     }
   }
 
-  // 获取可用的权限选项
+  // Fetch available permissions options
   const fetchAvailablePermissions = async (): Promise<void> => {
     try {
       const result = await invoke<AvailablePermissions>(
         'get_available_permissions',
       )
       setAvailablePermissions(result)
-      message.success('权限选项加载成功')
+      message.success(t('token.messages.load_permissions_success'))
     } catch (error) {
-      console.error('获取权限选项失败:', error)
-      message.error('获取权限选项失败，请稍后重试')
+      console.error('Failed to fetch available permissions:', error)
+      message.error(t('token.messages.load_permissions_failed'))
     }
   }
 
@@ -179,37 +181,40 @@ const TokenManagement: React.FC = () => {
         name: response.token.name,
         description: response.token.description,
       })
-      message.success('Token created successfully!')
+      message.success(t('token.messages.create_success'))
     } catch (error) {
-      message.error('Failed to create token: ' + error)
+      message.error(t('token.messages.create_failed') + ': ' + error)
     }
   }
 
   const handleDeleteToken = async (tokenId: string) => {
     try {
       await invoke('delete_token', { tokenId })
-      message.success('Token deleted successfully!')
+      message.success(t('token.messages.delete_success'))
       await fetchTokens()
       await fetchStats()
     } catch (error) {
-      message.error('Failed to delete token: ' + error)
+      message.error(t('token.messages.delete_failed') + ': ' + error)
     }
   }
 
   const handleToggleToken = async (tokenId: string, checked: boolean) => {
     try {
       await invoke('toggle_token', { tokenId })
-      message.success(`Token ${checked ? 'enabled' : 'disabled'} successfully!`)
+      const action = checked
+        ? t('common.actions.enable')
+        : t('common.actions.disable')
+      message.success(t('token.messages.toggle_success', { action }))
       await fetchTokens()
     } catch (error) {
-      message.error('Failed to toggle token: ' + error)
+      message.error(t('token.messages.toggle_failed') + ': ' + error)
     }
   }
 
   const handleCopyToClipboard = async (token: string) => {
     try {
       await navigator.clipboard.writeText(token)
-      message.success('Token copied to clipboard!')
+      message.success(t('token.messages.copy_success'))
     } catch (error) {
       // Fallback: create a temporary input element
       const tempInput = document.createElement('input')
@@ -218,7 +223,7 @@ const TokenManagement: React.FC = () => {
       tempInput.select()
       document.execCommand('copy')
       document.body.removeChild(tempInput)
-      message.success('Token copied to clipboard!')
+      message.success(t('token.messages.copy_success'))
     }
   }
 
@@ -226,14 +231,18 @@ const TokenManagement: React.FC = () => {
     try {
       const response = await invoke<any>('cleanup_expired_tokens')
       if (response.removed_count > 0) {
-        message.success(response.message)
+        message.success(
+          t('token.messages.cleanup_success', {
+            count: response.removed_count,
+          }),
+        )
       } else {
-        message.info('No expired tokens found')
+        message.info(t('token.messages.cleanup_no_expired'))
       }
       await fetchTokens()
       await fetchStats()
     } catch (error) {
-      message.error('Failed to cleanup expired tokens: ' + error)
+      message.error(t('token.messages.cleanup_failed') + ': ' + error)
     }
   }
 
@@ -282,13 +291,15 @@ const TokenManagement: React.FC = () => {
 
       console.log('Token update response:', response)
 
-      message.success(`Token "${response.token.name}" 的权限更新成功！`)
+      message.success(
+        t('token.messages.update_success', { name: response.token.name }),
+      )
       setEditModalVisible(false)
       setEditingToken(null)
       await fetchTokens()
     } catch (error: any) {
       console.error('Failed to update token:', error)
-      message.error(`更新 Token 失败: ${error}`)
+      message.error(t('token.messages.update_failed', { error }))
     }
   }
 
@@ -303,11 +314,15 @@ const TokenManagement: React.FC = () => {
     const days = Math.floor(hours / 24)
 
     if (days > 0) {
-      return `${days} day${days > 1 ? 's' : ''} ago`
+      return t('token.status.ago', {
+        time: t('token.time.days', { count: days }),
+      })
     } else if (hours > 0) {
-      return `${hours} hour${hours > 1 ? 's' : ''} ago`
+      return t('token.status.ago', {
+        time: t('token.time.hours', { count: hours }),
+      })
     } else {
-      return 'Recently'
+      return t('token.status.recently')
     }
   }
 
@@ -319,28 +334,30 @@ const TokenManagement: React.FC = () => {
   }
 
   const getStatusText = (token: Token) => {
-    if (token.is_expired) return 'Expired'
+    if (token.is_expired) return t('token.status.expired')
     if (token.last_used_at) {
-      return `Active (${formatRelativeTime(token.last_used_at)})`
+      return `${t('token.status.active')} (${formatRelativeTime(
+        token.last_used_at,
+      )})`
     }
-    return 'Unused'
+    return t('token.status.unused')
   }
 
   const columns: ColumnsType<Token> = [
     {
-      title: 'Name',
+      title: t('token.table.name'),
       dataIndex: 'name',
       key: 'name',
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
-      title: 'Description',
+      title: t('token.table.description'),
       dataIndex: 'description',
       key: 'description',
       render: (text?: string) => <Text type='secondary'>{text || '-'}</Text>,
     },
     {
-      title: 'Permissions',
+      title: t('token.table.permissions'),
       key: 'permissions',
       render: (_, record) => {
         const hasPermissions =
@@ -348,7 +365,7 @@ const TokenManagement: React.FC = () => {
           record.allowed_resources?.length ||
           record.allowed_prompts?.length
         if (!hasPermissions) {
-          return <Tag color='green'>Unrestricted</Tag>
+          return <Tag color='green'>{t('token.permissions.unrestricted')}</Tag>
         }
 
         const permissionCount =
@@ -362,32 +379,37 @@ const TokenManagement: React.FC = () => {
               <div>
                 {record.allowed_tools && record.allowed_tools.length > 0 && (
                   <div>
-                    <strong>Tools:</strong> {record.allowed_tools.join(', ')}
+                    <strong>{t('token.permissions.tools')}:</strong>{' '}
+                    {record.allowed_tools.join(', ')}
                   </div>
                 )}
                 {record.allowed_resources &&
                   record.allowed_resources.length > 0 && (
                     <div>
-                      <strong>Resources:</strong>{' '}
+                      <strong>{t('token.permissions.resources')}:</strong>{' '}
                       {record.allowed_resources.join(', ')}
                     </div>
                   )}
                 {record.allowed_prompts &&
                   record.allowed_prompts.length > 0 && (
                     <div>
-                      <strong>Prompts:</strong>{' '}
+                      <strong>{t('token.permissions.prompts')}:</strong>{' '}
                       {record.allowed_prompts.join(', ')}
                     </div>
                   )}
               </div>
             }>
-            <Tag color='blue'>{permissionCount} permissions</Tag>
+            <Tag color='blue'>
+              {t('token.permissions.permissions_count', {
+                count: permissionCount,
+              })}
+            </Tag>
           </Tooltip>
         )
       },
     },
     {
-      title: 'Status',
+      title: t('token.table.status'),
       dataIndex: 'is_expired',
       key: 'status',
       render: (_, record) => (
@@ -395,7 +417,7 @@ const TokenManagement: React.FC = () => {
       ),
     },
     {
-      title: 'Enabled',
+      title: t('token.table.enabled'),
       dataIndex: 'enabled',
       key: 'enabled',
       render: (enabled: boolean, record) => (
@@ -408,24 +430,24 @@ const TokenManagement: React.FC = () => {
       ),
     },
     {
-      title: 'Usage Count',
+      title: t('token.table.usage_count'),
       dataIndex: 'usage_count',
       key: 'usage_count',
       render: (count: number) => <Text>{count}</Text>,
     },
     {
-      title: 'Last Used',
+      title: t('token.table.last_used'),
       dataIndex: 'last_used_at',
       key: 'last_used_at',
       render: (timestamp?: number) =>
         timestamp ? (
           <Text type='secondary'>{formatRelativeTime(timestamp)}</Text>
         ) : (
-          <Text type='secondary'>Never</Text>
+          <Text type='secondary'>{t('token.status.never')}</Text>
         ),
     },
     {
-      title: 'Expires',
+      title: t('token.table.expires'),
       dataIndex: 'expires_at',
       key: 'expires_at',
       render: (timestamp?: number) =>
@@ -434,11 +456,11 @@ const TokenManagement: React.FC = () => {
             <Text type='secondary'>{formatRelativeTime(timestamp)}</Text>
           </Tooltip>
         ) : (
-          <Tag color='green'>Never</Tag>
+          <Tag color='green'>{t('token.form.expiry_never')}</Tag>
         ),
     },
     {
-      title: 'Created',
+      title: t('token.table.created'),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (timestamp: number) => (
@@ -448,11 +470,11 @@ const TokenManagement: React.FC = () => {
       ),
     },
     {
-      title: 'Actions',
+      title: t('token.table.actions'),
       key: 'actions',
       render: (_, record) => (
         <Space size='small'>
-          <Tooltip title='Edit token permissions'>
+          <Tooltip title={t('token.modal.edit_tooltip')}>
             <Button
               type='text'
               icon={<EditOutlined />}
@@ -461,13 +483,13 @@ const TokenManagement: React.FC = () => {
             />
           </Tooltip>
           <Popconfirm
-            title='Delete this token?'
-            description='This action cannot be undone.'
+            title={t('token.modal.delete_confirm')}
+            description={t('token.modal.delete_warning')}
             onConfirm={() => handleDeleteToken(record.id)}
-            okText='Delete'
-            cancelText='Cancel'
+            okText={t('token.modal.delete_ok')}
+            cancelText={t('token.modal.delete_cancel')}
             okType='danger'>
-            <Tooltip title='Delete token'>
+            <Tooltip title={t('token.modal.delete_tooltip')}>
               <Button type='text' danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
@@ -477,11 +499,11 @@ const TokenManagement: React.FC = () => {
   ]
 
   const expiresInOptions = [
-    { value: 3600, label: '1 hour' },
-    { value: 86400, label: '1 day' },
-    { value: 604800, label: '1 week' },
-    { value: 2592000, label: '30 days' },
-    { value: null, label: 'Never' },
+    { value: 3600, label: t('token.time.one_hour') },
+    { value: 86400, label: t('token.time.one_day') },
+    { value: 604800, label: t('token.time.one_week') },
+    { value: 2592000, label: t('token.time.thirty_days') },
+    { value: null, label: t('token.form.expiry_never') },
   ]
 
   return (
@@ -491,7 +513,7 @@ const TokenManagement: React.FC = () => {
         title={
           <Space>
             <KeyOutlined />
-            创建新 Token
+            {t('token.modal.create_title')}
           </Space>
         }
         open={createModalVisible}
@@ -507,32 +529,35 @@ const TokenManagement: React.FC = () => {
           <Form form={form} layout='vertical' onFinish={handleCreateToken}>
             <Form.Item
               name='name'
-              label='Token 名称'
+              label={t('token.form.name')}
               rules={[
-                { required: true, message: '请输入 Token 名称' },
-                { max: 100, message: '名称不能超过 100 个字符' },
+                {
+                  required: true,
+                  message: t('token.validation.name_required'),
+                },
+                { max: 100, message: t('token.validation.name_max_length') },
               ]}>
-              <Input placeholder='为这个 Token 输入一个描述性名称' />
+              <Input placeholder={t('token.form.name_placeholder')} />
             </Form.Item>
 
             <Form.Item
               name='description'
-              label='描述'
+              label={t('token.form.description')}
               rules={[
                 {
                   max: 500,
-                  message: '描述不能超过 500 个字符',
+                  message: t('token.validation.description_max_length'),
                 },
               ]}>
               <Input.TextArea
-                placeholder='描述这个 Token 的用途（可选）'
+                placeholder={t('token.form.description_placeholder')}
                 rows={3}
               />
             </Form.Item>
 
             <Form.Item
               name='expires_in'
-              label='过期时间'
+              label={t('token.form.expiry')}
               initialValue={2592000} // 30 days default
             >
               <Select options={expiresInOptions} />
@@ -540,8 +565,8 @@ const TokenManagement: React.FC = () => {
 
             <Form.Item
               name='permissions'
-              label='权限配置'
-              tooltip='选择Token可以访问的MCP工具、资源和提示词权限'>
+              label={t('token.form.permissions')}
+              tooltip={t('token.form.permissions_tooltip')}>
               <PermissionSelector
                 value={form.getFieldValue('permissions')}
                 onChange={(permissions) => form.setFieldsValue({ permissions })}
@@ -552,10 +577,10 @@ const TokenManagement: React.FC = () => {
             <Form.Item>
               <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
                 <Button onClick={() => setCreateModalVisible(false)}>
-                  取消
+                  {t('token.actions.cancel')}
                 </Button>
                 <Button type='primary' htmlType='submit'>
-                  创建 Token
+                  {t('token.actions.create_token')}
                 </Button>
               </Space>
             </Form.Item>
@@ -563,8 +588,8 @@ const TokenManagement: React.FC = () => {
         ) : (
           <div>
             <Alert
-              message='Token 创建成功!'
-              description='请立即复制此 Token。你将无法再次看到它。'
+              message={t('token.messages.token_created_warning')}
+              description={t('token.messages.token_copy_instruction')}
               type='success'
               showIcon
               style={{ marginBottom: 16 }}
@@ -573,26 +598,26 @@ const TokenManagement: React.FC = () => {
             <Card>
               <Space direction='vertical' style={{ width: '100%' }}>
                 <div>
-                  <Text strong>Token 名称:</Text>
+                  <Text strong>{t('token.form.name')}:</Text>
                   <Text>{createdToken.name}</Text>
                 </div>
 
                 {createdToken.description && (
                   <div>
-                    <Text strong>描述:</Text>
+                    <Text strong>{t('token.form.description')}:</Text>
                     <Text>{createdToken.description}</Text>
                   </div>
                 )}
 
                 <div>
-                  <Text strong>Token ID:</Text>
+                  <Text strong>{t('token.form.token_id')}:</Text>
                   <Text code copyable>
                     {createdToken.id}
                   </Text>
                 </div>
 
                 <div>
-                  <Text strong>Token 值:</Text>
+                  <Text strong>{t('token.form.token_value')}:</Text>
                   <Input.Password
                     value={createdToken.value}
                     readOnly
@@ -602,13 +627,13 @@ const TokenManagement: React.FC = () => {
                         onClick={() =>
                           handleCopyToClipboard(createdToken.value)
                         }>
-                        复制
+                        {t('token.actions.copy')}
                       </Button>
                     }
                   />
                   <div style={{ marginTop: 8 }}>
                     <Text type='secondary' style={{ fontSize: 12 }}>
-                      🔒 此 Token 是敏感信息。请安全存储，不要公开分享。
+                      {t('token.messages.token_security_warning')}
                     </Text>
                   </div>
                 </div>
@@ -626,7 +651,7 @@ const TokenManagement: React.FC = () => {
                   setCreatedToken(null)
                   form.resetFields()
                 }}>
-                创建另一个 Token
+                {t('token.actions.create_another')}
               </Button>
               <Button
                 type='primary'
@@ -637,7 +662,7 @@ const TokenManagement: React.FC = () => {
                   await fetchTokens()
                   await fetchStats()
                 }}>
-                完成
+                {t('token.actions.complete')}
               </Button>
             </Space>
           </div>
@@ -649,7 +674,7 @@ const TokenManagement: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title='Total Tokens'
+              title={t('token.stats.total_tokens')}
               value={stats?.total_count || 0}
               prefix={<KeyOutlined />}
             />
@@ -658,7 +683,7 @@ const TokenManagement: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title='Active Tokens'
+              title={t('token.stats.active_tokens')}
               value={stats?.active_count || 0}
               valueStyle={{ color: '#3f8600' }}
               prefix={<CheckCircleOutlined />}
@@ -668,7 +693,7 @@ const TokenManagement: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title='Expired Tokens'
+              title={t('token.stats.expired_tokens')}
               value={stats?.expired_count || 0}
               valueStyle={{ color: '#cf1322' }}
               prefix={<ClockCircleOutlined />}
@@ -678,7 +703,7 @@ const TokenManagement: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title='Total Usage'
+              title={t('token.stats.total_usage')}
               value={stats?.total_usage || 0}
               prefix={<InfoCircleOutlined />}
             />
@@ -697,7 +722,7 @@ const TokenManagement: React.FC = () => {
             await fetchAvailablePermissions()
             setCreateModalVisible(true)
           }}>
-          Create New Token
+          {t('token.actions.create_new_token')}
         </Button>
         <Button
           icon={<ReloadOutlined />}
@@ -706,12 +731,12 @@ const TokenManagement: React.FC = () => {
             fetchStats()
           }}
           loading={loading}>
-          Refresh
+          {t('token.actions.refresh')}
         </Button>
         <Button icon={<ReloadOutlined />} onClick={handleCleanupExpired}>
-          Cleanup Expired
+          {t('token.actions.cleanup_expired')}
         </Button>
-              </Space>
+      </Space>
 
       {/* Tokens Table */}
       <Table
@@ -725,10 +750,8 @@ const TokenManagement: React.FC = () => {
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <Space direction='vertical'>
-                  <Paragraph>No tokens found</Paragraph>
-                  <Text type='secondary'>
-                    Create your first token to start using the MCP Router API
-                  </Text>
+                  <Paragraph>{t('token.empty.title')}</Paragraph>
+                  <Text type='secondary'>{t('token.empty.description')}</Text>
                   <Button
                     type='primary'
                     icon={<PlusOutlined />}
@@ -737,7 +760,7 @@ const TokenManagement: React.FC = () => {
                       setCreateModalVisible(true)
                       form.resetFields()
                     }}>
-                    Create Your First Token
+                    {t('token.empty.create_first')}
                   </Button>
                 </Space>
               }
@@ -748,7 +771,11 @@ const TokenManagement: React.FC = () => {
           showSizeChanger: true,
           showQuickJumper: true,
           showTotal: (total, range) =>
-            `${range[0]}-${range[1]} of ${total} tokens`,
+            t('token.pagination.total', {
+              start: range[0],
+              end: range[1],
+              total,
+            }),
         }}
       />
 
@@ -757,7 +784,7 @@ const TokenManagement: React.FC = () => {
         title={
           <Space>
             <EditOutlined />
-            编辑 Token 权限
+            {t('token.modal.edit_title')}
           </Space>
         }
         open={editModalVisible}
@@ -775,13 +802,13 @@ const TokenManagement: React.FC = () => {
                   setEditingToken(null)
                   editForm.resetFields()
                 }}>
-                取消
+                {t('token.actions.cancel')}
               </Button>
               <Button
                 type='primary'
                 icon={<SaveOutlined />}
                 onClick={() => editForm.submit()}>
-                保存更改
+                {t('token.actions.save_changes')}
               </Button>
             </Space>
           </div>
@@ -801,33 +828,33 @@ const TokenManagement: React.FC = () => {
           }}>
           <Form.Item
             name='name'
-            label='Token 名称'
+            label={t('token.form.name')}
             rules={[
-              { required: true, message: '请输入 Token 名称' },
-              { max: 100, message: '名称不能超过 100 个字符' },
+              { required: true, message: t('token.validation.name_required') },
+              { max: 100, message: t('token.validation.name_max_length') },
             ]}>
-            <Input placeholder='为这个 Token 输入一个描述性名称' />
+            <Input placeholder={t('token.form.name_placeholder')} />
           </Form.Item>
 
           <Form.Item
             name='description'
-            label='描述'
+            label={t('token.form.description')}
             rules={[
               {
                 max: 500,
-                message: '描述不能超过 500 个字符',
+                message: t('token.validation.description_max_length'),
               },
             ]}>
             <Input.TextArea
-              placeholder='描述这个 Token 的用途（可选）'
+              placeholder={t('token.form.description_placeholder')}
               rows={3}
             />
           </Form.Item>
 
           <Form.Item
             name='permissions'
-            label='权限配置'
-            tooltip='选择Token可以访问的MCP工具、资源和提示词权限'>
+            label={t('token.form.permissions')}
+            tooltip={t('token.form.permissions_tooltip')}>
             <PermissionSelector
               value={editForm.getFieldValue('permissions')}
               onChange={(permissions) =>
@@ -838,7 +865,6 @@ const TokenManagement: React.FC = () => {
           </Form.Item>
         </Form>
       </Drawer>
-
     </div>
   )
 }

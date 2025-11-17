@@ -102,13 +102,24 @@ pub struct SystemTraySettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct Settings {
-    #[serde(default)]
+    #[serde(default = "default_theme")]
     pub theme: Option<String>,
+    #[serde(default = "default_language")]
+    pub language: Option<String>,
     #[serde(default)]
     pub autostart: Option<bool>,
+    #[serde(default)]
     pub system_tray: Option<SystemTraySettings>,
     pub uv_index_url: Option<String>,
     pub npm_registry: Option<String>,
+}
+
+fn default_theme() -> Option<String> {
+    Some("auto".to_string())
+}
+
+fn default_language() -> Option<String> {
+    Some("zh-CN".to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -452,6 +463,7 @@ impl Default for AppConfig {
             }),
             settings: Some(Settings {
                 theme: Some("auto".to_string()),
+                language: Some("zh-CN".to_string()),
                 autostart: Some(false),
                 system_tray: Some(SystemTraySettings {
                     enabled: Some(true),

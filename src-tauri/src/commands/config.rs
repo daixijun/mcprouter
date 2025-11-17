@@ -28,13 +28,10 @@ pub async fn set_theme(app: tauri::AppHandle, theme: String) -> Result<()> {
         .update_config(|config| {
             if config.settings.is_none() {
                 config.settings = Some(crate::Settings {
+                    language: Some("zh-CN".to_string()),
                     theme: Some("auto".to_string()),
                     autostart: Some(false),
-                    system_tray: Some(crate::SystemTraySettings {
-                        enabled: Some(true),
-                        close_to_tray: Some(false),
-                        start_to_tray: Some(false),
-                    }),
+                    system_tray: None,
                     uv_index_url: None,
                     npm_registry: None,
                 });

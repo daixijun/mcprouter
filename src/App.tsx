@@ -1,10 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
-import { App as AntdApp, ConfigProvider } from 'antd'
+import { App as AntdApp } from 'antd'
 import {
   Info,
   Key,
   Menu,
-  Monitor,
   Moon,
   Package,
   Server,
@@ -15,21 +14,22 @@ import {
 import { memo } from 'react'
 import './App.css'
 import AboutModal from './components/AboutModal'
-import { ErrorBoundary } from './components/ErrorBoundary'
+import AntdConfigProvider from './components/AntdConfigProvider'
+import LanguageSelector from './components/LanguageSelector'
 import { AppProvider, useAppContext } from './contexts/AppContext'
-import { ErrorProvider } from './contexts/ErrorContext'
+import { useTranslation } from 'react-i18next'
 import Dashboard from './pages/Dashboard'
 import Marketplace from './pages/Marketplace'
 import McpServerManager from './pages/McpServerManager'
 import Settings from './pages/Settings'
 import TokenManagement from './pages/TokenManagement'
-import { getThemeConfig } from './theme/antd-config'
 
 // 内部应用组件，使用 Context
 const AppContent = memo(() => {
   const { state, setThemeMode, setActiveTab, toggleMenu, toggleAbout } =
     useAppContext()
   const { message } = AntdApp.useApp()
+  const { t } = useTranslation()
 
   // Handle theme change
   const handleThemeChange = async (mode: 'light' | 'dark' | 'auto') => {
@@ -38,20 +38,20 @@ const AppContent = memo(() => {
       await invoke('set_theme', { theme: mode })
     } catch (error) {
       console.error('Failed to save theme:', error)
-      message.error('保存主题设置失败')
+      message.error(t('common.error.save_theme_failed'))
     }
   }
 
   const tabs = [
-    { id: 'overview', label: '概览', icon: Info },
-    { id: 'servers', label: '服务管理', icon: Server },
-    { id: 'market', label: 'MCP广场', icon: Package },
-    { id: 'tokens', label: 'Token管理', icon: Key },
-    { id: 'settings', label: '设置', icon: SettingsIcon },
+    { id: 'overview', label: t('nav.overview'), icon: Info },
+    { id: 'servers', label: t('nav.server_management'), icon: Server },
+    { id: 'market', label: t('nav.marketplace'), icon: Package },
+    { id: 'tokens', label: t('nav.token_management'), icon: Key },
+    { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
   ]
 
   return (
-    <ConfigProvider theme={getThemeConfig(state.isDarkMode)}>
+    <AntdConfigProvider>
       <AntdApp>
         <div
           className={`h-screen overflow-hidden ${
@@ -84,7 +84,7 @@ const AppContent = memo(() => {
                         MCP Router
                       </h1>
                       <p className='text-xs text-gray-600 '>
-                        现代化 MCP 聚合管理工具
+                        {t('dashboard.app.subtitle')}
                       </p>
                     </div>
                   </div>
@@ -117,8 +117,8 @@ const AppContent = memo(() => {
                             ? 'bg-white dark:bg-gray-700 text-blue-600  shadow-md border border-blue-200 dark:border-blue-500/30'
                             : 'text-gray-500 hover:text-gray-700 hover:bg-white/60  dark:hover:text-gray-200 dark:hover:bg-gray-700/50'
                         }`}
-                        title='自动（跟随系统）'>
-                        <Monitor size={16} />
+                        title={t('dashboard.theme.auto')}>
+                        <Info size={16} />
                       </button>
                       <button
                         onClick={() => handleThemeChange('light')}
@@ -127,7 +127,7 @@ const AppContent = memo(() => {
                             ? 'bg-white dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-md border border-amber-200 dark:border-amber-500/30'
                             : 'text-gray-500 hover:text-gray-700 hover:bg-white/60  dark:hover:text-gray-200 dark:hover:bg-gray-700/50'
                         }`}
-                        title='亮色模式'>
+                        title={t('dashboard.theme.light')}>
                         <Sun size={16} />
                       </button>
                       <button
@@ -137,9 +137,13 @@ const AppContent = memo(() => {
                             ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-md border border-indigo-200 dark:border-indigo-500/30'
                             : 'text-gray-500 hover:text-gray-700 hover:bg-white/60  dark:hover:text-gray-200 dark:hover:bg-gray-700/50'
                         }`}
-                        title='暗色模式'>
+                        title={t('dashboard.theme.dark')}>
                         <Moon size={16} />
                       </button>
+                    </div>
+                    {/* Language Selector */}
+                    <div className='ml-3'>
+                      <LanguageSelector size='small' />
                     </div>
                   </div>
                   {/* Mobile menu button */}
@@ -175,7 +179,7 @@ const AppContent = memo(() => {
                       {/* Mobile Theme Switcher */}
                       <div className='pt-2 border-t border-gray-200/50 dark:border-white/20 mt-2'>
                         <div className='px-3 py-1 text-xs text-gray-500 '>
-                          主题
+                          {t('dashboard.theme.title')}
                         </div>
                         <div className='flex items-center space-x-1 mt-1'>
                           <button
@@ -188,8 +192,8 @@ const AppContent = memo(() => {
                                 ? 'bg-white text-blue-600 shadow-md border border-blue-200 dark:bg-gray-700  dark:border-blue-500/30'
                                 : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
                             }`}>
-                            <Monitor size={16} />
-                            <span>自动</span>
+                            <Info size={16} />
+                            <span>{t('dashboard.theme.auto')}</span>
                           </button>
                           <button
                             onClick={() => {
@@ -202,7 +206,7 @@ const AppContent = memo(() => {
                                 : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
                             }`}>
                             <Sun size={16} />
-                            <span>亮色</span>
+                            <span>{t('dashboard.theme.light')}</span>
                           </button>
                           <button
                             onClick={() => {
@@ -215,8 +219,17 @@ const AppContent = memo(() => {
                                 : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
                             }`}>
                             <Moon size={16} />
-                            <span>暗色</span>
+                            <span>{t('dashboard.theme.dark')}</span>
                           </button>
+                        </div>
+                        {/* Mobile Language Selector */}
+                        <div className='pt-2 border-t border-gray-200/50 dark:border-white/20 mt-2'>
+                          <div className='px-3 py-1 text-xs text-gray-500 '>
+                            {t('dashboard.language.title')}
+                          </div>
+                          <div className='px-3 py-2'>
+                            <LanguageSelector size='small' />
+                          </div>
                         </div>
                       </div>
                     </nav>
@@ -253,7 +266,7 @@ const AppContent = memo(() => {
                   type='button'
                   onClick={toggleAbout}
                   className='ml-3 text-blue-600 hover:text-blue-700 '>
-                  关于
+                  {t('dashboard.footer.about')}
                 </button>
               </p>
             </footer>
@@ -262,20 +275,16 @@ const AppContent = memo(() => {
           <AboutModal isOpen={state.isAboutOpen} onClose={toggleAbout} />
         </div>
       </AntdApp>
-    </ConfigProvider>
+    </AntdConfigProvider>
   )
 })
 
 // 主 App 组件，包装所有 Provider
 const App: React.FC = () => {
   return (
-    <ErrorBoundary>
-      <ErrorProvider>
-        <AppProvider>
-          <AppContent />
-        </AppProvider>
-      </ErrorProvider>
-    </ErrorBoundary>
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
   )
 }
 

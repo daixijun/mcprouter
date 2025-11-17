@@ -143,6 +143,7 @@ export interface AppConfig {
   mcpServers: McpServerConfig[]
   settings?: {
     theme?: string | null
+    language?: string
     autostart?: boolean
     systemTray?: {
       enabled?: boolean
@@ -178,6 +179,7 @@ export interface SystemSettings {
   }
   settings?: {
     theme?: string | null
+    language?: string
     autostart?: boolean
     system_tray?: {
       enabled?: boolean
@@ -192,7 +194,7 @@ export interface SystemSettings {
 export interface DashboardStats {
   total_servers: number
   enabled_servers: number
-  disabled_servers: number
+  failed_servers: number
   healthy_services: number
   connected_services: number
   total_tools: number
@@ -201,7 +203,8 @@ export interface DashboardStats {
   aggregator?: {
     endpoint: string
     max_connections?: number
-    is_running?: boolean
+    status?: 'running' | 'stopped' | 'error'
+    connected_services?: number
   }
   os_info?: {
     type: string
@@ -221,82 +224,82 @@ export type ToolCallResult = Record<string, any> | null
 
 // Token Management Types
 export interface Token {
-  id: string;
-  name: string;
-  description?: string;
-  created_at: number;
-  expires_at?: number;
-  last_used_at?: number;
-  usage_count: number;
-  is_expired: boolean;
-  enabled: boolean;
+  id: string
+  name: string
+  description?: string
+  created_at: number
+  expires_at?: number
+  last_used_at?: number
+  usage_count: number
+  is_expired: boolean
+  enabled: boolean
   // Permission fields
-  allowed_tools?: string[];
-  allowed_resources?: string[];
-  allowed_prompts?: string[];
+  allowed_tools?: string[]
+  allowed_resources?: string[]
+  allowed_prompts?: string[]
 }
 
 export interface CreateTokenRequest {
-  name: string;
-  description?: string;
-  expires_in?: number; // seconds
+  name: string
+  description?: string
+  expires_in?: number // seconds
   // Permission fields
-  allowed_tools?: string[];
-  allowed_resources?: string[];
-  allowed_prompts?: string[];
+  allowed_tools?: string[]
+  allowed_resources?: string[]
+  allowed_prompts?: string[]
 }
 
 export interface CreateTokenResponse {
   token: {
-    id: string;
-    value: string; // only returned on creation
-    name: string;
-    description?: string;
-    created_at: number;
-    expires_at?: number;
-  };
+    id: string
+    value: string // only returned on creation
+    name: string
+    description?: string
+    created_at: number
+    expires_at?: number
+  }
 }
 
 export interface UpdateTokenRequest {
-  id: string;
-  name?: string;
-  description?: string;
+  id: string
+  name?: string
+  description?: string
   // Permission fields - use optional nested types to distinguish between "don't update" and "set to undefined"
-  allowed_tools?: string[] | undefined;
-  allowed_resources?: string[] | undefined;
-  allowed_prompts?: string[] | undefined;
+  allowed_tools?: string[] | undefined
+  allowed_resources?: string[] | undefined
+  allowed_prompts?: string[] | undefined
 }
 
 export interface UpdateTokenResponse {
-  token: Token;
+  token: Token
 }
 
 export interface PermissionItem {
-  id: string;
-  description: string;
+  id: string
+  description: string
 }
 
 export interface AvailablePermissions {
-  tools: PermissionItem[];
-  resources: PermissionItem[];
-  prompts: PermissionItem[];
+  tools: PermissionItem[]
+  resources: PermissionItem[]
+  prompts: PermissionItem[]
 }
 
 export interface TokenStats {
-  total_count: number;
-  active_count: number;
-  expired_count: number;
-  total_usage: number;
-  last_used?: number;
+  total_count: number
+  active_count: number
+  expired_count: number
+  total_usage: number
+  last_used?: number
 }
 
 export interface CleanupResult {
-  removed_count: number;
-  message: string;
+  removed_count: number
+  message: string
 }
 
 export interface ValidationResult {
-  valid: boolean;
-  token_info?: Token;
-  message: string;
+  valid: boolean
+  token_info?: Token
+  message: string
 }

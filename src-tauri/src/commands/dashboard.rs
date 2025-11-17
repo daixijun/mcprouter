@@ -4,18 +4,33 @@ use crate::config;
 use crate::error::{McpError, Result};
 use crate::{AGGREGATOR, MCP_CLIENT_MANAGER, SERVICE_MANAGER, STARTUP_TIME};
 use std::time::UNIX_EPOCH;
+use serde::{Serialize, Deserialize};
+
+/// Aggregator status enumeration
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AggregatorStatus {
+    Running,
+    Stopped,
+    Error,
+}
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_json::Value> {
     // Get actual service statistics
     let services = SERVICE_MANAGER.list_mcp_servers(Some(&app_handle)).await?;
     let enabled_services = services.iter().filter(|s| s.enabled).count();
-    let disabled_services = services.len() - enabled_services;
 
     // Calculate healthy services count (connected services)
     let healthy_services = services
         .iter()
         .filter(|s| s.enabled && (s.status == "connected" || s.status == "running"))
+        .count();
+
+    // Calculate failed services count (enabled but failed to connect)
+    let failed_services = services
+        .iter()
+        .filter(|s| s.enabled && (s.status == "failed" || s.status == "disconnected" || s.status == "error"))
         .count();
 
     // Get active connections from MCP_CLIENT_MANAGER
@@ -63,6 +78,29 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
     };
     let aggregator_endpoint = format!("http://{}:{}/mcp", server_config.host, server_config.port);
 
+    // Determine aggregator status
+    let aggregator_status = if let Some(ref aggregator) = aggregator_clone {
+        // Check if aggregator is actually running by looking at its statistics
+        match aggregator_stats.get("status").and_then(|v| v.as_str()) {
+            Some("running") | Some("active") => AggregatorStatus::Running,
+            Some("stopped") | Some("inactive") => AggregatorStatus::Stopped,
+            Some("error") | Some("failed") => AggregatorStatus::Error,
+            _ => {
+                // If no explicit status, infer from connection count
+                let connected_services = aggregator_stats.get("connected_services")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                if connected_services > 0 {
+                    AggregatorStatus::Running
+                } else {
+                    AggregatorStatus::Stopped
+                }
+            }
+        }
+    } else {
+        AggregatorStatus::Stopped
+    };
+
     // Calculate total tools count from all services
     let total_tools = services
         .iter()
@@ -72,7 +110,7 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
     Ok(serde_json::json!({
         "total_servers": total_services,
         "enabled_servers": enabled_services,
-        "disabled_servers": disabled_services,
+        "failed_servers": failed_services,
         "healthy_services": healthy_services,
         "connected_services": aggregator_stats.get("connected_services").and_then(|v| v.as_u64()).unwrap_or(0),
         "total_tools": total_tools,
@@ -94,7 +132,7 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
         },
         "aggregator": {
             "endpoint": aggregator_endpoint,
-            "is_running": true,
+            "status": aggregator_status,
             "connected_services": aggregator_stats.get("connected_services").and_then(|v| v.as_u64()).unwrap_or(0),
             "max_connections": server_config.max_connections,
             "timeout_seconds": server_config.timeout_seconds,

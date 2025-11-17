@@ -212,6 +212,7 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     if config.settings.is_none() {
                         config.settings = Some(Settings {
                             theme: None,
+                            language: Some("zh-CN".to_string()),
                             autostart: Some(false),
                             system_tray: Some(SystemTraySettings {
                                 enabled: Some(true),
@@ -554,6 +555,9 @@ pub async fn run() {
             validate_token,
             // Permission Management Commands
             get_available_permissions,
+            // Language Management Commands
+            get_language_preference,
+            save_language_preference,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

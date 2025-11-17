@@ -20,6 +20,7 @@ import {
 } from 'antd'
 import type { CheckboxGroupProps } from 'antd/es/checkbox'
 import React, { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { PermissionItem } from '../types'
 
 const { Search } = Input
@@ -44,6 +45,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
   searchText = '',
   permissionItems = [],
 }) => {
+  const { t } = useTranslation()
   const [searchValue, setSearchValue] = useState(searchText)
   const [expandedServers, setExpandedServers] = useState<string[]>([])
 
@@ -196,7 +198,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
         <Space direction='vertical' style={{ width: '100%' }}>
           {/* 搜索框 */}
           <Search
-            placeholder='搜索权限或服务名称...'
+            placeholder={t('tool.tab.search_placeholder')}
             allowClear
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
@@ -210,27 +212,27 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
               icon={<SelectOutlined />}
               onClick={handleSelectAll}
               disabled={disabled || totalCount === 0 || allSelected}>
-              全选当前页
+              {t('tool.tab.select_all_current')}
             </Button>
             <Button
               size='small'
               icon={<CloseOutlined />}
               onClick={handleSelectNone}
               disabled={disabled || allSelectedCount === 0}>
-              清空当前页
+              {t('tool.tab.clear_current')}
             </Button>
             <Button
               size='small'
               onClick={handleInvert}
               disabled={disabled || totalCount === 0}>
-              反选
+              {t('tool.tab.invert')}
             </Button>
             <Divider type='vertical' />
             <Button size='small' onClick={expandAll} disabled={disabled}>
-              展开全部
+              {t('tool.tab.expand_all')}
             </Button>
             <Button size='small' onClick={collapseAll} disabled={disabled}>
-              收起全部
+              {t('tool.tab.collapse_all')}
             </Button>
           </Space>
 
@@ -238,15 +240,15 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
           <Space>
             <Text type='secondary'>
               {getTypeIcon()}
-              {type === 'tools' && '工具'}
-              {type === 'resources' && '资源'}
-              {type === 'prompts' && '提示词'}
-              权限: 已选择 {allSelectedCount} / {totalCount} 项
+              {type === 'tools' && t('tool.tab.tools_permissions_selected')}
+              {type === 'resources' && t('tool.tab.resources_permissions_selected')}
+              {type === 'prompts' && t('tool.tab.prompts_permissions_selected')}
+              {' '}{allSelectedCount} / {totalCount} {t('tool.tab.permissions_suffix')}
             </Text>
             {filteredGroups.length < groupedPermissions.length && (
               <Text type='warning'>
-                (筛选后显示 {filteredGroups.length} /{' '}
-                {groupedPermissions.length} 个服务)
+                ({t('tool.tab.filtered_services')} {filteredGroups.length} /{' '}
+                {groupedPermissions.length} {t('tool.tab.services_suffix')})
               </Text>
             )}
           </Space>
@@ -257,7 +259,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
       {filteredGroups.length === 0 ? (
         <Card size='small'>
           <div style={{ textAlign: 'center', padding: '20px' }}>
-            {searchValue ? '没有找到匹配的权限' : '暂无可用的权限'}
+            {searchValue ? t('tool.tab.no_match_found') : t('tool.tab.no_permissions_available')}
           </div>
         </Card>
       ) : (
@@ -329,7 +331,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                     size='small'
                     icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
                     onClick={() => toggleServerExpanded(group.server)}>
-                    {isExpanded ? '收起' : '展开'}
+                    {isExpanded ? t('tool.tab.collapse') : t('tool.tab.expand')}
                   </Button>
                 }>
                 {isExpanded && (

@@ -72,6 +72,8 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
         #[serde(default)]
         theme: Option<String>,
         #[serde(default)]
+        language: Option<String>,
+        #[serde(default)]
         autostart: Option<bool>,
         #[serde(default)]
         system_tray: Option<TrayOut>,
@@ -103,6 +105,7 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
         }),
         settings: config.settings.as_ref().map(|s| SettingsOut {
             theme: s.theme.clone(),
+            language: s.language.clone(),
             autostart: s.autostart,
             system_tray: s.system_tray.as_ref().map(|t| TrayOut {
                 enabled: t.enabled,
@@ -155,6 +158,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             if config.settings.is_none() {
                 config.settings = Some(crate::Settings {
                     theme: Some("auto".to_string()),
+                    language: Some("zh-CN".to_string()),
                     autostart: Some(false),
                     system_tray: Some(crate::SystemTraySettings {
                         enabled: Some(true),
@@ -170,6 +174,11 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             // Theme
             if let Some(Value::String(theme)) = settings_obj.get("theme") {
                 settings_mut.theme = Some(theme.clone());
+            }
+
+            // Language
+            if let Some(Value::String(language)) = settings_obj.get("language") {
+                settings_mut.language = Some(language.clone());
             }
 
             // Autostart (flag only; actual OS integration via separate command)
@@ -466,4 +475,47 @@ pub async fn toggle_autostart(app: tauri::AppHandle) -> Result<String> {
             }
         }
     }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn get_language_preference() -> Result<Option<String>> {
+    let config = config_mod::AppConfig::load()
+        .map_err(|e| McpError::ConfigError(format!("Failed to load settings: {}", e)))?;
+
+    Ok(config.settings.and_then(|s| s.language))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn save_language_preference(language: String) -> Result<String> {
+    // Validate language
+    if !["zh-CN", "en-US"].contains(&language.as_str()) {
+        return Err(McpError::ConfigError(
+            format!("Unsupported language: {}", language)
+        ));
+    }
+
+    // Update language preference
+    SERVICE_MANAGER
+        .update_config(|config| {
+            // Ensure settings exists
+            if config.settings.is_none() {
+                config.settings = Some(crate::Settings {
+                    theme: Some("auto".to_string()),
+                    language: Some(language.clone()),
+                    autostart: Some(false),
+                    system_tray: Some(crate::SystemTraySettings {
+                        enabled: Some(true),
+                        close_to_tray: Some(false),
+                        start_to_tray: Some(false),
+                    }),
+                    uv_index_url: None,
+                    npm_registry: None,
+                });
+            } else {
+                config.settings.as_mut().unwrap().language = Some(language.clone());
+            }
+        })
+        .await?;
+
+    Ok(format!("Language preference saved: {}", language))
 }
