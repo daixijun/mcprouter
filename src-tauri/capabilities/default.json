@@ -14,6 +14,23 @@
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-write-image",
-    "clipboard-manager:allow-write-html"
+    "clipboard-manager:allow-write-html",
+    "opener:allow-default-urls",
+    {
+      "identifier": "opener:allow-open-url",
+      "description": "Allow opening URLs",
+      "allow": [
+        {
+          "url": "vscode:mcp/install*"
+        },
+        { "url": "cherrystudio://mcp/install*" },
+        {
+          "url": "cursor://anysphere.cursor-deeplink/mcp/install*"
+        },
+        {
+          "url": "windsurf:"
+        }
+      ]
+    }
   ]
 }

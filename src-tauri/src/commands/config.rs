@@ -41,6 +41,13 @@ pub async fn set_theme(app: tauri::AppHandle, theme: String) -> Result<()> {
             }
         })
         .await?;
+
+    // Update tray menu to reflect new theme (safe method)
+    if let Err(e) = crate::update_tray_menu(&app) {
+        tracing::error!("Failed to update tray menu after theme change: {}", e);
+    }
+
+    // Emit event to notify frontend
     let _ = app.emit("theme-changed", theme);
     Ok(())
 }

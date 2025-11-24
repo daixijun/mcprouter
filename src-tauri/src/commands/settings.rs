@@ -8,6 +8,7 @@ use crate::{
 };
 use serde::Serialize;
 use std::sync::Arc;
+use tauri::Emitter;
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
@@ -486,7 +487,7 @@ pub async fn get_language_preference() -> Result<Option<String>> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn save_language_preference(language: String) -> Result<String> {
+pub async fn save_language_preference(app: tauri::AppHandle, language: String) -> Result<String> {
     // Validate language
     if !["zh-CN", "en-US"].contains(&language.as_str()) {
         return Err(McpError::ConfigError(format!(
@@ -517,6 +518,14 @@ pub async fn save_language_preference(language: String) -> Result<String> {
             }
         })
         .await?;
+
+    // Update tray menu to reflect new language (safe method)
+    if let Err(e) = crate::update_tray_menu(&app) {
+        tracing::error!("Failed to update tray menu after language change: {}", e);
+    }
+
+    // Emit event to frontend
+    let _ = app.emit("language-changed", language.clone());
 
     Ok(format!("Language preference saved: {}", language))
 }

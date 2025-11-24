@@ -1,25 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import { Card, List, Space, Statistic, Typography } from 'antd'
-import {
-  Activity,
-  AlertCircle,
-  Server,
-  TrendingUp,
-  Wrench,
-  XCircle,
-} from 'lucide-react'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { App, Button, Card, Space, Statistic, Typography } from 'antd'
+import { Activity, Server, TrendingUp, Wrench, XCircle } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DashboardStats } from '../types'
 
 const { Text } = Typography
-
-interface RecentActivity {
-  id: string
-  type: 'server_start' | 'server_stop' | 'request' | 'error'
-  message: string
-  timestamp: string
-}
 
 const Dashboard: React.FC = () => {
   const { t } = useTranslation()
@@ -33,7 +20,7 @@ const Dashboard: React.FC = () => {
     active_clients: 0,
     startup_time: '',
   })
-  const [activities, setActivities] = useState<RecentActivity[]>([])
+  const { message } = App.useApp()
   const [isLoading, setIsLoading] = useState(true)
   const [currentUptime, setCurrentUptime] = useState<string>('-')
 
@@ -43,19 +30,13 @@ const Dashboard: React.FC = () => {
       setIsLoading(true)
 
       // 并行加载所有数据
-      const [statsResult, activitiesResult] = await Promise.allSettled([
+      const [statsResult] = await Promise.allSettled([
         invoke<DashboardStats>('get_dashboard_stats'),
-        invoke<RecentActivity[]>('get_recent_activities'),
       ])
 
       // 处理统计数据
       if (statsResult.status === 'fulfilled') {
         setStats(statsResult.value)
-      }
-
-      // 处理活动记录
-      if (activitiesResult.status === 'fulfilled') {
-        setActivities(activitiesResult.value)
       }
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
@@ -66,9 +47,6 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadDashboardData()
-    // 每30秒刷新一次数据
-    const interval = setInterval(loadDashboardData, 30000)
-    return () => clearInterval(interval)
   }, [])
 
   // 格式化运行时间
@@ -94,19 +72,82 @@ const Dashboard: React.FC = () => {
     return num.toString()
   }
 
-  // 获取活动图标
-  const getActivityIcon = (type: RecentActivity['type']) => {
-    switch (type) {
-      case 'server_start':
-        return <Activity size={16} className='text-green-500' />
-      case 'server_stop':
-        return <AlertCircle size={16} className='text-red-500' />
-      case 'request':
-        return <Activity size={16} className='text-blue-500' />
-      case 'error':
-        return <AlertCircle size={16} className='text-red-600' />
+  const generatedConfig = {
+    mcpServers: {
+      mcprouter: {
+        type: 'http',
+        url: stats.aggregator?.endpoint || '',
+      },
+    },
+  }
+
+  const generateClientInstallConfig = (
+    client:
+      | 'cherrystudio'
+      | 'claude'
+      | 'claudecode'
+      | 'cursor'
+      | 'windsurf'
+      | 'vscode',
+  ) => {
+    const endpoint = stats.aggregator?.endpoint || ''
+    const base = {
+      mcpServers: {
+        mcprouter: {
+          type: 'http',
+          url: endpoint,
+        },
+      },
+    }
+    switch (client) {
+      case 'cherrystudio':
+        const cherrystudioConfig = {
+          ...base,
+          mcpServers: {
+            ...base.mcpServers,
+            mcprouter: {
+              ...base.mcpServers.mcprouter,
+              type: 'streamableHttp',
+              baseUrl: endpoint,
+            },
+          },
+        }
+        return `cherrystudio://mcp/install?servers=${btoa(
+          JSON.stringify(cherrystudioConfig),
+        )}`
+      case 'claude':
+      case 'claudecode':
+      case 'cursor':
+        const cursorConfig = {
+          name: 'mcprouter',
+          type: 'streamable_http',
+          url: endpoint,
+        }
+        return `cursor://anysphere.cursor-deeplink/mcp/install?name=mcprouter&config=${btoa(
+          JSON.stringify(cursorConfig),
+        )}`
+      case 'windsurf':
+      case 'vscode':
+        const vscodeConfig = {
+          name: 'mcprouter',
+          url: endpoint,
+          type: 'http',
+        }
+        return `vscode:mcp/install?${encodeURIComponent(
+          JSON.stringify(vscodeConfig),
+        )}`
       default:
-        return <Activity size={16} className='text-gray-500' />
+        return ''
+    }
+  }
+
+  const copyMcpServersJson = async () => {
+    const json = JSON.stringify(generatedConfig, null, 2)
+    try {
+      await navigator.clipboard.writeText(json)
+      message.success(t('dashboard.client_config.copy_config'))
+    } catch (e) {
+      message.error(t('common.messages.copy_failed'))
     }
   }
 
@@ -197,38 +238,85 @@ const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* 活动记录 */}
+      {/* 聚合接口配置 */}
       <Card
         title={
           <Space>
             <Activity size={16} />
-            {t('dashboard.sections.recent_activity')}
+            {t('dashboard.client_config.title')}
           </Space>
         }
         loading={isLoading}>
-        {activities.length > 0 ? (
-          <List
-            dataSource={activities.slice(0, 5)}
-            renderItem={(activity) => (
-              <List.Item>
-                <List.Item.Meta
-                  avatar={getActivityIcon(activity.type)}
-                  title={<Text className='text-sm'>{activity.message}</Text>}
-                  description={
-                    <Text type='secondary' className='text-xs'>
-                      {new Date(activity.timestamp).toLocaleString()}
-                    </Text>
-                  }
-                />
-              </List.Item>
-            )}
-          />
-        ) : (
-          <div className='text-center py-8 text-gray-500'>
-            <Activity size={32} className='mx-auto mb-2 opacity-50' />
-            <Text type='secondary'>{t('dashboard.activity.empty')}</Text>
+        <div className='w-full space-y-3'>
+          <div className='relative'>
+            <div className='bg-gray-50 dark:bg-gray-900 rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'>
+              <pre className='text-xs whitespace-pre-wrap text-gray-800 dark:text-gray-100'>
+                {JSON.stringify(generatedConfig, null, 2)}
+              </pre>
+            </div>
+            <Button
+              type='primary'
+              size='small'
+              onClick={copyMcpServersJson}
+              className='absolute top-2 right-2'>
+              {t('dashboard.client_config.copy_config')}
+            </Button>
           </div>
-        )}
+
+          <div className='flex items-center gap-3 pt-1'>
+            <Text className='text-sm text-gray-600 dark:text-gray-300'>
+              {t('dashboard.client_config.add_to_clients')}
+            </Text>
+            <div className='flex flex-wrap gap-4'>
+              {[
+                {
+                  label: 'Cherry Studio',
+                  installUrl: generateClientInstallConfig('cherrystudio'),
+                  iconUrl: '/cherry-studio.png',
+                },
+                {
+                  label: 'Claude Desktop',
+                  installUrl: generateClientInstallConfig('claude'),
+                  iconUrl: '/anthropic.ico',
+                },
+                {
+                  label: 'Claude Code',
+                  installUrl: generateClientInstallConfig('claude'),
+                  iconUrl: '/claude-code.svg',
+                },
+                {
+                  label: 'Cursor',
+                  installUrl: generateClientInstallConfig('cursor'),
+                  iconUrl: '/cursor.ico',
+                },
+                {
+                  label: 'Windsurf',
+                  installUrl: generateClientInstallConfig('windsurf'),
+                  iconUrl: '/windsurf.ico',
+                },
+                {
+                  label: 'VSCode',
+                  installUrl: generateClientInstallConfig('vscode'),
+                  iconUrl: '/vscode.ico',
+                },
+              ].map((c) => (
+                <div
+                  key={c.label}
+                  onClick={() => openUrl(c.installUrl)}
+                  className='group flex items-center gap-1 cursor-pointer rounded px-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-200'>
+                  <img
+                    src={c.iconUrl}
+                    alt={c.label}
+                    className='w-5 h-5 rounded'
+                  />
+                  <Text className='text-xs ml-1 overflow-hidden max-w-0 group-hover:max-w-[140px] transition-all duration-200 whitespace-nowrap'>
+                    {c.label}
+                  </Text>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* 系统状态概览 */}

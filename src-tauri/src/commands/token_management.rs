@@ -77,7 +77,6 @@ pub async fn create_token(
             request.allowed_prompts,
         )
         .await?;
-
     Ok(CreateTokenResponse { token })
 }
 
@@ -104,7 +103,6 @@ pub async fn update_token(
             request.allowed_prompts,
         )
         .await?;
-
     Ok(UpdateTokenResponse {
         token: updated_token,
     })
@@ -136,7 +134,6 @@ pub async fn delete_token(token_id: String, state: State<'_, TokenManagerState>)
         .clone();
 
     token_manager.delete(&token_id).await?;
-
     Ok(())
 }
 
@@ -150,23 +147,18 @@ pub async fn toggle_token(token_id: String, state: State<'_, TokenManagerState>)
         .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
         .clone();
 
-    token_manager.toggle_token(&token_id).await
+    let result = token_manager.toggle_token(&token_id).await?;
+    Ok(result)
 }
 
 /// Get token statistics
 #[tauri::command]
 pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<TokenStats> {
-    tracing::debug!("get_token_stats called");
-
     let token_manager_guard = state.read().await;
-    tracing::debug!("TokenManager state lock acquired");
 
     // Check if TokenManager is initialized
     let token_manager = match token_manager_guard.as_ref() {
-        Some(manager) => {
-            tracing::debug!("TokenManager is initialized, getting reference");
-            manager.clone()
-        }
+        Some(manager) => manager.clone(),
         None => {
             tracing::error!("TokenManager not initialized in state");
             return Err(McpError::InternalError(
@@ -175,10 +167,7 @@ pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<Toke
         }
     };
 
-    tracing::debug!("TokenManager reference obtained, calling list()");
-
     let tokens = token_manager.list().await?;
-    tracing::debug!("Token list retrieved, count: {}", tokens.len());
 
     let total_count = tokens.len();
     let active_count = tokens.iter().filter(|t| !t.is_expired).count();
@@ -188,14 +177,6 @@ pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<Toke
 
     // Find most recently used token
     let last_used = tokens.iter().filter_map(|t| t.last_used_at).max();
-
-    tracing::debug!(
-        "TokenStats calculated: total={}, active={}, expired={}, usage={}",
-        total_count,
-        active_count,
-        expired_count,
-        total_usage
-    );
 
     let stats = TokenStats {
         total_count,
@@ -229,7 +210,6 @@ pub async fn cleanup_expired_tokens(state: State<'_, TokenManagerState>) -> Resu
         .clone();
 
     let removed_count = token_manager.cleanup_expired().await?;
-
     Ok(CleanupResult {
         removed_count,
         message: if removed_count > 0 {

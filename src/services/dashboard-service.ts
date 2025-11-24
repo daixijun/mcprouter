@@ -9,4 +9,5 @@ export class DashboardService {
       force_refresh: forceRefresh,
     })
   }
+
 }

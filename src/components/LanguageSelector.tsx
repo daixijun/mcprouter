@@ -2,6 +2,7 @@ import { GlobalOutlined } from '@ant-design/icons'
 import { App as AntdApp, Select, Space, Typography } from 'antd'
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invoke } from '@tauri-apps/api/core'
 import { LANGUAGE_OPTIONS } from '../constants/language'
 
 const { Text } = Typography
@@ -32,6 +33,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
     setLoading(true)
     try {
       await i18n.changeLanguage(newLanguage)
+      // Save language preference to backend
+      await invoke('save_language_preference', { language: newLanguage })
       message.success(t('common.language.changed_success'))
     } catch (error) {
       message.error(t('common.language.change_failed'))
@@ -89,6 +92,8 @@ export const CompactLanguageSelector: React.FC<
     setLoading(true)
     try {
       await i18n.changeLanguage(newLanguage)
+      // Save language preference to backend
+      await invoke('save_language_preference', { language: newLanguage })
     } catch (error) {
       console.error('Language change failed:', error)
     } finally {

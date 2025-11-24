@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useReducer,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 
 // 状态类型定义
 export type ThemeMode = 'light' | 'dark' | 'auto'
@@ -96,6 +97,7 @@ interface AppProviderProps {
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState)
+  const { i18n } = useTranslation()
 
   // 便捷方法
   const setThemeMode = (mode: ThemeMode) => {
@@ -163,6 +165,27 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       themeCleanup.then((cleanup) => cleanup && cleanup())
     }
   }, [])
+
+  // 语言监听副作用
+  useEffect(() => {
+    const setupLanguageListener = async () => {
+      try {
+        const unlistenLanguage = await listen<string>('language-changed', (event) => {
+          const newLanguage = event.payload
+          i18n.changeLanguage(newLanguage)
+        })
+        return unlistenLanguage
+      } catch (error) {
+        console.error('Failed to setup language listener:', error)
+        setError('设置语言监听器失败')
+      }
+    }
+
+    const languageCleanup = setupLanguageListener()
+    return () => {
+      languageCleanup.then((cleanup) => cleanup && cleanup())
+    }
+  }, [i18n])
 
   // 主题应用副作用
   useEffect(() => {

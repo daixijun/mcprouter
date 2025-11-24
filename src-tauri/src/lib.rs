@@ -62,74 +62,170 @@ static TOKEN_MANAGER: std::sync::LazyLock<TokenManagerState> =
 // Track application startup time
 static STARTUP_TIME: std::sync::LazyLock<SystemTime> = std::sync::LazyLock::new(SystemTime::now);
 
-fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    // Load configuration to initialize theme menu state
-    let config = AppConfig::load().unwrap_or_default();
+/// Get localized text for tray menu items
+fn get_tray_text(key: &str, language: &str) -> &'static str {
+    match (key, language) {
+        // Main menu items
+        ("show_window", "zh-CN") => "显示主窗口",
+        ("show_window", _) => "Show Main Window",
+        ("servers", "zh-CN") => "服务器管理",
+        ("servers", _) => "Server Management",
+        ("marketplace", "zh-CN") => "市场",
+        ("marketplace", _) => "Marketplace",
+        ("settings", "zh-CN") => "设置",
+        ("settings", _) => "Settings",
 
-    // Create theme menu items so we can mutate their checked state later
-    let theme_auto_item = tauri::menu::CheckMenuItemBuilder::new("自动（跟随系统）")
+        // Theme submenu
+        ("theme", "zh-CN") => "主题",
+        ("theme", _) => "Theme",
+        ("theme_auto", "zh-CN") => "自动（跟随系统）",
+        ("theme_auto", _) => "Auto (Follow System)",
+        ("theme_light", "zh-CN") => "亮色",
+        ("theme_light", _) => "Light",
+        ("theme_dark", "zh-CN") => "暗色",
+        ("theme_dark", _) => "Dark",
+
+        // Language submenu
+        ("language", "zh-CN") => "语言",
+        ("language", _) => "Language",
+        ("language_zh_cn", _) => "简体中文",
+        ("language_en_us", _) => "English (US)",
+
+        // Other menu items
+        ("about", "zh-CN") => "关于 MCP Router",
+        ("about", _) => "About MCP Router",
+        ("quit", "zh-CN") => "退出",
+        ("quit", _) => "Quit",
+
+        // Fallback
+        _ => "",
+    }
+}
+
+/// Build tray menu with current language and theme settings
+/// Returns the menu and cloned menu items for event handling
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    // Load configuration to get current language and theme
+    let config = AppConfig::load().unwrap_or_default();
+    let language = config
+        .settings
+        .as_ref()
+        .and_then(|s| s.language.as_ref())
+        .map(|s| s.as_str())
+        .unwrap_or("zh-CN");
+    let theme = config
+        .settings
+        .as_ref()
+        .and_then(|s| s.theme.as_ref())
+        .map(|s| s.as_str())
+        .unwrap_or("auto");
+
+    // Create theme menu items with correct checked state
+    let theme_auto_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_auto", language))
         .id("theme_auto")
-        .checked(true)
+        .checked(theme == "auto")
         .build(app)?;
-    let theme_light_item = tauri::menu::CheckMenuItemBuilder::new("亮色")
+    let theme_light_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_light", language))
         .id("theme_light")
+        .checked(theme == "light")
         .build(app)?;
-    let theme_dark_item = tauri::menu::CheckMenuItemBuilder::new("暗色")
+    let theme_dark_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_dark", language))
         .id("theme_dark")
+        .checked(theme == "dark")
+        .build(app)?;
+
+    // Create language menu items
+    let zh_cn_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("language_zh_cn", language))
+        .id("language_zh_cn")
+        .checked(language == "zh-CN")
+        .build(app)?;
+    let en_us_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("language_en_us", language))
+        .id("language_en_us")
+        .checked(language == "en-US")
         .build(app)?;
 
     // Build tray menu
     let menu = tauri::menu::MenuBuilder::new(app)
         .item(
-            &tauri::menu::MenuItemBuilder::new("显示主窗口")
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("show_window", language))
                 .id("show_window")
                 .accelerator("CmdOrCtrl+Shift+M")
                 .build(app)?,
         )
         .item(&tauri::menu::PredefinedMenuItem::separator(app)?)
         .item(
-            &tauri::menu::MenuItemBuilder::new("服务器管理")
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("servers", language))
                 .id("server_management")
                 .build(app)?,
         )
         .item(
-            &tauri::menu::MenuItemBuilder::new("市场")
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("marketplace", language))
                 .id("marketplace")
                 .build(app)?,
         )
         .item(
-            &tauri::menu::MenuItemBuilder::new("设置")
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("settings", language))
                 .id("settings")
                 .build(app)?,
         )
         .item(&tauri::menu::PredefinedMenuItem::separator(app)?)
         .item(
-            &tauri::menu::SubmenuBuilder::new(app, "主题")
+            &tauri::menu::SubmenuBuilder::new(app, get_tray_text("theme", language))
                 .item(&theme_auto_item)
                 .item(&theme_light_item)
                 .item(&theme_dark_item)
                 .build()?,
         )
+        .item(
+            &tauri::menu::SubmenuBuilder::new(app, get_tray_text("language", language))
+                .item(&zh_cn_item)
+                .item(&en_us_item)
+                .build()?,
+        )
         .item(&tauri::menu::PredefinedMenuItem::separator(app)?)
         .item(
-            &tauri::menu::MenuItemBuilder::new("关于 MCP Router")
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("about", language))
                 .id("about")
                 .build(app)?,
         )
         .item(&tauri::menu::PredefinedMenuItem::separator(app)?)
         .item(
-            &tauri::menu::MenuItemBuilder::new("退出")
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("quit", language))
                 .id("quit")
                 .accelerator("CmdOrCtrl+Q")
                 .build(app)?,
         )
         .build()?;
 
-    // Clone theme items for use inside the event closure
-    let theme_auto_item_event = theme_auto_item.clone();
-    let theme_light_item_event = theme_light_item.clone();
-    let theme_dark_item_event = theme_dark_item.clone();
+    Ok(menu)
+}
 
+/// Update existing tray menu safely without rebuilding the tray icon
+pub fn update_tray_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(tray) = app.tray_by_id("main_tray") {
+        let new_menu = build_tray_menu(app)?;
+        tray.set_menu(Some(new_menu))?;
+        tracing::debug!("Tray menu updated successfully");
+        Ok(())
+    } else {
+        tracing::warn!("Tray not found, cannot update menu");
+        Ok(()) // Don't error out, just log warning
+    }
+}
+
+fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    // Only build tray if it doesn't exist (startup only)
+    if app.tray_by_id("main_tray").is_some() {
+        tracing::debug!("Tray already exists, skipping build");
+        return Ok(());
+    }
+
+    // Build menu using shared function
+    let menu = build_tray_menu(app)?;
+
+    // Build tray icon with menu and event handlers
     let _tray = TrayIconBuilder::<_>::with_id("main_tray")
         .icon(app.default_window_icon().unwrap().clone())
         .tooltip("MCP Router")
@@ -188,25 +284,7 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     "dark"
                 };
 
-                match theme {
-                    "auto" => {
-                        let _ = theme_auto_item_event.set_checked(true);
-                        let _ = theme_light_item_event.set_checked(false);
-                        let _ = theme_dark_item_event.set_checked(false);
-                    }
-                    "light" => {
-                        let _ = theme_auto_item_event.set_checked(false);
-                        let _ = theme_light_item_event.set_checked(true);
-                        let _ = theme_dark_item_event.set_checked(false);
-                    }
-                    "dark" => {
-                        let _ = theme_auto_item_event.set_checked(false);
-                        let _ = theme_light_item_event.set_checked(false);
-                        let _ = theme_dark_item_event.set_checked(true);
-                    }
-                    _ => {}
-                }
-
+                // Save theme preference
                 tokio::spawn(async move {
                     let mut config = SERVICE_MANAGER.get_config().await;
                     if config.settings.is_none() {
@@ -229,7 +307,58 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     let _ = config.save();
                 });
 
+                // Update tray menu to reflect new theme
+                let app_clone = app.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    if let Err(e) = update_tray_menu(&app_clone) {
+                        tracing::error!("Failed to update tray menu after theme change: {}", e);
+                    }
+                });
+
                 let _ = app.emit("theme-changed", theme);
+            }
+            "language_zh_cn" | "language_en_us" => {
+                let language = if event.id.as_ref() == "language_zh_cn" {
+                    "zh-CN"
+                } else {
+                    "en-US"
+                };
+
+                // Save language preference
+                tokio::spawn(async move {
+                    let mut config = SERVICE_MANAGER.get_config().await;
+                    if config.settings.is_none() {
+                        config.settings = Some(Settings {
+                            theme: Some("auto".to_string()),
+                            language: Some("zh-CN".to_string()),
+                            autostart: Some(false),
+                            system_tray: Some(SystemTraySettings {
+                                enabled: Some(true),
+                                close_to_tray: Some(false),
+                                start_to_tray: Some(false),
+                            }),
+                            uv_index_url: None,
+                            npm_registry: None,
+                        });
+                    }
+                    if let Some(settings) = config.settings.as_mut() {
+                        settings.language = Some(language.to_string());
+                    }
+                    let _ = config.save();
+                });
+
+                // Update tray menu to reflect new language
+                let app_clone = app.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    if let Err(e) = update_tray_menu(&app_clone) {
+                        tracing::error!("Failed to update tray menu after language change: {}", e);
+                    }
+                });
+
+                // Emit event to frontend
+                let _ = app.emit("language-changed", language);
             }
             "quit" => {
                 app.exit(0);
@@ -237,30 +366,6 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
-
-    let theme = config
-        .settings
-        .as_ref()
-        .and_then(|s| s.theme.as_ref())
-        .cloned()
-        .unwrap_or_else(|| "auto".to_string());
-    match theme.as_str() {
-        "light" => {
-            let _ = theme_auto_item.set_checked(false);
-            let _ = theme_light_item.set_checked(true);
-            let _ = theme_dark_item.set_checked(false);
-        }
-        "dark" => {
-            let _ = theme_auto_item.set_checked(false);
-            let _ = theme_light_item.set_checked(false);
-            let _ = theme_dark_item.set_checked(true);
-        }
-        _ => {
-            let _ = theme_auto_item.set_checked(true);
-            let _ = theme_light_item.set_checked(false);
-            let _ = theme_dark_item.set_checked(false);
-        }
-    }
 
     tracing::debug!("System tray initialized successfully");
     Ok(())
@@ -322,6 +427,7 @@ pub async fn run() {
     ));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(log_builder.build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -376,6 +482,8 @@ pub async fn run() {
 
             // Log after subscriber is initialized
             tracing::info!("Starting MCP Router");
+
+            
 
             // 2.5) Initialize TokenManager (async task)
             // Use ~/.mcprouter as the configuration directory for consistency
