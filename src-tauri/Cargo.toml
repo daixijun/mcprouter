@@ -44,7 +44,7 @@ rustc_version = "0.4"
 futures = "0.3"
 http = "1.0"
 # MCP SDK - 使用官方 rmcp
-rmcp = { git = "https://github.com/daixijun/mcp-rust-sdk", branch = "feat/streamable-http-client", features = [
+rmcp = { version = "0.9.1", features = [
     "client",
     "server",
     "macros",
@@ -58,7 +58,7 @@ rmcp = { git = "https://github.com/daixijun/mcp-rust-sdk", branch = "feat/stream
     "client-side-sse",
     "reqwest",
 ] }
-rmcp-macros = "0.8.5"
+rmcp-macros = "0.9.1"
 async-trait = "0.1"
 
 process-wrap = "8.2"

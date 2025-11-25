@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:macos": "tauri build --bundles dmg"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
