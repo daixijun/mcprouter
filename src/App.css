@@ -1,6 +1,17 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+}
 
 /* CSS 变量定义 - 统一的颜色系统 */
 :root {
@@ -168,7 +179,7 @@
 /* Custom components with Tailwind */
 @layer components {
   .animated-gradient {
-    @apply bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700;
+    @apply bg-gradient-to-br from-primary-600 via-purple-600 to-indigo-700;
     background-size: 400% 400%;
     animation: gradient 15s ease infinite;
   }
@@ -182,7 +193,7 @@
   }
 
   .btn-primary {
-    @apply bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transform hover:-translate-y-0.5 shadow-md hover:shadow-lg transition-all duration-200; /* 减小内边距和圆角 */
+    @apply bg-gradient-to-r from-primary-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:from-primary-700 hover:to-indigo-700 transform hover:-translate-y-0.5 shadow-md hover:shadow-lg transition-all duration-200; /* 减小内边距和圆角 */
   }
 
   .btn-secondary {

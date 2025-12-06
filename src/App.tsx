@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { App as AntdApp } from 'antd'
 import {
+  Activity,
   Info,
   Key,
   Menu,
@@ -12,12 +13,12 @@ import {
   X,
 } from 'lucide-react'
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import './App.css'
 import AboutModal from './components/AboutModal'
 import AntdConfigProvider from './components/AntdConfigProvider'
 import LanguageSelector from './components/LanguageSelector'
 import { AppProvider, useAppContext } from './contexts/AppContext'
-import { useTranslation } from 'react-i18next'
 import Dashboard from './pages/Dashboard'
 import Marketplace from './pages/Marketplace'
 import McpServerManager from './pages/McpServerManager'
@@ -43,7 +44,7 @@ const AppContent = memo(() => {
   }
 
   const tabs = [
-    { id: 'overview', label: t('nav.overview'), icon: Info },
+    { id: 'overview', label: t('nav.overview'), icon: Activity },
     { id: 'servers', label: t('nav.server_management'), icon: Server },
     { id: 'market', label: t('nav.marketplace'), icon: Package },
     { id: 'tokens', label: t('nav.token_management'), icon: Key },
@@ -57,7 +58,7 @@ const AppContent = memo(() => {
           className={`h-screen overflow-hidden ${
             state.isDarkMode
               ? 'dark bg-gray-900'
-              : 'bg-gradient-to-br from-blue-50 via-white to-indigo-50'
+              : 'bg-linear-to-br from-blue-50 via-white to-indigo-50'
           }`}>
           <div className='h-full flex flex-col'>
             {/* Header */}
@@ -80,7 +81,7 @@ const AppContent = memo(() => {
                       />
                     </div>
                     <div>
-                      <h1 className='text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent'>
+                      <h1 className='text-lg font-bold bg-linear-to-r from-primary-600 to-indigo-600 bg-clip-text text-transparent'>
                         MCP Router
                       </h1>
                       <p className='text-xs text-gray-600 '>

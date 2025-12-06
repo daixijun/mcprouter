@@ -588,7 +588,7 @@ const TokenManagement: React.FC = () => {
             />
 
             <Card>
-              <Space direction='vertical' style={{ width: '100%' }}>
+              <Space orientation='vertical' style={{ width: '100%' }}>
                 <div>
                   <Text strong>{t('token.form.name')}:</Text>
                   <Text>{createdToken.name}</Text>
@@ -738,7 +738,7 @@ const TokenManagement: React.FC = () => {
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
-                <Space direction='vertical'>
+                <Space orientation='vertical'>
                   <Paragraph>{t('token.empty.title')}</Paragraph>
                   <Text type='secondary'>{t('token.empty.description')}</Text>
                   <Button

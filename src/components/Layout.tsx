@@ -46,10 +46,10 @@ export const Container: React.FC<ContainerProps> = ({ className, size = 'lg', ch
 
 export interface StackProps extends React.HTMLAttributes<HTMLElement> {
   spacing?: 'small' | 'middle' | 'large'
-  direction?: 'vertical' | 'horizontal'
+  orientation?: 'vertical' | 'horizontal'
 }
 
-export const Stack: React.FC<StackProps> = ({ className, spacing = 'middle', direction = 'vertical', children, ...props }) => {
+export const Stack: React.FC<StackProps> = ({ className, spacing = 'middle', orientation = 'vertical', children, ...props }) => {
   const gapMap = {
     small: 8,
     middle: 16,
@@ -59,7 +59,7 @@ export const Stack: React.FC<StackProps> = ({ className, spacing = 'middle', dir
   return (
     <Space
       className={className}
-      direction={direction}
+      orientation={orientation}
       size={gapMap[spacing]}
       {...(props as any)}
     >

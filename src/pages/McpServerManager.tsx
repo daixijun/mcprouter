@@ -129,7 +129,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 
       // 使用 notification 显示详细的错误信息
       notification.error({
-        message: t('mcp_server.messages.server_operation_failed', {
+        title: t('mcp_server.messages.server_operation_failed', {
           name: serverName,
         }),
         description: errorMessage,

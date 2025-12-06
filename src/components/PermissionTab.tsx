@@ -195,7 +195,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     <div>
       {/* 操作栏 */}
       <Card size='small' style={{ marginBottom: 16 }}>
-        <Space direction='vertical' style={{ width: '100%' }}>
+        <Space orientation='vertical' style={{ width: '100%' }}>
           {/* 搜索框 */}
           <Search
             placeholder={t('tool.tab.search_placeholder')}
@@ -342,7 +342,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                     onChange={handlePermissionChange}
                     disabled={disabled}
                     style={{ width: '100%' }}>
-                    <Space direction='vertical' style={{ width: '100%' }}>
+                    <Space orientation='vertical' style={{ width: '100%' }}>
                       {group.permissions.map((permission) => (
                         <div key={permission} style={{ paddingLeft: 24 }}>
                           <Checkbox value={permission}>

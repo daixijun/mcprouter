@@ -182,7 +182,7 @@ const Dashboard: React.FC = () => {
             title={t('dashboard.stats.total_servers')}
             value={stats.total_servers}
             prefix={<Server size={14} />}
-            valueStyle={{ color: '#1890ff', fontSize: '18px' }}
+            styles={{ content: { color: '#1890ff', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
@@ -192,7 +192,7 @@ const Dashboard: React.FC = () => {
             title={t('dashboard.stats.enabled_servers')}
             value={stats.enabled_servers}
             prefix={<Activity size={14} />}
-            valueStyle={{ color: '#52c41a', fontSize: '18px' }}
+            styles={{ content: { color: '#52c41a', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
@@ -202,7 +202,7 @@ const Dashboard: React.FC = () => {
             title={t('dashboard.stats.total_tools')}
             value={formatNumber(stats.total_tools)}
             prefix={<Wrench size={14} />}
-            valueStyle={{ color: '#722ed1', fontSize: '18px' }}
+            styles={{ content: { color: '#722ed1', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
@@ -212,7 +212,7 @@ const Dashboard: React.FC = () => {
             title={t('dashboard.stats.failed_servers')}
             value={stats.failed_servers}
             prefix={<XCircle size={14} />}
-            valueStyle={{ color: '#ff4d4f', fontSize: '18px' }}
+            styles={{ content: { color: '#ff4d4f', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
@@ -222,7 +222,7 @@ const Dashboard: React.FC = () => {
             title={t('dashboard.stats.connected_services')}
             value={formatNumber(stats.connected_services)}
             prefix={<TrendingUp size={14} />}
-            valueStyle={{ color: '#13c2c2', fontSize: '18px' }}
+            styles={{ content: { color: '#13c2c2', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
@@ -232,7 +232,7 @@ const Dashboard: React.FC = () => {
             title={t('dashboard.system_info.uptime')}
             value={currentUptime}
             prefix={<Activity size={14} />}
-            valueStyle={{ color: '#fa8c16', fontSize: '18px' }}
+            styles={{ content: { color: '#fa8c16', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
@@ -250,24 +250,23 @@ const Dashboard: React.FC = () => {
         <div className='w-full space-y-3'>
           <div className='relative'>
             <div className='bg-gray-50 dark:bg-gray-900 rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'>
-              <pre className='text-xs whitespace-pre-wrap text-gray-800 dark:text-gray-100'>
+              <pre className='text-xs whitespace-pre-wrap text-gray-800 dark:text-gray-100 pr-16'>
                 {JSON.stringify(generatedConfig, null, 2)}
               </pre>
             </div>
-            <Button
-              type='primary'
-              size='small'
+            <button
               onClick={copyMcpServersJson}
-              className='absolute top-2 right-2'>
+              className='absolute top-2 right-2 btn-modern bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm shadow-lg z-50'
+              style={{ zIndex: 9999 }}>
               {t('dashboard.client_config.copy_config')}
-            </Button>
+            </button>
           </div>
 
           <div className='flex items-center gap-3 pt-1'>
             <Text className='text-sm text-gray-600 dark:text-gray-300'>
               {t('dashboard.client_config.add_to_clients')}
             </Text>
-            <div className='flex flex-wrap gap-4'>
+            <div className='flex flex-wrap gap-1'>
               {[
                 {
                   label: 'Cherry Studio',
@@ -303,13 +302,13 @@ const Dashboard: React.FC = () => {
                 <div
                   key={c.label}
                   onClick={() => openUrl(c.installUrl)}
-                  className='group flex items-center gap-1 cursor-pointer rounded px-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-200'>
+                  className='group flex items-center gap-2 cursor-pointer rounded-lg px-0.5 py-0.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-300 hover:scale-105'>
                   <img
                     src={c.iconUrl}
                     alt={c.label}
                     className='w-5 h-5 rounded'
                   />
-                  <Text className='text-xs ml-1 overflow-hidden max-w-0 group-hover:max-w-[140px] transition-all duration-200 whitespace-nowrap'>
+                  <Text className='text-xs overflow-hidden max-w-0 group-hover:max-w-[140px] transition-all duration-300 delay-75 whitespace-nowrap'>
                     {c.label}
                   </Text>
                 </div>
@@ -333,7 +332,7 @@ const Dashboard: React.FC = () => {
             <Text strong className='block mb-2'>
               {t('dashboard.system_info.version')}
             </Text>
-            <Space direction='vertical' size='small' className='text-sm'>
+            <Space orientation='vertical' size='small' className='text-sm'>
               <div>
                 <Text type='secondary'>{t('dashboard.system_info.os')}: </Text>
                 <Text>{stats.os_info?.type || 'Unknown'}</Text>
@@ -358,7 +357,7 @@ const Dashboard: React.FC = () => {
             <Text strong className='block mb-2'>
               {t('dashboard.aggregator.title')}
             </Text>
-            <Space direction='vertical' size='small' className='text-sm'>
+            <Space orientation='vertical' size='small' className='text-sm'>
               <div>
                 <Text type='secondary'>
                   {t('dashboard.aggregator.endpoint')}:{' '}
