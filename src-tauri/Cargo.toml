@@ -45,7 +45,7 @@ which = "8.0"
 futures = "0.3"
 http = "1.0"
 # MCP SDK - 使用官方 rmcp
-rmcp = { version = "0.9.1", features = [
+rmcp = { version = "0.10.0", features = [
     "client",
     "server",
     "macros",
@@ -59,7 +59,7 @@ rmcp = { version = "0.9.1", features = [
     "client-side-sse",
     "reqwest",
 ] }
-rmcp-macros = "0.9.1"
+rmcp-macros = "0.10.0"
 async-trait = "0.1"
 
 process-wrap = "8.2"
