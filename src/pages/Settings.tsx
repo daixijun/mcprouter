@@ -2,7 +2,6 @@ import { invoke } from '@tauri-apps/api/core'
 import {
   App,
   Button,
-  Card,
   Col,
   Flex,
   Input,
@@ -12,6 +11,8 @@ import {
   Switch,
   Typography,
 } from 'antd'
+// 显式导入Card组件，解决类型问题
+import Card from 'antd/es/card'
 import { memo, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SystemSettings } from '../types'
@@ -200,30 +201,36 @@ const Settings: React.FC = memo(() => {
   }, [settings, message.error])
 
   // Handler functions
-  const handleServerSettingChange = useCallback((key: string, value: any) => {
-    setSettings((prev) => ({
-      ...prev,
-      server: {
-        ...prev.server,
-        [key]: value,
-      },
-    }))
-  }, [])
+  const handleServerSettingChange = useCallback(
+    (key: string, value: string | number | boolean) => {
+      setSettings((prev) => ({
+        ...prev,
+        server: {
+          ...prev.server,
+          [key]: value,
+        },
+      }))
+    },
+    [],
+  )
 
-  const handleLoggingSettingChange = useCallback((key: string, value: any) => {
-    setSettings((prev) => ({
-      ...prev,
-      logging: {
-        ...prev.logging,
-        [key]: value,
-      },
-    }))
-  }, [])
+  const handleLoggingSettingChange = useCallback(
+    (key: string, value: string | number) => {
+      setSettings((prev) => ({
+        ...prev,
+        logging: {
+          ...prev.logging,
+          [key]: value,
+        },
+      }))
+    },
+    [],
+  )
 
   // security removed
 
   const handleSystemTraySettingChange = useCallback(
-    async (key: string, value: any) => {
+    async (key: string, value: boolean) => {
       // 立即更新本地状态
       const newSettings = {
         ...settings,
@@ -355,7 +362,9 @@ const Settings: React.FC = memo(() => {
               <Text strong>{t('settings.server.host')}</Text>
               <Select
                 value={settings.server.host}
-                onChange={(value) => handleServerSettingChange('host', value)}
+                onChange={(value: string) =>
+                  handleServerSettingChange('host', value)
+                }
                 loading={loadingIPs}
                 style={{ width: '100%', marginTop: '4px' }}
                 placeholder={t('settings.server.select_host')}
@@ -366,7 +375,7 @@ const Settings: React.FC = memo(() => {
               <Text strong>{t('settings.server.port')}</Text>
               <InputNumber
                 value={settings.server.port}
-                onChange={(value) =>
+                onChange={(value: number | null) =>
                   handleServerSettingChange('port', value || 0)
                 }
                 min={1}
@@ -378,7 +387,7 @@ const Settings: React.FC = memo(() => {
               <Text strong>{t('settings.server.max_connections')}</Text>
               <InputNumber
                 value={settings.server.max_connections}
-                onChange={(value) =>
+                onChange={(value: number | null) =>
                   handleServerSettingChange('max_connections', value || 0)
                 }
                 min={1}
@@ -390,7 +399,7 @@ const Settings: React.FC = memo(() => {
               <Text strong>{t('settings.server.timeout')}</Text>
               <InputNumber
                 value={settings.server.timeout_seconds}
-                onChange={(value) =>
+                onChange={(value: number | null) =>
                   handleServerSettingChange('timeout_seconds', value || 0)
                 }
                 min={1}
@@ -414,7 +423,7 @@ const Settings: React.FC = memo(() => {
                 </div>
                 <Switch
                   checked={settings.server.auth || false}
-                  onChange={async (checked) => {
+                  onChange={async (checked: boolean) => {
                     handleServerSettingChange('auth', checked)
                     // 立即保存设置
                     try {
@@ -447,7 +456,9 @@ const Settings: React.FC = memo(() => {
               <Select
                 style={{ width: '100%', marginTop: '4px' }}
                 value={settings.logging.level}
-                onChange={(value) => handleLoggingSettingChange('level', value)}
+                onChange={(value: string) =>
+                  handleLoggingSettingChange('level', value)
+                }
                 options={[
                   { value: 'trace', label: 'Trace' },
                   { value: 'debug', label: 'Debug' },
@@ -461,7 +472,7 @@ const Settings: React.FC = memo(() => {
               <Text strong>{t('settings.logging.file_name')}</Text>
               <Input
                 value={settings.logging.file_name}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   handleLoggingSettingChange('file_name', e.target.value)
                 }
                 placeholder='mcp-router.log'
@@ -493,7 +504,7 @@ const Settings: React.FC = memo(() => {
                   </div>
                   <Switch
                     checked={settings.settings?.system_tray?.enabled}
-                    onChange={(checked) =>
+                    onChange={(checked: boolean) =>
                       handleSystemTraySettingChange('enabled', checked)
                     }
                   />
@@ -522,7 +533,7 @@ const Settings: React.FC = memo(() => {
                   </div>
                   <Switch
                     checked={settings.settings?.system_tray?.close_to_tray}
-                    onChange={(checked) =>
+                    onChange={(checked: boolean) =>
                       handleSystemTraySettingChange('close_to_tray', checked)
                     }
                     disabled={!settings.settings?.system_tray?.enabled}
@@ -576,7 +587,9 @@ const Settings: React.FC = memo(() => {
                   <div style={{ flex: 3, marginRight: '16px' }}>
                     <Select
                       value={path}
-                      onChange={(value) => handlePathChange(command, value)}
+                      onChange={(value: string) =>
+                        handlePathChange(command, value)
+                      }
                       placeholder={t(
                         'settings.command_paths.placeholders.path',
                       )}
@@ -584,7 +597,7 @@ const Settings: React.FC = memo(() => {
                       loading={loadingPaths[command]}
                       allowClear
                       showSearch
-                      filterOption={(input, option) =>
+                      filterOption={(input: string, option: any) =>
                         (option?.label as string)
                           .toLowerCase()
                           .includes(input.toLowerCase())
