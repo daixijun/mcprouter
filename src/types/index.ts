@@ -152,6 +152,7 @@ export interface AppConfig {
     }
     uvIndexUrl?: string
     npmRegistry?: string
+    commandPaths?: Record<string, string>
   }
 }
 
@@ -188,6 +189,7 @@ export interface SystemSettings {
     }
     uv_index_url?: string
     npm_registry?: string
+    command_paths?: Record<string, string>
   }
 }
 

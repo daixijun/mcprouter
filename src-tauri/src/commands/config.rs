@@ -34,6 +34,7 @@ pub async fn set_theme(app: tauri::AppHandle, theme: String) -> Result<()> {
                     system_tray: None,
                     uv_index_url: None,
                     npm_registry: None,
+                    command_paths: Default::default(),
                 });
             }
             if let Some(settings) = config.settings.as_mut() {

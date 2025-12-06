@@ -39,7 +39,6 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
     }
 
     #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
     struct ServerOut {
         host: String,
         port: u16,
@@ -50,14 +49,12 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
     }
 
     #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
     struct LoggingOut {
         level: String,
         file_name: Option<String>,
     }
 
     #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
     struct TrayOut {
         #[serde(default)]
         enabled: Option<bool>,
@@ -68,7 +65,6 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
     }
 
     #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
     struct SettingsOut {
         #[serde(default)]
         theme: Option<String>,
@@ -82,10 +78,11 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
         uv_index_url: Option<String>,
         #[serde(default)]
         npm_registry: Option<String>,
+        #[serde(default)]
+        command_paths: std::collections::HashMap<String, String>,
     }
 
     #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
     struct SystemSettingsOut {
         server: ServerOut,
         logging: Option<LoggingOut>,
@@ -115,6 +112,7 @@ pub async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value> {
             }),
             uv_index_url: s.uv_index_url.clone(),
             npm_registry: s.npm_registry.clone(),
+            command_paths: s.command_paths.clone(),
         }),
     };
 
@@ -142,19 +140,19 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         .and_then(|t| t.enabled)
         .unwrap_or(true);
 
-    // Normalize incoming payload: accept { settings: {...} } or pure settings object
-    let settings_obj = match settings.get("settings") {
-        Some(Value::Object(o)) => Some(o.clone()),
-        _ => settings.as_object().cloned(),
-    }
-    .ok_or_else(|| {
-        McpError::ConfigError("Invalid settings payload: expected object".to_string())
-    })?;
-
     // Update tray handling in save_settings to create/hide tray dynamically
     // Apply updates under write-lock to avoid overwriting concurrent changes (e.g., theme)
     SERVICE_MANAGER
         .update_config(|config| {
+            // Handle settings from the payload
+            let settings_obj = match settings.get("settings") {
+                Some(Value::Object(o)) => o.clone(),
+                _ => settings
+                    .as_object()
+                    .unwrap_or(&serde_json::Map::new())
+                    .clone(),
+            };
+
             // Ensure settings exists
             if config.settings.is_none() {
                 config.settings = Some(crate::Settings {
@@ -168,6 +166,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                     }),
                     uv_index_url: None,
                     npm_registry: None,
+                    command_paths: Default::default(),
                 });
             }
             let settings_mut = config.settings.as_mut().unwrap();
@@ -237,8 +236,46 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 settings_mut.npm_registry = None;
             }
 
+            // Command paths settings - this is the key fix for the issue!
+            if let Some(Value::Object(cmd_paths)) = settings_obj.get("command_paths") {
+                let mut new_command_paths = std::collections::HashMap::new();
+                for (key, value) in cmd_paths {
+                    if let Value::String(path) = value {
+                        new_command_paths.insert(key.clone(), path.clone());
+                    }
+                }
+                tracing::debug!("Updating command_paths: {:?}", new_command_paths);
+                settings_mut.command_paths = new_command_paths;
+            } else if let Some(cmd_paths) = settings
+                .get("settings")
+                .and_then(|s| s.as_object())
+                .and_then(|s| s.get("command_paths"))
+                .and_then(|c| c.as_object())
+            {
+                // Handle case where command_paths is in the nested settings object
+                let mut new_command_paths = std::collections::HashMap::new();
+                for (key, value) in cmd_paths {
+                    if let Value::String(path) = value {
+                        new_command_paths.insert(key.clone(), path.clone());
+                    }
+                }
+                tracing::debug!(
+                    "Updating command_paths from nested settings: {:?}",
+                    new_command_paths
+                );
+                settings_mut.command_paths = new_command_paths;
+            }
+
             // Logging config (support top-level payload; level string and file_name string)
-            if let Some(Value::Object(logging_obj)) = settings.get("logging") {
+            let logging_obj = match settings.get("logging") {
+                Some(Value::Object(o)) => Some(o.clone()),
+                _ => settings_obj
+                    .get("logging")
+                    .and_then(|l| l.as_object())
+                    .cloned(),
+            };
+
+            if let Some(logging_obj) = logging_obj {
                 // Ensure logging exists
                 if config.logging.is_none() {
                     config.logging = Some(crate::LoggingSettings {
@@ -293,8 +330,6 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 } else {
                     tracing::warn!("auth field not found in server config or not a boolean");
                 }
-            } else {
-                tracing::warn!("No server config found in settings payload");
             }
 
             // Security settings removed
@@ -512,6 +547,7 @@ pub async fn save_language_preference(app: tauri::AppHandle, language: String) -
                     }),
                     uv_index_url: None,
                     npm_registry: None,
+                    command_paths: Default::default(),
                 });
             } else {
                 config.settings.as_mut().unwrap().language = Some(language.clone());
@@ -528,4 +564,61 @@ pub async fn save_language_preference(app: tauri::AppHandle, language: String) -
     let _ = app.emit("language-changed", language.clone());
 
     Ok(format!("Language preference saved: {}", language))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn check_path_validity(path: String) -> Result<serde_json::Value> {
+    use std::fs;
+    use std::path::Path;
+
+    let path_obj = Path::new(&path);
+    let exists = path_obj.exists();
+    let is_executable = if exists {
+        if let Ok(metadata) = fs::metadata(path_obj) {
+            let permissions = metadata.permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                permissions.mode() & 0o111 != 0
+            }
+            #[cfg(windows)]
+            {
+                // On Windows, we just check if the file exists
+                true
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    Ok(serde_json::json!({
+        "exists": exists,
+        "is_executable": is_executable
+    }))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn get_system_command_paths(command: String) -> Result<Vec<String>> {
+    use std::collections::HashSet;
+
+    let mut paths = HashSet::new();
+
+    // Use which crate to find all occurrences of the command in PATH
+    if let Ok(found_paths) = which::which_all_global(&command) {
+        for path in found_paths {
+            if let Ok(canonical_path) = path.canonicalize() {
+                if let Some(path_str) = canonical_path.to_str() {
+                    paths.insert(path_str.to_string());
+                }
+            }
+        }
+    }
+
+    // Convert to sorted Vec
+    let mut result: Vec<String> = paths.into_iter().collect();
+    result.sort();
+
+    Ok(result)
 }

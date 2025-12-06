@@ -863,7 +863,7 @@ impl McpServerManager {
                     success_count += 1;
                 }
                 Ok(false) => {
-                    tracing::warn!("Service '{}' connection failed", service_name);
+                    tracing::error!("Service '{}' connection failed", service_name);
                     failed_count += 1;
                 }
                 Err(e) => {

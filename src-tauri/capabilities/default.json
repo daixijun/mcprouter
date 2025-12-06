@@ -9,6 +9,11 @@
     "autostart:default",
     "core:tray:default",
     "shell:allow-open",
+    "dialog:allow-open",
+    "dialog:deny-save",
+    "dialog:allow-confirm",
+    "dialog:allow-ask",
+    "dialog:allow-message",
     "clipboard-manager:allow-clear",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
@@ -23,7 +28,9 @@
         {
           "url": "vscode:mcp/install*"
         },
-        { "url": "cherrystudio://mcp/install*" },
+        {
+          "url": "cherrystudio://mcp/install*"
+        },
         {
           "url": "cursor://anysphere.cursor-deeplink/mcp/install*"
         },
@@ -31,6 +38,7 @@
           "url": "windsurf:"
         }
       ]
-    }
+    },
+    "dialog:default"
   ]
 }

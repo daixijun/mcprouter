@@ -42,7 +42,20 @@ const Settings: React.FC = memo(() => {
         close_to_tray: false,
         start_to_tray: false,
       },
+      command_paths: {
+        uvx: '',
+        npx: '',
+      },
     },
+  })
+
+  // Command paths management state
+  const [commandPaths, setCommandPaths] = useState<{ [key: string]: string[] }>(
+    { uvx: [], npx: [] },
+  )
+  const [loadingPaths, setLoadingPaths] = useState<{ [key: string]: boolean }>({
+    uvx: false,
+    npx: false,
   })
 
   const [loading, setLoading] = useState(false)
@@ -64,19 +77,6 @@ const Settings: React.FC = memo(() => {
     }
   }, [message.error])
 
-  // Data fetching
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        await Promise.all([loadSettings(), loadLocalIPs()])
-      } catch (error) {
-        console.error('Failed to load initial data:', error)
-      }
-    }
-
-    loadData()
-  }, [])
-
   const loadSettings = useCallback(async () => {
     setLoading(true)
     try {
@@ -94,9 +94,21 @@ const Settings: React.FC = memo(() => {
         timeoutPromise,
       ])
 
+      // 确保 command_paths 存在，默认包含 uvx 和 npx
+      const updatedSettings = {
+        ...loadedSettings,
+        settings: {
+          ...loadedSettings.settings!,
+          command_paths: {
+            uvx: '',
+            npx: '',
+            ...loadedSettings.settings?.command_paths,
+          },
+        },
+      }
       // 同时更新设置和自启动状态，避免重复调用接口
-      setSettings(loadedSettings)
-      setAutostartEnabled(loadedSettings.settings?.autostart || false)
+      setSettings(updatedSettings)
+      setAutostartEnabled(updatedSettings.settings?.autostart || false)
     } catch (error) {
       console.error('Failed to load settings:', error)
       const errorMessage =
@@ -108,6 +120,40 @@ const Settings: React.FC = memo(() => {
       setLoading(false)
     }
   }, [message.error])
+
+  const loadSystemPaths = useCallback(
+    async (command: string) => {
+      setLoadingPaths((prev) => ({ ...prev, [command]: true }))
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const paths = await invoke<string[]>('get_system_command_paths', {
+          command,
+        })
+        setCommandPaths((prev) => ({ ...prev, [command]: paths }))
+      } catch (error) {
+        console.error(`Failed to load system paths for ${command}:`, error)
+        message.error(t('settings.command_paths.errors.load_paths_failed'))
+      } finally {
+        setLoadingPaths((prev) => ({ ...prev, [command]: false }))
+      }
+    },
+    [message.error],
+  )
+
+  // Data fetching
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        await Promise.all([loadSettings(), loadLocalIPs()])
+        // Load paths for each command separately
+        await Promise.all(['uvx', 'npx'].map(loadSystemPaths))
+      } catch (error) {
+        console.error('Failed to load initial data:', error)
+      }
+    }
+
+    loadData()
+  }, [loadSettings, loadLocalIPs, loadSystemPaths])
 
   const saveSettings = useCallback(async () => {
     console.log('=== SAVE SETTINGS START ===')
@@ -233,6 +279,56 @@ const Settings: React.FC = memo(() => {
       message.error(t('settings.errors.toggle_autostart_failed'))
     }
   }, [autostartEnabled, message.error])
+
+  // Command paths management functions
+  const handlePathChange = useCallback(
+    async (command: string, value: string) => {
+      const path = value?.trim() || ''
+
+      // Directly update settings state, validation will happen on global save
+      setSettings((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings!,
+          command_paths: {
+            ...prev.settings!.command_paths!,
+            [command]: path,
+          },
+        },
+      }))
+    },
+    [],
+  )
+
+  const handleBrowsePath = useCallback(
+    async (command: string) => {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog')
+        const selected = await open({
+          multiple: false,
+          directory: false,
+          title: t('settings.command_paths.browse_title'),
+        })
+        if (selected) {
+          // Directly update settings state when browsing for a file
+          setSettings((prev) => ({
+            ...prev,
+            settings: {
+              ...prev.settings!,
+              command_paths: {
+                ...prev.settings!.command_paths!,
+                [command]: selected as string,
+              },
+            },
+          }))
+        }
+      } catch (error) {
+        console.error('Failed to browse file:', error)
+        message.error(t('settings.command_paths.errors.check_failed'))
+      }
+    },
+    [message.error],
+  )
 
   // security removed
 
@@ -454,6 +550,74 @@ const Settings: React.FC = memo(() => {
               </Flex>
             </div>
           </Flex>
+        </Card>
+
+        {/* Command Paths Settings */}
+        <Card>
+          <Title level={4}>{t('settings.command_paths.title')}</Title>
+
+          <div>
+            {Object.entries(settings.settings?.command_paths || {}).map(
+              ([command, path]) => (
+                <div
+                  key={command}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px',
+                    border: '1px solid var(--ant-color-border)',
+                    borderRadius: '8px',
+                    marginBottom: '16px',
+                  }}>
+                  <div style={{ flex: 0.5, marginRight: '16px' }}>
+                    <Text strong>{command}</Text>
+                  </div>
+                  <div style={{ flex: 3, marginRight: '16px' }}>
+                    <Select
+                      value={path}
+                      onChange={(value) => handlePathChange(command, value)}
+                      placeholder={t(
+                        'settings.command_paths.placeholders.path',
+                      )}
+                      style={{ width: '100%' }}
+                      loading={loadingPaths[command]}
+                      allowClear
+                      showSearch
+                      filterOption={(input, option) =>
+                        (option?.label as string)
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                      options={[
+                        // Add existing path if it's not in command paths
+                        ...(path && !commandPaths[command].includes(path)
+                          ? [{ value: path, label: path }]
+                          : []),
+                        // Add command-specific paths
+                        ...commandPaths[command].map((p) => ({
+                          value: p,
+                          label: p,
+                        })),
+                      ].filter(
+                        (option, index, self) =>
+                          // Remove duplicates
+                          index ===
+                          self.findIndex((o) => o.value === option.value),
+                      )}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <Button
+                      size='middle'
+                      onClick={() => handleBrowsePath(command)}>
+                      {t('settings.command_paths.browse')}
+                    </Button>
+                  </div>
+                </div>
+              ),
+            )}
+          </div>
         </Card>
       </Flex>
 

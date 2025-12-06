@@ -203,8 +203,21 @@ impl McpClientManager {
         let mut env_vars = service_config.env.clone().unwrap_or_default();
 
         // Load settings and apply environment configuration
+        let mut resolved_command = command.clone();
         if let Ok(config) = crate::config::AppConfig::load() {
             if let Some(settings) = config.settings {
+                // Check if we have a custom path for this command
+                let command_name = command.split_whitespace().next().unwrap_or(command);
+                if let Some(custom_path) = settings.command_paths.get(command_name) {
+                    tracing::debug!(
+                        "Using custom path for command '{}': {}",
+                        command_name,
+                        custom_path
+                    );
+                    resolved_command = custom_path.clone();
+                }
+
+                // Apply environment variables based on command type
                 if command.starts_with("uvx") || command.starts_with("uv") {
                     if let Some(uv_index_url) = settings.uv_index_url {
                         env_vars.insert("UV_INDEX_URL".to_string(), uv_index_url);
@@ -220,7 +233,7 @@ impl McpClientManager {
         tracing::debug!("Creating STDIO MCP service: {}", service_config.name);
 
         // Create transport
-        let mut command_builder = Command::new(command);
+        let mut command_builder = Command::new(resolved_command);
         command_builder.args(&args);
         for (key, value) in env_vars {
             command_builder.env(key, value);
@@ -867,7 +880,7 @@ impl McpClientManager {
                 Ok(is_connected)
             }
             Err(e) => {
-                tracing::warn!("Service '{}' reconnection failed: {}", service_name, e);
+                tracing::error!("Service '{}' reconnection failed: {}", service_name, e);
                 Ok(false)
             }
         }

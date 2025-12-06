@@ -104,9 +104,7 @@ fn get_tray_text(key: &str, language: &str) -> &'static str {
 
 /// Build tray menu with current language and theme settings
 /// Returns the menu and cloned menu items for event handling
-fn build_tray_menu(
-    app: &tauri::AppHandle,
-) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     // Load configuration to get current language and theme
     let config = AppConfig::load().unwrap_or_default();
     let language = config
@@ -123,28 +121,33 @@ fn build_tray_menu(
         .unwrap_or("auto");
 
     // Create theme menu items with correct checked state
-    let theme_auto_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_auto", language))
-        .id("theme_auto")
-        .checked(theme == "auto")
-        .build(app)?;
-    let theme_light_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_light", language))
-        .id("theme_light")
-        .checked(theme == "light")
-        .build(app)?;
-    let theme_dark_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_dark", language))
-        .id("theme_dark")
-        .checked(theme == "dark")
-        .build(app)?;
+    let theme_auto_item =
+        tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_auto", language))
+            .id("theme_auto")
+            .checked(theme == "auto")
+            .build(app)?;
+    let theme_light_item =
+        tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_light", language))
+            .id("theme_light")
+            .checked(theme == "light")
+            .build(app)?;
+    let theme_dark_item =
+        tauri::menu::CheckMenuItemBuilder::new(get_tray_text("theme_dark", language))
+            .id("theme_dark")
+            .checked(theme == "dark")
+            .build(app)?;
 
     // Create language menu items
-    let zh_cn_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("language_zh_cn", language))
-        .id("language_zh_cn")
-        .checked(language == "zh-CN")
-        .build(app)?;
-    let en_us_item = tauri::menu::CheckMenuItemBuilder::new(get_tray_text("language_en_us", language))
-        .id("language_en_us")
-        .checked(language == "en-US")
-        .build(app)?;
+    let zh_cn_item =
+        tauri::menu::CheckMenuItemBuilder::new(get_tray_text("language_zh_cn", language))
+            .id("language_zh_cn")
+            .checked(language == "zh-CN")
+            .build(app)?;
+    let en_us_item =
+        tauri::menu::CheckMenuItemBuilder::new(get_tray_text("language_en_us", language))
+            .id("language_en_us")
+            .checked(language == "en-US")
+            .build(app)?;
 
     // Build tray menu
     let menu = tauri::menu::MenuBuilder::new(app)
@@ -299,6 +302,7 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                             }),
                             uv_index_url: None,
                             npm_registry: None,
+                            command_paths: Default::default(),
                         });
                     }
                     if let Some(settings) = config.settings.as_mut() {
@@ -331,7 +335,7 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     if config.settings.is_none() {
                         config.settings = Some(Settings {
                             theme: Some("auto".to_string()),
-                            language: Some("zh-CN".to_string()),
+                            language: Some(language.to_string()),
                             autostart: Some(false),
                             system_tray: Some(SystemTraySettings {
                                 enabled: Some(true),
@@ -340,6 +344,7 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                             }),
                             uv_index_url: None,
                             npm_registry: None,
+                            command_paths: Default::default(),
                         });
                     }
                     if let Some(settings) = config.settings.as_mut() {
@@ -427,6 +432,7 @@ pub async fn run() {
     ));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(log_builder.build())
         .plugin(tauri_plugin_shell::init())
@@ -483,7 +489,7 @@ pub async fn run() {
             // Log after subscriber is initialized
             tracing::info!("Starting MCP Router");
 
-            
+
 
             // 2.5) Initialize TokenManager (async task)
             // Use ~/.mcprouter as the configuration directory for consistency
@@ -667,6 +673,8 @@ pub async fn run() {
             disable_all_mcp_server_tools,
             get_settings,
             save_settings,
+            check_path_validity,
+            get_system_command_paths,
             get_dashboard_stats,
             get_local_ip_addresses,
             toggle_autostart,

@@ -112,6 +112,8 @@ pub struct Settings {
     pub system_tray: Option<SystemTraySettings>,
     pub uv_index_url: Option<String>,
     pub npm_registry: Option<String>,
+    #[serde(default)]
+    pub command_paths: HashMap<String, String>,
 }
 
 fn default_theme() -> Option<String> {
@@ -472,6 +474,7 @@ impl Default for AppConfig {
                 }),
                 uv_index_url: None,
                 npm_registry: None,
+                command_paths: Default::default(),
             }),
             mcp_servers: Vec::new(),
         }
