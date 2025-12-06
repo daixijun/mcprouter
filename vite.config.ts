@@ -10,6 +10,16 @@ export default defineConfig(async () => ({
   // Set base path for Tauri
   base: './',
 
+  // CSS 优化配置
+  css: {
+    postcss: {
+      plugins: [
+        (await import('@tailwindcss/postcss')).default,
+        (await import('autoprefixer')).default,
+      ],
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
@@ -36,26 +46,40 @@ export default defineConfig(async () => ({
     assetsDir: 'assets',
     rollupOptions: {
       output: {
-        manualChunks: {
+        manualChunks: (id) => {
           // React core libraries
-          vendor: ['react', 'react-dom'],
+          if (id.includes('react') || id.includes('react-dom')) {
+            return 'vendor'
+          }
           // Tauri API
-          tauri: ['@tauri-apps/api'],
+          if (id.includes('@tauri-apps/api')) {
+            return 'tauri'
+          }
           // UI components and icons
-          ui: ['lucide-react'],
+          if (id.includes('lucide-react') || id.includes('antd')) {
+            return 'ui'
+          }
           // Markdown processing
-          markdown: [
-            'react-markdown',
-            'rehype-raw',
-            'rehype-sanitize',
-            'remark-gfm',
-          ],
+          if (id.includes('react-markdown') ||
+              id.includes('rehype-raw') ||
+              id.includes('rehype-sanitize') ||
+              id.includes('remark-gfm')) {
+            return 'markdown'
+          }
           // Utility libraries
-          utils: ['uuid'],
+          if (id.includes('uuid')) {
+            return 'vendor' // 合并到 vendor 中，避免空 chunk
+          }
+          // i18n
+          if (id.includes('react-i18next') || id.includes('i18next')) {
+            return 'i18n'
+          }
         },
       },
     },
-    // Optimize chunks for better caching
-    chunkSizeWarningLimit: 600,
+    // Optimize chunks for better caching - 提高限制避免警告
+    chunkSizeWarningLimit: 1000,
+    // CSS 代码分割
+    cssCodeSplit: true,
   },
 }))

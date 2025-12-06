@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { App, Button, Card, Space, Statistic, Typography } from 'antd'
+import { App, Space, Statistic, Typography } from 'antd'
+import Card from 'antd/es/card'
 import { Activity, Server, TrendingUp, Wrench, XCircle } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -332,7 +333,7 @@ const Dashboard: React.FC = () => {
             <Text strong className='block mb-2'>
               {t('dashboard.system_info.version')}
             </Text>
-            <Space orientation='vertical' size='small' className='text-sm'>
+            <Space direction='vertical' size='small' className='text-sm'>
               <div>
                 <Text type='secondary'>{t('dashboard.system_info.os')}: </Text>
                 <Text>{stats.os_info?.type || 'Unknown'}</Text>
@@ -357,7 +358,7 @@ const Dashboard: React.FC = () => {
             <Text strong className='block mb-2'>
               {t('dashboard.aggregator.title')}
             </Text>
-            <Space orientation='vertical' size='small' className='text-sm'>
+            <Space direction='vertical' size='small' className='text-sm'>
               <div>
                 <Text type='secondary'>
                   {t('dashboard.aggregator.endpoint')}:{' '}
