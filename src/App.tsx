@@ -65,7 +65,7 @@ const AppContent = memo(() => {
                       />
                     </div>
                     <div>
-                      <h1 className='text-lg font-bold bg-linear-to-r from-primary-600 to-indigo-600 bg-clip-text text-transparent'>
+                      <h1 className='text-lg font-bold text-primary-800 dark:text-primary-300'>
                         MCP Router
                       </h1>
                       <p className='text-xs text-gray-600 dark:text-gray-400'>
