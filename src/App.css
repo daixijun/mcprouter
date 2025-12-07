@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --color-primary-50: #eff6ff;
@@ -45,8 +45,26 @@
 
   /* 边框颜色 - 亮色模式 */
   --color-border: #e5e7eb;
+  --color-border-primary: #e5e7eb;
   --color-border-secondary: #f3f4f6;
+  --color-border-tertiary: #e5e7eb;
   --color-border-light: #e5e7eb;
+  --color-border-focus: #3b82f6;
+  --color-border-hover: #d1d5db;
+
+  /* 分割线变量 */
+  --color-divider: #e5e7eb;
+  --color-divider-strong: #d1d5db;
+
+  /* 轮廓线变量 */
+  --color-outline: #3b82f6;
+  --color-outline-error: #ef4444;
+  --color-outline-success: #10b981;
+
+  /* 半透明背景变量 */
+  --color-bg-overlay-light: rgba(255, 255, 255, 0.9);
+  --color-bg-overlay-medium: rgba(255, 255, 255, 0.8);
+  --color-bg-overlay-heavy: rgba(255, 255, 255, 0.7);
 
   /* 平台特定颜色 */
   --color-platform-mada: #f43f5e;
@@ -66,6 +84,15 @@
   /* 阴影 */
   --color-shadow: rgba(0, 0, 0, 0.1);
   --color-shadow-dark: rgba(0, 0, 0, 0.2);
+  --color-shadow-light: rgba(0, 0, 0, 0.05);
+  --color-shadow-medium: rgba(0, 0, 0, 0.1);
+  --color-shadow-strong: rgba(0, 0, 0, 0.2);
+
+  /* 按钮专用颜色变量 */
+  --btn-bg-hover: var(--color-bg-tertiary);
+  --btn-text-hover: var(--color-text-primary);
+  --btn-bg-active: var(--color-border-secondary);
+  --btn-text-active: var(--color-text-inverse);
 }
 
 .dark {
@@ -99,8 +126,26 @@
 
   /* 边框颜色 - 暗色模式 */
   --color-border: #374151;
+  --color-border-primary: #374151;
   --color-border-secondary: #4b5563;
+  --color-border-tertiary: #4b5563;
   --color-border-light: #4b5563;
+  --color-border-focus: #60a5fa;
+  --color-border-hover: #6b7280;
+
+  /* 分割线变量 - 暗色模式 */
+  --color-divider: #374151;
+  --color-divider-strong: #4b5563;
+
+  /* 轮廓线变量 - 暗色模式 */
+  --color-outline: #60a5fa;
+  --color-outline-error: #f87171;
+  --color-outline-success: #34d399;
+
+  /* 半透明背景变量 - 暗色模式 */
+  --color-bg-overlay-light: rgba(17, 24, 39, 0.9);
+  --color-bg-overlay-medium: rgba(31, 41, 55, 0.8);
+  --color-bg-overlay-heavy: rgba(55, 65, 81, 0.7);
 
   /* 平台特定颜色 - 暗色模式保持不变 */
   --color-platform-mada: #f43f5e;
@@ -120,6 +165,15 @@
   /* 阴影 - 暗色模式 */
   --color-shadow: rgba(0, 0, 0, 0.3);
   --color-shadow-dark: rgba(0, 0, 0, 0.5);
+  --color-shadow-light: rgba(0, 0, 0, 0.2);
+  --color-shadow-medium: rgba(0, 0, 0, 0.3);
+  --color-shadow-strong: rgba(0, 0, 0, 0.5);
+
+  /* 按钮专用颜色变量 */
+  --btn-bg-hover: var(--color-bg-tertiary);
+  --btn-text-hover: var(--color-text-primary);
+  --btn-bg-active: var(--color-border-secondary);
+  --btn-text-active: var(--color-text-inverse);
 }
 
 /* Base styles */
@@ -131,7 +185,8 @@
 
   body {
     height: 100vh;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      sans-serif;
     font-size: 14px; /* 减小基础字体大小 */
     overflow: hidden;
   }
@@ -185,7 +240,9 @@
   }
 
   .glass-effect {
-    @apply bg-white/10 backdrop-blur-lg border border-white/20;
+    background-color: var(--color-bg-overlay-light);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--color-border-secondary);
   }
 
   .card-glass {
@@ -197,11 +254,35 @@
   }
 
   .btn-secondary {
-    @apply bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-semibold hover:bg-white/30 transform hover:-translate-y-0.5 transition-all duration-200; /* 减小内边距和圆角 */
+    background-color: var(--color-bg-overlay-light);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    transform: translateY(0);
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--color-bg-overlay-medium);
+    transform: translateY(-2px);
   }
 
   .nav-glass {
-    @apply bg-white/95 backdrop-blur-lg border-b border-gray-200 dark:bg-gray-900/95 dark:border-gray-700 shadow-sm;
+    @apply bg-white/95 backdrop-blur-lg border-b border-gray-200 shadow-sm;
+  }
+
+  .dark .nav-glass {
+    @apply bg-gray-900/98 border-b border-gray-700;
+  }
+
+  /* Header navigation link styles with better dark mode contrast */
+  .dark .nav-glass .nav-link {
+    @apply text-gray-300 hover:bg-gray-800/50 hover:text-white;
+  }
+
+  .dark .nav-glass .nav-link.active {
+    @apply bg-gray-800/60 text-blue-400 shadow-md border border-blue-500/30;
   }
 
   .input-modern {
@@ -474,11 +555,11 @@
 /* Custom utilities */
 @layer utilities {
   .text-shadow {
-    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   .text-shadow-lg {
-    text-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
   }
 
   .animate-float {
@@ -500,7 +581,8 @@
 
 /* Keyframes for animations */
 @keyframes gradient {
-  0%, 100% {
+  0%,
+  100% {
     background-position: 0% 50%;
   }
   50% {
@@ -509,7 +591,8 @@
 }
 
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px);
   }
   50% {
@@ -538,7 +621,8 @@
 }
 
 @keyframes bounceSubtle {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0);
   }
   50% {
@@ -553,8 +637,8 @@
 }
 
 .ant-switch.ant-switch-checked {
-  background-color: #10B981 !important; /* 开启状态：绿色背景 */
-  border-color: #10B981 !important;
+  background-color: #10b981 !important; /* 开启状态：绿色背景 */
+  border-color: #10b981 !important;
 }
 
 .ant-switch-inner {
@@ -574,4 +658,120 @@
 
 .dark .ant-switch-handle {
   border-color: #4b5563 !important;
+}
+
+/* 全局暗黑模式重置样式 - 强制覆盖顽固的白色背景 */
+.dark {
+  color-scheme: dark;
+}
+
+/* 强制覆盖 Ant Design 组件的白色背景 */
+.dark .ant-card,
+.dark .ant-modal,
+.dark .ant-popover,
+.dark .ant-tooltip,
+.dark .ant-dropdown {
+  background-color: var(--color-bg-secondary, #1f2937) !important;
+}
+
+.dark .ant-card-head,
+.dark .ant-modal-header,
+.dark .ant-popover-inner,
+.dark .ant-dropdown-menu {
+  background-color: var(--color-bg-elevated, #1f2937) !important;
+}
+
+.dark .ant-card-body {
+  background-color: var(--color-bg-secondary, #1f2937) !important;
+}
+
+/* 强制覆盖文本颜色 */
+.dark .ant-card-head-title,
+.dark .ant-modal-title,
+.dark .ant-typography {
+  color: var(--color-text-primary, #f9fafb) !important;
+}
+
+/* 强制覆盖所有 pre 标签的背景色 */
+.dark pre {
+  background-color: var(--color-bg-secondary, #1f2937) !important;
+  color: var(--color-text-primary, #f9fafb) !important;
+}
+
+/* 强制覆盖所有 code 标签的背景色 */
+.dark code {
+  background-color: var(--color-bg-tertiary, #374151) !important;
+  color: var(--color-text-primary, #f9fafb) !important;
+}
+
+/* 强制覆盖 Ant Design Card 组件的白色背景 */
+.dark .ant-card {
+  background-color: transparent !important;
+}
+
+.dark .ant-card-body {
+  background-color: transparent !important;
+}
+
+/* 确保 Card 内的直接子 div 正确继承背景色 */
+.dark .ant-card > div {
+  background-color: transparent !important;
+}
+
+/* 确保 JSON 显示区域的背景色正确 */
+.dark .ant-card div[class*="bg-gray-900"] {
+  background-color: var(--color-bg-secondary, #1f2937) !important;
+}
+
+/* 确保 pre 标签在 Card 内也能正确显示背景色 */
+.dark .ant-card pre {
+  background-color: var(--color-bg-tertiary, #374151) !important;
+  border-color: var(--color-border, #374151) !important;
+}
+
+.dark .ant-card code {
+  background-color: var(--color-bg-quaternary, #4b5563) !important;
+}
+
+/* 按钮可访问性增强样式 */
+.dark button {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* 确保所有自定义按钮在暗黑模式下都有足够的对比度 */
+.dark button[class*="hover:bg-gray-"]:hover {
+  background-color: var(--btn-bg-hover, #374151) !important;
+  color: var(--btn-text-hover, #f9fafb) !important;
+}
+
+/* 针对 cursor-pointer 按钮的强化样式 */
+.dark button[class*="cursor-pointer"]:hover {
+  background-color: var(--btn-bg-hover, #374151) !important;
+  color: var(--btn-text-hover, #f9fafb) !important;
+}
+
+/* 统一的可访问按钮样式类 */
+.btn-accessible {
+  background-color: var(--btn-bg-hover);
+  color: var(--btn-text-hover);
+  transition: all 0.2s ease;
+}
+
+.btn-accessible:hover {
+  background-color: var(--btn-bg-active);
+  color: var(--btn-text-active);
+  transform: scale(1.02);
+}
+
+/* 确保 Ant Design 组件内的按钮可访问性 */
+.dark .ant-card button,
+.dark .ant-modal button {
+  background-color: var(--color-bg-tertiary) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.dark .ant-card button:hover,
+.dark .ant-modal button:hover {
+  background-color: var(--color-bg-active) !important;
+  color: var(--color-text-inverse) !important;
 }

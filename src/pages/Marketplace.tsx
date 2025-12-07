@@ -2,7 +2,6 @@ import {
   App,
   Badge,
   Button,
-  Card,
   Col,
   Flex,
   Input,
@@ -11,7 +10,15 @@ import {
   Spin,
   Typography,
 } from 'antd'
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
+import Card from 'antd/es/card'
+import React, {
+  ChangeEvent,
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import InstallConfirmModal from '../components/InstallConfirmModal'
 import ServiceDetail from '../components/ServiceDetail'
@@ -277,7 +284,11 @@ const Marketplace: React.FC = memo(() => {
           pendingInstallService.id,
           envEntries.length > 0 ? envEntries : undefined,
         )
-        message.success(t('marketplace.messages.install_success', { name: pendingInstallService.name }))
+        message.success(
+          t('marketplace.messages.install_success', {
+            name: pendingInstallService.name,
+          }),
+        )
         setShowInstallModal(false)
         setPendingInstallService(null)
         setEnvSchema(null)
@@ -308,7 +319,9 @@ const Marketplace: React.FC = memo(() => {
       } catch (error) {
         console.error('Failed to load service details:', error)
         message.error(
-          t('marketplace.messages.load_service_details_failed', { name: service.name }),
+          t('marketplace.messages.load_service_details_failed', {
+            name: service.name,
+          }),
         )
         setSelectedService(null) // Clear on error
         setViewMode('list') // Back to list on error
@@ -441,10 +454,14 @@ const Marketplace: React.FC = memo(() => {
             </Flex>
           </Badge>
           {service.is_verified && (
-            <Badge color='var(--color-success)'>{t('marketplace.badges.verified')}</Badge>
+            <Badge color='var(--color-success)'>
+              {t('marketplace.badges.verified')}
+            </Badge>
           )}
           {service.is_hosted && (
-            <Badge color='var(--color-primary)'>{t('marketplace.badges.hosted')}</Badge>
+            <Badge color='var(--color-primary)'>
+              {t('marketplace.badges.hosted')}
+            </Badge>
           )}
         </Flex>
 
@@ -480,7 +497,9 @@ const Marketplace: React.FC = memo(() => {
               <Input
                 placeholder={t('marketplace.search.placeholder')}
                 defaultValue={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  handleSearchChange(e.target.value)
+                }
                 style={{ width: '100%' }}
               />
             </Card>
@@ -492,7 +511,10 @@ const Marketplace: React.FC = memo(() => {
                   justify='center'
                   align='center'
                   style={{ padding: '48px 16px' }}>
-                  <Spin size='large' tip={t('marketplace.status.loading_services')} />
+                  <Spin
+                    size='large'
+                    tip={t('marketplace.status.loading_services')}
+                  />
                 </Flex>
               ) : services.length > 0 ? (
                 <>
@@ -519,7 +541,9 @@ const Marketplace: React.FC = memo(() => {
                         size='large'
                         onClick={handleLoadMore}
                         loading={loadingMore}>
-                        {loadingMore ? t('marketplace.actions.loading_more') : t('marketplace.actions.load_more')}
+                        {loadingMore
+                          ? t('marketplace.actions.loading_more')
+                          : t('marketplace.actions.load_more')}
                       </Button>
                     </Flex>
                   )}
@@ -531,7 +555,9 @@ const Marketplace: React.FC = memo(() => {
                       align='center'
                       style={{ marginTop: '32px', textAlign: 'center' }}>
                       <Text type='secondary'>
-                        {t('marketplace.messages.show_all_services', { count: services.length })}
+                        {t('marketplace.messages.show_all_services', {
+                          count: services.length,
+                        })}
                       </Text>
                       <Text
                         type='warning'
@@ -552,7 +578,9 @@ const Marketplace: React.FC = memo(() => {
                   <Title level={4} style={{ marginBottom: '8px' }}>
                     {t('marketplace.empty.title')}
                   </Title>
-                  <Text type='secondary'>{t('marketplace.empty.description')}</Text>
+                  <Text type='secondary'>
+                    {t('marketplace.empty.description')}
+                  </Text>
                 </Flex>
               )}
             </div>

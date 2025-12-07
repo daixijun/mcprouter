@@ -219,6 +219,16 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     }
   }, [state.themeMode])
 
+  // 管理 HTML 根元素的 dark class
+  useEffect(() => {
+    // 添加或移除 HTML 根元素的 dark class
+    if (state.isDarkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [state.isDarkMode])
+
   // 监听系统托盘导航事件
   useEffect(() => {
     const setupTrayListeners = async () => {

@@ -428,7 +428,7 @@ const ServiceDetail: React.FC<ServiceDetailProps> = ({
                         className='absolute top-2 right-2 btn-modern bg-gray-600 hover:bg-gray-700 text-white'>
                         {t('service.detail.buttons.copy')}
                       </button>
-                      <pre className='bg-gray-100 dark:bg-gray-800 p-3 rounded-lg text-sm text-gray-800 dark:text-gray-200 overflow-x-auto'>
+                      <pre className='bg-gray-100 dark:bg-gray-900 p-3 rounded-lg text-sm text-gray-800 dark:text-gray-200 overflow-x-auto'>
                         {JSON.stringify(cfg, null, 2)}
                       </pre>
                     </div>

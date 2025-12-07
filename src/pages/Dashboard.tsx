@@ -250,14 +250,17 @@ const Dashboard: React.FC = () => {
         loading={isLoading}>
         <div className='w-full space-y-3'>
           <div className='relative'>
-            <div className='bg-gray-50 dark:bg-gray-900 rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'>
-              <pre className='text-xs whitespace-pre-wrap text-gray-800 dark:text-gray-100 pr-16'>
+            <div
+              className='bg-transparent dark:bg-gray-900 rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'
+              // style={{ backgroundColor: 'var(--color-bg-secondary)' }}
+            >
+              <pre className='text-xs whitespace-pre-wrap text-gray-800 dark:text-gray-100 pr-16 font-mono'>
                 {JSON.stringify(generatedConfig, null, 2)}
               </pre>
             </div>
             <button
               onClick={copyMcpServersJson}
-              className='absolute top-2 right-2 btn-modern bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm shadow-lg z-50'
+              className='absolute top-2 right-2 btn-modern bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white px-3 py-1.5 rounded text-sm shadow-lg z-50'
               style={{ zIndex: 9999 }}>
               {t('dashboard.client_config.copy_config')}
             </button>
@@ -303,7 +306,7 @@ const Dashboard: React.FC = () => {
                 <div
                   key={c.label}
                   onClick={() => openUrl(c.installUrl)}
-                  className='group flex items-center gap-2 cursor-pointer rounded-lg px-0.5 py-0.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-300 hover:scale-105'>
+                  className='group flex items-center gap-2 cursor-pointer rounded-lg px-0.5 py-0.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 hover:text-gray-900 dark:hover:bg-gray-500/50 dark:hover:text-white transition-all duration-300 hover:scale-105'>
                   <img
                     src={c.iconUrl}
                     alt={c.label}

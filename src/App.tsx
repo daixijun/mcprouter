@@ -84,7 +84,7 @@ const AppContent = memo(() => {
                       <h1 className='text-lg font-bold bg-linear-to-r from-primary-600 to-indigo-600 bg-clip-text text-transparent'>
                         MCP Router
                       </h1>
-                      <p className='text-xs text-gray-600 '>
+                      <p className='text-xs text-gray-600 dark:text-gray-400'>
                         {t('dashboard.app.subtitle')}
                       </p>
                     </div>
@@ -98,10 +98,10 @@ const AppContent = memo(() => {
                           <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
-                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                            className={`nav-link flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                               state.activeTab === tab.id
-                                ? 'bg-white text-blue-600 shadow-md dark:bg-gray-700 '
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                                ? 'active bg-gray-100 text-gray-900 shadow-sm border border-gray-200 dark:bg-gray-400 dark:text-white dark:border-blue-500/30'
+                                : 'text-gray-900 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-white dark:hover:bg-gray-400'
                             }`}>
                             <Icon size={16} />
                             <span>{tab.label}</span>
@@ -110,13 +110,13 @@ const AppContent = memo(() => {
                       })}
                     </nav>
                     {/* Theme Switcher */}
-                    <div className='flex items-center space-x-0.5 bg-gray-100/80 dark:bg-gray-800/90 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700'>
+                    <div className='flex items-center space-x-0.5 bg-gray-200 dark:bg-gray-800/90 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700'>
                       <button
                         onClick={() => handleThemeChange('auto')}
                         className={`p-1.5 rounded-md transition-all duration-200 ${
                           state.themeMode === 'auto'
-                            ? 'bg-white dark:bg-gray-700 text-blue-600  shadow-md border border-blue-200 dark:border-blue-500/30'
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-white/60  dark:hover:text-gray-200 dark:hover:bg-gray-700/50'
+                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-200 dark:border-blue-500/30'
+                            : 'text-gray-900 hover:text-blue-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
                         }`}
                         title={t('dashboard.theme.auto')}>
                         <Info size={16} />
@@ -125,8 +125,8 @@ const AppContent = memo(() => {
                         onClick={() => handleThemeChange('light')}
                         className={`p-1.5 rounded-md transition-all duration-200 ${
                           state.themeMode === 'light'
-                            ? 'bg-white dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-md border border-amber-200 dark:border-amber-500/30'
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-white/60  dark:hover:text-gray-200 dark:hover:bg-gray-700/50'
+                            ? 'bg-white dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-sm border border-amber-200 dark:border-amber-500/30'
+                            : 'text-gray-900 hover:text-amber-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
                         }`}
                         title={t('dashboard.theme.light')}>
                         <Sun size={16} />
@@ -135,8 +135,8 @@ const AppContent = memo(() => {
                         onClick={() => handleThemeChange('dark')}
                         className={`p-1.5 rounded-md transition-all duration-200 ${
                           state.themeMode === 'dark'
-                            ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-md border border-indigo-200 dark:border-indigo-500/30'
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-white/60  dark:hover:text-gray-200 dark:hover:bg-gray-700/50'
+                            ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/30'
+                            : 'text-gray-900 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
                         }`}
                         title={t('dashboard.theme.dark')}>
                         <Moon size={16} />
@@ -150,13 +150,13 @@ const AppContent = memo(() => {
                   {/* Mobile menu button */}
                   <button
                     onClick={toggleMenu}
-                    className='md:hidden p-2 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900  dark:hover:bg-gray-800'>
+                    className='md:hidden p-2 rounded-lg text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800/50 dark:hover:text-white'>
                     {state.isMenuOpen ? <X size={20} /> : <Menu size={20} />}
                   </button>
                 </div>
                 {/* Mobile Navigation */}
                 {state.isMenuOpen && (
-                  <div className='md:hidden py-2 border-t border-white/20'>
+                  <div className='md:hidden py-2 border-t border border-solid'>
                     <nav className='flex flex-col space-y-1'>
                       {tabs.map((tab) => {
                         const Icon = tab.icon
@@ -167,10 +167,10 @@ const AppContent = memo(() => {
                               setActiveTab(tab.id as any)
                               toggleMenu()
                             }}
-                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                            className={`nav-link flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                               state.activeTab === tab.id
-                                ? 'bg-white text-blue-600 shadow-md dark:bg-gray-700 '
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                                ? 'active bg-gray-100 text-gray-900 shadow-md border border-gray-200 dark:bg-gray-700/60 dark:text-blue-400 dark:border dark:border-blue-500/30'
+                                : 'text-gray-900 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800/50 dark:hover:text-white'
                             }`}>
                             <Icon size={16} />
                             <span>{tab.label}</span>
@@ -178,7 +178,7 @@ const AppContent = memo(() => {
                         )
                       })}
                       {/* Mobile Theme Switcher */}
-                      <div className='pt-2 border-t border-gray-200/50 dark:border-white/20 mt-2'>
+                      <div className='pt-2 border-t border-gray-200/50 dark:border border-solid mt-2'>
                         <div className='px-3 py-1 text-xs text-gray-500 '>
                           {t('dashboard.theme.title')}
                         </div>
@@ -191,7 +191,7 @@ const AppContent = memo(() => {
                             className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                               state.themeMode === 'auto'
                                 ? 'bg-white text-blue-600 shadow-md border border-blue-200 dark:bg-gray-700  dark:border-blue-500/30'
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white'
                             }`}>
                             <Info size={16} />
                             <span>{t('dashboard.theme.auto')}</span>
@@ -204,7 +204,7 @@ const AppContent = memo(() => {
                             className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                               state.themeMode === 'light'
                                 ? 'bg-white text-amber-600 shadow-md border border-amber-200 dark:bg-gray-700 dark:text-amber-400 dark:border-amber-500/30'
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white'
                             }`}>
                             <Sun size={16} />
                             <span>{t('dashboard.theme.light')}</span>
@@ -217,14 +217,14 @@ const AppContent = memo(() => {
                             className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                               state.themeMode === 'dark'
                                 ? 'bg-white text-indigo-600 shadow-md border border-indigo-200 dark:bg-gray-700 dark:text-indigo-400 dark:border-indigo-500/30'
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white'
                             }`}>
                             <Moon size={16} />
                             <span>{t('dashboard.theme.dark')}</span>
                           </button>
                         </div>
                         {/* Mobile Language Selector */}
-                        <div className='pt-2 border-t border-gray-200/50 dark:border-white/20 mt-2'>
+                        <div className='pt-2 border-t border-gray-200/50 dark:border border-solid mt-2'>
                           <div className='px-3 py-1 text-xs text-gray-500 '>
                             {t('dashboard.language.title')}
                           </div>

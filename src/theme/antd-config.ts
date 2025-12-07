@@ -60,12 +60,19 @@ export const lightTheme: ThemeConfig = {
       controlHeightLG: 40,
       controlHeightSM: 24,
       borderRadius: 8,
+      colorBorder: 'var(--color-border-primary)',
+      colorBorderHover: 'var(--color-border-hover)',
+      colorBorderFocus: 'var(--color-border-focus)',
     },
     Select: {
       controlHeight: 32,
       controlHeightLG: 40,
       controlHeightSM: 24,
       borderRadius: 8,
+      colorBorder: 'var(--color-border-primary)',
+      colorBorderHover: 'var(--color-border-hover)',
+      colorBorderFocus: 'var(--color-border-focus)',
+      optionSelectedBg: 'var(--color-bg-tertiary)',
     },
     Card: {
       borderRadiusLG: 12,
@@ -141,15 +148,34 @@ export const darkTheme: ThemeConfig = {
       controlHeightLG: 40,
       controlHeightSM: 24,
       borderRadius: 8,
+      colorBorder: 'var(--color-border-primary)',
+      colorBorderHover: 'var(--color-border-hover)',
+      colorBorderFocus: 'var(--color-border-focus)',
     },
     Select: {
       controlHeight: 32,
       controlHeightLG: 40,
       controlHeightSM: 24,
       borderRadius: 8,
+      colorBorder: 'var(--color-border-primary)',
+      colorBorderHover: 'var(--color-border-hover)',
+      colorBorderFocus: 'var(--color-border-focus)',
+      optionSelectedBg: 'var(--color-bg-tertiary)',
     },
     Card: {
       borderRadiusLG: 12,
+      colorBgContainer: 'transparent', // 设置为透明，让子元素显示正确的背景色
+      bodyStyle: {
+        backgroundColor: 'transparent',
+        padding: '12px',
+      },
+    },
+    Statistic: {
+      colorTextDescription: '#9ca3af', // 统计描述文字颜色
+    },
+    Typography: {
+      colorText: '#f9fafb',
+      colorTextSecondary: '#d1d5db',
     },
     Modal: {
       borderRadiusLG: 12,
@@ -159,6 +185,25 @@ export const darkTheme: ThemeConfig = {
       colorPrimary: '#10B981', // 开启状态：绿色
       colorText: '#ffffff', // 开启状态文字：白色
       colorBorder: '#374151', // 边框颜色（暗色）
+    },
+    Divider: {
+      colorSplit: 'var(--color-divider)',
+      colorText: 'var(--color-text-secondary)',
+    },
+    Menu: {
+      colorItemBgSelected: 'var(--color-bg-tertiary)',
+      colorItemTextSelected: 'var(--color-primary)',
+      colorItemText: 'var(--color-text-primary)',
+      itemBorderRadius: 8,
+      itemBg: 'transparent',
+      itemHoverBg: 'var(--color-bg-secondary)',
+    },
+    Dropdown: {
+      colorBgElevated: 'var(--color-bg-elevated)',
+      colorBgSpotlight: 'var(--color-bg-tertiary)',
+      colorText: 'var(--color-text-primary)',
+      colorTextQuaternary: 'var(--color-text-tertiary)',
+      borderColor: 'var(--color-border-primary)',
     },
   },
 }

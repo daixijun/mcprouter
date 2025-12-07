@@ -31,7 +31,16 @@ export default {
           700: '#374151',
           800: '#1f2937',
           900: '#111827',
-        }
+        },
+        // 新增：使用 CSS 变量的边框颜色
+        'border-primary': 'var(--color-border-primary)',
+        'border-secondary': 'var(--color-border-secondary)',
+        'border-focus': 'var(--color-border-focus)',
+        'divider': 'var(--color-divider)',
+        // 新增：使用 CSS 变量的背景色
+        'bg-overlay': 'var(--color-bg-overlay-light)',
+        'bg-overlay-medium': 'var(--color-bg-overlay-medium)',
+        'bg-overlay-heavy': 'var(--color-bg-overlay-heavy)',
       },
       fontFamily: {
         sans: [
@@ -87,6 +96,17 @@ export default {
         'card': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         'card-hover': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
         'glow': '0 0 20px rgba(59, 130, 246, 0.5)',
+        // 新增：使用 CSS 变量的阴影
+        'theme-light': 'var(--color-shadow-light)',
+        'theme-medium': 'var(--color-shadow-medium)',
+        'theme-strong': 'var(--color-shadow-strong)',
+      },
+      // 新增：边框颜色配置
+      borderColor: {
+        primary: 'var(--color-border-primary)',
+        secondary: 'var(--color-border-secondary)',
+        focus: 'var(--color-border-focus)',
+        divider: 'var(--color-divider)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
