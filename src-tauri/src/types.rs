@@ -34,16 +34,28 @@ impl McpServerConfig {
     pub fn clean_fields(&mut self) {
         match self.transport {
             ServiceTransport::Stdio => {
-                // stdio type: clean sse/http related fields
+                // stdio type: clean http related fields
                 self.url = None;
                 self.headers = None;
             }
-            ServiceTransport::Sse | ServiceTransport::Http => {
-                // sse/http type: clean stdio related fields
+            ServiceTransport::Http => {
+                // http type: clean stdio related fields
                 self.command = None;
                 self.args = None;
                 self.env = None;
             }
+        }
+    }
+
+    /// Validate configuration and provide migration suggestions for deprecated features
+    pub fn validate_and_warn(&self) {
+        // Check if this looks like a legacy SSE configuration that might need migration
+        if self.url.is_some() && self.headers.is_some() &&
+           self.command.is_none() && self.args.is_none() && self.env.is_none() {
+            tracing::warn!(
+                "Server '{}' appears to be configured for HTTP transport. Note: SSE transport is no longer supported. Please use HTTP transport instead.",
+                self.name
+            );
         }
     }
 
@@ -69,7 +81,6 @@ impl McpServerConfig {
 #[serde(rename_all = "lowercase")]
 pub enum ServiceTransport {
     Stdio,
-    Sse,
     Http,
 }
 
@@ -338,7 +349,6 @@ pub struct McpPromptArgument {
 // Use RunningService directly to enable peer access for tool listing
 pub enum McpService {
     Stdio(std::sync::Arc<rmcp::service::RunningService<rmcp::service::RoleClient, ()>>),
-    Sse(std::sync::Arc<rmcp::service::RunningService<rmcp::service::RoleClient, ()>>),
     Http(std::sync::Arc<rmcp::service::RunningService<rmcp::service::RoleClient, ()>>),
 }
 
@@ -346,7 +356,6 @@ impl std::fmt::Debug for McpService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             McpService::Stdio(_) => write!(f, "McpService::Stdio"),
-            McpService::Sse(_) => write!(f, "McpService::Sse"),
             McpService::Http(_) => write!(f, "McpService::Http"),
         }
     }
@@ -357,7 +366,6 @@ impl McpService {
     pub fn peer(&self) -> &rmcp::service::Peer<rmcp::service::RoleClient> {
         match self {
             McpService::Stdio(service) => service.peer(),
-            McpService::Sse(service) => service.peer(),
             McpService::Http(service) => service.peer(),
         }
     }

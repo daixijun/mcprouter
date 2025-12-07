@@ -462,6 +462,7 @@ impl McpAggregator {
         let server_config = StreamableHttpServerConfig {
             sse_keep_alive: Some(std::time::Duration::from_secs(self.config.timeout_seconds)),
             stateful_mode: false, // 修改为false，与客户端allow_stateless=true保持一致
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
         };
 
         // Create StreamableHttpService
@@ -804,6 +805,7 @@ impl McpAggregator {
                     token.id
                 );
                 Ok(ListToolsResult {
+                    meta: None,
                     tools: slice,
                     next_cursor: next,
                 })
@@ -895,6 +897,7 @@ impl McpAggregator {
                     token.id
                 );
                 Ok(ListResourcesResult {
+                    meta: None,
                     resources: slice,
                     next_cursor: next,
                 })
@@ -986,6 +989,7 @@ impl McpAggregator {
                     token.id
                 );
                 Ok(ListPromptsResult {
+                    meta: None,
                     prompts: slice,
                     next_cursor: next,
                 })
@@ -1039,6 +1043,7 @@ impl McpAggregator {
                 };
                 tracing::info!("Successfully listed {} tools", total);
                 Ok(ListToolsResult {
+                    meta: None,
                     tools: slice,
                     next_cursor: next,
                 })
@@ -1092,6 +1097,7 @@ impl McpAggregator {
                 };
                 tracing::info!("Successfully listed {} resources", total);
                 Ok(ListResourcesResult {
+                    meta: None,
                     resources: slice,
                     next_cursor: next,
                 })
@@ -1145,6 +1151,7 @@ impl McpAggregator {
                 };
                 tracing::info!("Successfully listed {} prompts", total);
                 Ok(ListPromptsResult {
+                    meta: None,
                     prompts: slice,
                     next_cursor: next,
                 })
@@ -1294,6 +1301,7 @@ impl ServerHandler for McpAggregator {
                     auth_context.session_id().unwrap_or("unknown")
                 );
                 Ok(ListToolsResult {
+                    meta: None,
                     tools: slice.to_vec(),
                     next_cursor: next,
                 })
@@ -1486,6 +1494,7 @@ impl ServerHandler for McpAggregator {
                 };
                 tracing::debug!("成功列出 {} 个有权限的提示词", total);
                 Ok(ListPromptsResult {
+                    meta: None,
                     prompts: slice,
                     next_cursor: next,
                 })
@@ -1697,6 +1706,7 @@ impl ServerHandler for McpAggregator {
                 };
                 tracing::debug!("成功列出 {} 个有权限的资源", total);
                 Ok(ListResourcesResult {
+                    meta: None,
                     resources: slice,
                     next_cursor: next,
                 })

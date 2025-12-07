@@ -4,7 +4,7 @@ export interface McpServerConfig {
   command?: string
   args?: string[]
   env?: Record<string, string>
-  type: 'stdio' | 'sse' | 'http'
+  type: 'stdio' | 'http'
   url?: string
   headers?: Record<string, string>
   enabled: boolean
@@ -27,7 +27,7 @@ export interface McpServerInfo {
   version?: string
   last_error?: string
   error_message?: string
-  type: 'stdio' | 'sse' | 'http'
+  type: 'stdio' | 'http'
   url?: string
   description?: string
   env?: Record<string, string>
@@ -53,7 +53,7 @@ export interface McpServer {
   description?: string
   command: string
   args: string[]
-  transport: 'stdio' | 'sse' | 'http'
+  transport: 'stdio' | 'http'
   url?: string
   status: 'running' | 'stopped' | 'starting' | 'stopping' | 'error'
   enabled: boolean
@@ -75,7 +75,7 @@ export interface MarketplaceServiceListItem {
   tags: string[]
   downloads: number
   github_stars?: number
-  transport: 'stdio' | 'sse' | 'http'
+  transport: 'stdio' | 'http'
   category: string
   last_updated: string
   platform: string

@@ -46,11 +46,14 @@ pub async fn add_mcp_server(
     // Convert transport string to ServiceTransport enum
     let service_transport = match request.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
-        "sse" => ServiceTransport::Sse,
         "http" => ServiceTransport::Http,
+        "sse" => {
+            tracing::warn!("SSE transport is no longer supported, falling back to HTTP");
+            ServiceTransport::Http
+        },
         _ => {
             return Err(McpError::InvalidConfiguration(
-                "Invalid transport. Must be 'stdio', 'sse', or 'http'".to_string(),
+                "Invalid transport. Must be 'stdio' or 'http'".to_string(),
             ))
         }
     };
@@ -73,7 +76,7 @@ pub async fn add_mcp_server(
     // Debug logging for HTTP services
     if matches!(
         service_transport,
-        ServiceTransport::Sse | ServiceTransport::Http
+        ServiceTransport::Http
     ) {
         tracing::debug!(
             "Adding HTTP server: {} with URL: {:?}",
@@ -88,7 +91,7 @@ pub async fn add_mcp_server(
     // For non-stdio transports, set command and args to None
     let (final_command, final_args) = if matches!(
         service_transport,
-        ServiceTransport::Sse | ServiceTransport::Http
+        ServiceTransport::Http
     ) {
         (None, None)
     } else {
@@ -136,11 +139,14 @@ pub async fn update_mcp_server(
     // Convert transport string to ServiceTransport enum
     let service_transport = match request.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
-        "sse" => ServiceTransport::Sse,
         "http" => ServiceTransport::Http,
+        "sse" => {
+            tracing::warn!("SSE transport is no longer supported, falling back to HTTP");
+            ServiceTransport::Http
+        },
         _ => {
             return Err(McpError::InvalidConfiguration(
-                "Invalid transport. Must be 'stdio', 'sse', or 'http'".to_string(),
+                "Invalid transport. Must be 'stdio' or 'http'".to_string(),
             ))
         }
     };

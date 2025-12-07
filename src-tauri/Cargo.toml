@@ -45,18 +45,15 @@ which = "8.0"
 futures = "0.3"
 http = "1.0"
 # MCP SDK - 使用官方 rmcp
-rmcp = { version = "0.10.0", features = [
+rmcp = { git = "https://github.com/daixijun/mcp-rust-sdk", branch = "feat/streamable-http-client", features = [
     "client",
     "server",
     "macros",
     "transport-child-process",
-    "transport-sse-client",
     "transport-streamable-http-client",
     "transport-streamable-http-client-reqwest",
-    "transport-sse-client-reqwest",
     "transport-streamable-http-server",
     "transport-streamable-http-server-session",
-    "client-side-sse",
     "reqwest",
 ] }
 rmcp-macros = "0.10.0"

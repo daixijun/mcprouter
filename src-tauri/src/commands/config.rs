@@ -72,26 +72,32 @@ pub async fn import_mcp_servers_config(
             if let Some(service_obj) = service_config.as_object() {
                 // Determine transport type based on available fields
                 let transport =
-                    if let Some(transport_str) = service_obj.get("type").and_then(|v| v.as_str()) {
-                        // Explicit transport field takes priority
-                        match transport_str {
-                            "sse" => crate::types::ServiceTransport::Sse,
+                    // Priority 1: If url field exists, it's HTTP type
+                    if service_obj.contains_key("url") {
+                        crate::types::ServiceTransport::Http
+                    }
+                    // Priority 2: If command field exists, it's STDIO type
+                    else if service_obj.contains_key("command") {
+                        crate::types::ServiceTransport::Stdio
+                    }
+                    // Priority 3: Check explicit type field (for special cases)
+                    else if let Some(transport_str) = service_obj.get("type").and_then(|v| v.as_str()) {
+                        match transport_str.to_lowercase().as_str() {
                             "http" => crate::types::ServiceTransport::Http,
                             "stdio" => crate::types::ServiceTransport::Stdio,
-                            _ => crate::types::ServiceTransport::Stdio, // Default to stdio for unknown values
+                            "sse" => {
+                                tracing::warn!("SSE transport is deprecated, falling back to HTTP");
+                                crate::types::ServiceTransport::Http
+                            },
+                            _ => {
+                                tracing::warn!("Unknown transport type '{}', falling back to STDIO", transport_str);
+                                crate::types::ServiceTransport::Stdio
+                            }
                         }
-                    } else if let Some(url) = service_obj.get("url").and_then(|v| v.as_str()) {
-                        // Check URL pattern to determine SSE vs HTTP
-                        if url.trim_end_matches('/').ends_with("/sse") {
-                            crate::types::ServiceTransport::Sse
-                        } else {
-                            crate::types::ServiceTransport::Http
-                        }
-                    } else if service_obj.contains_key("command") {
-                        // Default to stdio for command-based services
-                        crate::types::ServiceTransport::Stdio
-                    } else {
-                        // Fallback to stdio if no clear indicators
+                    }
+                    // Priority 4: Default to STDIO
+                    else {
+                        tracing::warn!("No transport information found, defaulting to STDIO");
                         crate::types::ServiceTransport::Stdio
                     };
 
@@ -180,5 +186,106 @@ pub async fn import_mcp_servers_config(
         Err(crate::error::McpError::InvalidConfiguration(
             "Invalid configuration format. Expected 'mcpServers' object.".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::types::ServiceTransport;
+    use serde_json::json;
+
+    fn extract_transport_from_config(service_obj: &serde_json::Value) -> ServiceTransport {
+        // Recreate the transport determination logic from the main function
+        // Priority 1: If url field exists, it's HTTP type
+        if service_obj.get("url").is_some() {
+            ServiceTransport::Http
+        }
+        // Priority 2: If command field exists, it's STDIO type
+        else if service_obj.get("command").is_some() {
+            ServiceTransport::Stdio
+        }
+        // Priority 3: Check explicit type field (for special cases)
+        else if let Some(transport_str) = service_obj.get("type").and_then(|v| v.as_str()) {
+            match transport_str.to_lowercase().as_str() {
+                "http" => ServiceTransport::Http,
+                "stdio" => ServiceTransport::Stdio,
+                "sse" => ServiceTransport::Http,
+                _ => ServiceTransport::Stdio,
+            }
+        }
+        // Priority 4: Default to STDIO
+        else {
+            ServiceTransport::Stdio
+        }
+    }
+
+    #[test]
+    fn test_transport_detection_by_fields() {
+        // Test url field has highest priority
+        let config = json!({
+            "name": "test",
+            "type": "stdio",
+            "url": "http://example.com"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Http));
+
+        // Test command field
+        let config = json!({
+            "name": "test",
+            "type": "http",
+            "command": "node"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Stdio));
+
+        // Test mixed case (url priority)
+        let config = json!({
+            "name": "test",
+            "type": "stdio",
+            "url": "http://example.com",
+            "command": "node"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Http));
+    }
+
+    #[test]
+    fn test_streamable_http_config() {
+        // Test user's original configuration
+        let config = json!({
+            "name": "sequentialthinking",
+            "type": "streamable_http",
+            "url": "https://mcp.api-inference.modelscope.net/55701405382746/mcp"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Http));
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        // Test only type field without url/command
+        let config = json!({
+            "name": "test",
+            "type": "http"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Http)); // type: "http" should be recognized as HTTP
+
+        // Test empty config
+        let config = json!({
+            "name": "test"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Stdio)); // Defaults to stdio
+
+        // Test with unknown type field but with url - should still be HTTP due to url priority
+        let config = json!({
+            "name": "test",
+            "type": "unknown_type",
+            "url": "http://example.com"
+        });
+        let transport = extract_transport_from_config(&config);
+        assert!(matches!(transport, ServiceTransport::Http)); // url takes priority over type
     }
 }

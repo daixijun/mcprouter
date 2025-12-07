@@ -5,7 +5,6 @@ use reqwest::header;
 use rmcp::model::Tool;
 use rmcp::service::ServiceExt;
 use rmcp::transport::child_process::TokioChildProcess;
-use rmcp::transport::sse_client::SseClientConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,9 +24,7 @@ fn create_http_reqwest_client(
     // 更宽松的Accept头，支持带charset的JSON响应
     headers.insert(
         "Accept",
-        header::HeaderValue::from_static(
-            "application/json, application/json; charset=utf-8, text/event-stream, */*",
-        ),
+        header::HeaderValue::from_static("application/json, text/event-stream; charset=utf-8"),
     );
     // 不设置固定的Content-Type，让reqwest自动处理
     // headers.insert(
@@ -43,51 +40,6 @@ fn create_http_reqwest_client(
                     headers.insert(header_name, header_value);
                     tracing::debug!(
                         "Added HTTP header: {}: {}",
-                        key,
-                        if key.eq_ignore_ascii_case("authorization") {
-                            "****"
-                        } else {
-                            value
-                        }
-                    );
-                }
-            }
-        }
-    }
-
-    client_builder = client_builder.default_headers(headers);
-    client_builder
-        .build()
-        .map_err(|e| McpError::ConnectionError(e.to_string()))
-}
-
-/// Helper function to create a reqwest client with logging for SSE transport
-fn create_sse_reqwest_client(
-    custom_headers: Option<&HashMap<String, String>>,
-) -> Result<reqwest::Client> {
-    let mut client_builder = reqwest::Client::builder()
-        .user_agent("mcprouter/1.0")
-        .timeout(Duration::from_secs(30));
-
-    // Add default headers for SSE
-    let mut headers = header::HeaderMap::new();
-    headers.insert(
-        "Accept",
-        header::HeaderValue::from_static("text/event-stream"),
-    );
-    headers.insert(
-        "Cache-Control",
-        header::HeaderValue::from_static("no-cache"),
-    );
-
-    // Add custom headers if present
-    if let Some(headers_map) = custom_headers {
-        for (key, value) in headers_map {
-            if let Ok(header_name) = header::HeaderName::from_bytes(key.as_bytes()) {
-                if let Ok(header_value) = header::HeaderValue::from_str(value) {
-                    headers.insert(header_name, header_value);
-                    tracing::debug!(
-                        "Added SSE header: {}: {}",
                         key,
                         if key.eq_ignore_ascii_case("authorization") {
                             "****"
@@ -150,7 +102,6 @@ impl McpClientManager {
             crate::types::ServiceTransport::Stdio => {
                 self.create_stdio_connection(service_config).await
             }
-            crate::types::ServiceTransport::Sse => self.create_sse_connection(service_config).await,
             crate::types::ServiceTransport::Http => {
                 self.create_http_connection(service_config).await
             }
@@ -268,56 +219,6 @@ impl McpClientManager {
         })
     }
 
-    /// Create SSE connection using rmcp 0.8.3
-    async fn create_sse_connection(
-        &self,
-        service_config: &McpServerConfig,
-    ) -> Result<McpConnection> {
-        let url = service_config.url.as_ref().ok_or_else(|| {
-            McpError::InvalidConfiguration("SSE service requires URL".to_string())
-        })?;
-
-        tracing::debug!("Creating SSE MCP service: {}", url);
-
-        // Create a custom reqwest client with authentication headers if provided
-        let client = create_sse_reqwest_client(service_config.headers.as_ref())?;
-
-        // Create SSE transport configuration
-        let config = SseClientConfig {
-            sse_endpoint: url.clone().into(),
-            ..Default::default()
-        };
-
-        // Use the custom client with authentication headers
-        let transport = rmcp::transport::SseClientTransport::start_with_client(client, config)
-            .await
-            .map_err(|e| McpError::ConnectionError(e.to_string()))?;
-
-        let service =
-            ().serve(transport)
-                .await
-                .map_err(|e| McpError::ConnectionError(e.to_string()))?;
-
-        let server_info = service.peer_info();
-
-        // Print server_info structure
-        if let Some(ref info) = server_info {
-            tracing::debug!("Service '{}' server_info: {:?}", service_config.name, info);
-        }
-
-        Ok(McpConnection {
-            service_id: service_config.name.clone(),
-            server_info: server_info.cloned(),
-            client: Some(Arc::new(McpService::Sse(Arc::new(service)))),
-            status: ConnectionStatus {
-                is_connected: true,
-                is_connecting: false,
-                last_connected: Some(chrono::Utc::now()),
-                error_message: None,
-            },
-        })
-    }
-
     /// Create HTTP connection using rmcp 0.8.3
     async fn create_http_connection(
         &self,
@@ -370,18 +271,6 @@ impl McpClientManager {
                     service_config.name,
                     error_msg
                 );
-
-                // Provide more helpful error messages for common issues
-                if error_msg.contains("Unexpected content type") {
-                    tracing::error!(
-                        "Service '{}' returned unexpected content type. This may indicate:\n\
-                        1. The URL is incorrect or not a valid MCP StreamableHttp endpoint\n\
-                        2. The remote service is not properly configured for MCP StreamableHttp protocol\n\
-                        3. The service may be using a different MCP transport (try SSE instead)\n\
-                        Please verify the URL and service configuration.",
-                        service_config.name
-                    );
-                }
 
                 return Err(McpError::ConnectionError(error_msg));
             }
@@ -462,6 +351,7 @@ impl McpClientManager {
                     rmcp::model::ListToolsResult {
                         tools: Vec::new(),
                         next_cursor: None,
+                        meta: None,
                     }
                 }
             };
@@ -532,6 +422,7 @@ impl McpClientManager {
                     rmcp::model::ListResourcesResult {
                         resources: Vec::new(),
                         next_cursor: None,
+                        meta: None,
                     }
                 }
             };
@@ -596,6 +487,7 @@ impl McpClientManager {
                     rmcp::model::ListPromptsResult {
                         prompts: Vec::new(),
                         next_cursor: None,
+                        meta: None,
                     }
                 }
             };

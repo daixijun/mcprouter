@@ -30,8 +30,11 @@ pub async fn install_marketplace_service(
     // Convert transport string to ServiceTransport enum
     let service_transport = match service.transport.as_str() {
         "stdio" => ServiceTransport::Stdio,
-        "sse" => ServiceTransport::Sse,
         "http" => ServiceTransport::Http,
+        "sse" => {
+            tracing::warn!("SSE transport is no longer supported, falling back to HTTP");
+            ServiceTransport::Http
+        },
         _ => {
             return Err(McpError::InvalidConfiguration(format!(
                 "Unsupported transport: {}",

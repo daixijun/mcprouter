@@ -28,6 +28,7 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ToolManager from '../components/ToolManager'
 import { McpServerService } from '../services/mcp-server-service'
+import { useAntdConfig } from '../components/AntdConfigProvider'
 import type { McpServerInfo } from '../types'
 
 const { TextArea } = Input
@@ -42,6 +43,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
 }) => {
   const { t } = useTranslation()
   const { notification, message } = App.useApp()
+  const { theme } = useAntdConfig()
   const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([])
   const [showAddService, setShowAddService] = useState(false)
   const [showEditService, setShowEditService] = useState(false)
@@ -54,7 +56,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const [newServiceConfig, setNewServiceConfig] = useState({
     name: '',
     description: '',
-    type: 'stdio' as 'stdio' | 'sse' | 'http',
+    type: 'stdio' as 'stdio' | 'http',
     command: '',
     args: '',
     url: '',
@@ -63,6 +65,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   })
   const [loading, setLoading] = useState(false)
   const [togglingServers, setTogglingServers] = useState<Set<string>>(new Set())
+  const [addingService, setAddingService] = useState(false)
 
   // Add service mode: 'form' or 'json'
   const [addServiceMode, setAddServiceMode] = useState<'form' | 'json'>('form')
@@ -203,6 +206,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   }
 
   const handleAddService = async () => {
+    setAddingService(true)
     try {
       if (addServiceMode === 'json') {
         try {
@@ -216,6 +220,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             setJsonError(
               t('mcp_server.messages.config_format_error_mcp_servers_missing'),
             )
+            setAddingService(false)
             return
           }
 
@@ -223,6 +228,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             setJsonError(
               t('mcp_server.messages.config_format_error_mcp_servers_empty'),
             )
+            setAddingService(false)
             return
           }
 
@@ -244,6 +250,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
               error.message || t('mcp_server.messages.import_config_failed'),
             )
           }
+          setAddingService(false)
           return
         }
       } else {
@@ -276,6 +283,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     } catch (error) {
       console.error('Failed to add service:', error)
       message.error(t('mcp_server.messages.add_service_failed'))
+    } finally {
+      setAddingService(false)
     }
   }
 
@@ -376,7 +385,6 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
       width: 100,
       filters: [
         { text: 'STDIO', value: 'stdio' },
-        { text: 'SSE', value: 'sse' },
         { text: 'HTTP', value: 'http' },
       ],
       onFilter: (value: any, record: McpServerInfo) => record.type === value,
@@ -662,7 +670,12 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           <Button key='cancel' onClick={() => setShowAddService(false)}>
             {t('mcp_server.actions.cancel')}
           </Button>,
-          <Button key='add' type='primary' onClick={handleAddService}>
+          <Button
+            key='add'
+            type='primary'
+            loading={addingService}
+            disabled={addingService}
+            onClick={handleAddService}>
             {t('mcp_server.actions.add_service')}
           </Button>,
         ]}
@@ -736,7 +749,6 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                       value: 'stdio',
                       label: t('mcp_server.protocol_types.stdio'),
                     },
-                    { value: 'sse', label: t('mcp_server.protocol_types.sse') },
                     {
                       value: 'http',
                       label: t('mcp_server.protocol_types.http'),
@@ -808,8 +820,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                 </>
               )}
 
-              {(newServiceConfig.type === 'sse' ||
-                newServiceConfig.type === 'http') && (
+              {newServiceConfig.type === 'http' && (
                 <>
                   <div>
                     <Text strong>
@@ -877,7 +888,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                     fontSize: '12px',
                     marginTop: '4px',
                     display: 'block',
-                    color: 'rgba(0, 0, 0, 0.45)',
+                    color: theme?.token?.colorTextTertiary || 'rgba(0, 0, 0, 0.45)',
                   }}
                   dangerouslySetInnerHTML={{
                     __html: t('mcp_server.form.json_config_help'),
@@ -955,8 +966,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
               }
               options={[
                 { value: 'stdio', label: t('mcp_server.protocol_types.stdio') },
-                { value: 'sse', label: t('mcp_server.protocol_types.sse') },
-                { value: 'http', label: t('mcp_server.protocol_types.http') },
+                                { value: 'http', label: t('mcp_server.protocol_types.http') },
               ]}
               style={{ marginTop: '4px', width: '100%' }}
             />
@@ -1021,8 +1031,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
             </>
           )}
 
-          {(newServiceConfig.type === 'sse' ||
-            newServiceConfig.type === 'http') && (
+          {newServiceConfig.type === 'http' && (
             <>
               <div>
                 <Text strong>{t('mcp_server.form.service_url')}</Text>

@@ -302,17 +302,6 @@ impl McpServerManager {
                         config.env.clone(),
                     )
                 }
-                // SSE transport: remove command/args/env_vars fields
-                crate::types::ServiceTransport::Sse => {
-                    (
-                        "sse".to_string(),
-                        config.url.clone(),
-                        config.headers.clone(),
-                        None, // Remove command field
-                        None, // Remove args field
-                        None, // Remove env_vars field
-                    )
-                }
                 // HTTP transport: remove command/args/env_vars fields
                 crate::types::ServiceTransport::Http => {
                     (
@@ -910,7 +899,7 @@ impl McpServerManager {
                     error_msg
                 );
 
-                // Provide specific guidance for HTTP/SSE transport
+                // Provide specific guidance for HTTP transport
                 if matches!(
                     service_config.transport,
                     crate::types::ServiceTransport::Http
@@ -921,15 +910,6 @@ impl McpServerManager {
                         2. The service is running and accessible\n\
                         3. The service properly implements the MCP StreamableHttp protocol\n\
                         4. Authentication headers are correctly configured (if required)"
-                    );
-                } else if matches!(
-                    service_config.transport,
-                    crate::types::ServiceTransport::Sse
-                ) {
-                    tracing::error!(
-                        "For SSE transport services, please verify:\n\
-                        1. The URL is correct and points to a valid MCP SSE endpoint\n\
-                        2. The service is running and accessible"
                     );
                 }
 
