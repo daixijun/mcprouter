@@ -125,6 +125,7 @@
   "dashboard.theme.auto": "自动（跟随系统）",
   "dashboard.theme.light": "亮色模式",
   "dashboard.theme.dark": "暗色模式",
+  "dashboard.theme.current": "当前",
   "dashboard.language.title": "语言设置",
   "dashboard.footer.about": "关于",
   "dashboard.stats.total_servers": "服务器总数",

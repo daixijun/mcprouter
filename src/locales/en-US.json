@@ -125,6 +125,7 @@
   "dashboard.theme.auto": "Auto (Follow System)",
   "dashboard.theme.light": "Light Mode",
   "dashboard.theme.dark": "Dark Mode",
+  "dashboard.theme.current": "Current",
   "dashboard.language.title": "Language Settings",
   "dashboard.footer.about": "About",
   "dashboard.stats.total_servers": "Total Services",

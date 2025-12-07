@@ -5,12 +5,14 @@ import Card from 'antd/es/card'
 import { Activity, Server, TrendingUp, Wrench, XCircle } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAppContext } from '../contexts/AppContext'
 import type { DashboardStats } from '../types'
 
 const { Text } = Typography
 
 const Dashboard: React.FC = () => {
   const { t } = useTranslation()
+  const { state } = useAppContext()
   const [stats, setStats] = useState<DashboardStats>({
     total_servers: 0,
     enabled_servers: 0,
@@ -251,16 +253,17 @@ const Dashboard: React.FC = () => {
         <div className='w-full space-y-3'>
           <div className='relative'>
             <div
-              className='rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'
+              className='rounded p-3 overflow-auto max-h-64 border'
               style={{
-                backgroundColor: 'var(--color-bg-secondary)'
+                backgroundColor: state.isDarkMode ? '#1f2937' : '#f3f4f6',
+                borderColor: state.isDarkMode ? '#374151' : '#e5e7eb'
               }}
             >
               <pre
                 className='text-xs whitespace-pre-wrap pr-16 font-mono'
                 style={{
-                  backgroundColor: 'transparent',
-                  color: 'var(--color-text-primary)'
+                  color: state.isDarkMode ? '#f9fafb' : '#111827',
+                  backgroundColor: 'transparent'
                 }}
               >
                 {JSON.stringify(generatedConfig, null, 2)}

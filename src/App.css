@@ -1,182 +1,6 @@
 @import 'tailwindcss';
 
-@theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-}
-
-/* CSS 变量定义 - 统一的颜色系统 */
-:root {
-  /* 主色调 */
-  --color-primary: #3b82f6;
-  --color-primary-dark: #2563eb;
-  --color-primary-light: #60a5fa;
-  --color-success: #10b981;
-  --color-success-dark: #059669;
-  --color-warning: #f59e0b;
-  --color-warning-dark: #d97706;
-  --color-error: #ef4444;
-  --color-error-dark: #dc2626;
-  --color-info: #3b82f6;
-  --color-info-dark: #2563eb;
-
-  /* 文本颜色 - 亮色模式 */
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-tertiary: #9ca3af;
-  --color-text-quaternary: #d1d5db;
-  --color-text-disabled: #e5e7eb;
-  --color-text-inverse: #ffffff;
-
-  /* 背景颜色 - 亮色模式 */
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f9fafb;
-  --color-bg-tertiary: #f3f4f6;
-  --color-bg-elevated: #ffffff;
-  --color-bg-layout: #f9fafb;
-
-  /* 边框颜色 - 亮色模式 */
-  --color-border: #e5e7eb;
-  --color-border-primary: #e5e7eb;
-  --color-border-secondary: #f3f4f6;
-  --color-border-tertiary: #e5e7eb;
-  --color-border-light: #e5e7eb;
-  --color-border-focus: #3b82f6;
-  --color-border-hover: #d1d5db;
-
-  /* 分割线变量 */
-  --color-divider: #e5e7eb;
-  --color-divider-strong: #d1d5db;
-
-  /* 轮廓线变量 */
-  --color-outline: #3b82f6;
-  --color-outline-error: #ef4444;
-  --color-outline-success: #10b981;
-
-  /* 半透明背景变量 */
-  --color-bg-overlay-light: rgba(255, 255, 255, 0.9);
-  --color-bg-overlay-medium: rgba(255, 255, 255, 0.8);
-  --color-bg-overlay-heavy: rgba(255, 255, 255, 0.7);
-
-  /* 平台特定颜色 */
-  --color-platform-mada: #f43f5e;
-  --color-platform-default: #6b7280;
-  --color-platform-github: #24292e;
-  --color-platform-custom: #8b5cf6;
-
-  /* 状态颜色 */
-  --color-status-online: #10b981;
-  --color-status-offline: #ef4444;
-  --color-status-connecting: #f59e0b;
-  --color-status-disabled: #6b7280;
-
-  /* 占位符颜色 */
-  --color-placeholder: #9ca3af;
-
-  /* 阴影 */
-  --color-shadow: rgba(0, 0, 0, 0.1);
-  --color-shadow-dark: rgba(0, 0, 0, 0.2);
-  --color-shadow-light: rgba(0, 0, 0, 0.05);
-  --color-shadow-medium: rgba(0, 0, 0, 0.1);
-  --color-shadow-strong: rgba(0, 0, 0, 0.2);
-
-  /* 按钮专用颜色变量 */
-  --btn-bg-hover: var(--color-bg-tertiary);
-  --btn-text-hover: var(--color-text-primary);
-  --btn-bg-active: var(--color-border-secondary);
-  --btn-text-active: var(--color-text-inverse);
-}
-
-.dark {
-  /* 主色调 - 暗色模式保持不变 */
-  --color-primary: #3b82f6;
-  --color-primary-dark: #2563eb;
-  --color-primary-light: #60a5fa;
-  --color-success: #10b981;
-  --color-success-dark: #059669;
-  --color-warning: #f59e0b;
-  --color-warning-dark: #d97706;
-  --color-error: #ef4444;
-  --color-error-dark: #dc2626;
-  --color-info: #3b82f6;
-  --color-info-dark: #2563eb;
-
-  /* 文本颜色 - 暗色模式 */
-  --color-text-primary: #f9fafb;
-  --color-text-secondary: #d1d5db;
-  --color-text-tertiary: #9ca3af;
-  --color-text-quaternary: #6b7280;
-  --color-text-disabled: #4b5563;
-  --color-text-inverse: #111827;
-
-  /* 背景颜色 - 暗色模式 */
-  --color-bg-primary: #111827;
-  --color-bg-secondary: #1f2937;
-  --color-bg-tertiary: #374151;
-  --color-bg-elevated: #1f2937;
-  --color-bg-layout: #0f172a;
-
-  /* 边框颜色 - 暗色模式 */
-  --color-border: #374151;
-  --color-border-primary: #374151;
-  --color-border-secondary: #4b5563;
-  --color-border-tertiary: #4b5563;
-  --color-border-light: #4b5563;
-  --color-border-focus: #60a5fa;
-  --color-border-hover: #6b7280;
-
-  /* 分割线变量 - 暗色模式 */
-  --color-divider: #374151;
-  --color-divider-strong: #4b5563;
-
-  /* 轮廓线变量 - 暗色模式 */
-  --color-outline: #60a5fa;
-  --color-outline-error: #f87171;
-  --color-outline-success: #34d399;
-
-  /* 半透明背景变量 - 暗色模式 */
-  --color-bg-overlay-light: rgba(17, 24, 39, 0.9);
-  --color-bg-overlay-medium: rgba(31, 41, 55, 0.8);
-  --color-bg-overlay-heavy: rgba(55, 65, 81, 0.7);
-
-  /* 平台特定颜色 - 暗色模式保持不变 */
-  --color-platform-mada: #f43f5e;
-  --color-platform-default: #6b7280;
-  --color-platform-github: #24292e;
-  --color-platform-custom: #8b5cf6;
-
-  /* 状态颜色 - 暗色模式保持不变 */
-  --color-status-online: #10b981;
-  --color-status-offline: #ef4444;
-  --color-status-connecting: #f59e0b;
-  --color-status-disabled: #6b7280;
-
-  /* 占位符颜色 - 暗色模式 */
-  --color-placeholder: #4b5563;
-
-  /* 阴影 - 暗色模式 */
-  --color-shadow: rgba(0, 0, 0, 0.3);
-  --color-shadow-dark: rgba(0, 0, 0, 0.5);
-  --color-shadow-light: rgba(0, 0, 0, 0.2);
-  --color-shadow-medium: rgba(0, 0, 0, 0.3);
-  --color-shadow-strong: rgba(0, 0, 0, 0.5);
-
-  /* 按钮专用颜色变量 */
-  --btn-bg-hover: var(--color-bg-tertiary);
-  --btn-text-hover: var(--color-text-primary);
-  --btn-bg-active: var(--color-border-secondary);
-  --btn-text-active: var(--color-text-inverse);
-}
-
-/* Base styles */
+/* 基础布局样式 */
 @layer base {
   html {
     height: 100%;
@@ -185,9 +9,8 @@
 
   body {
     height: 100vh;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-      sans-serif;
-    font-size: 14px; /* 减小基础字体大小 */
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
     overflow: hidden;
   }
 
@@ -197,206 +20,11 @@
     flex-direction: column;
     overflow: hidden;
   }
-
-  /* 占位符样式 - 确保表单元素使用正确的占位符颜色 */
-  input::placeholder,
-  textarea::placeholder,
-  .ant-input::placeholder {
-    color: var(--color-placeholder) !important;
-    opacity: 1 !important;
-  }
-
-  /* 针对 Ant Design 输入框的占位符样式 */
-  .ant-input .ant-input-placeholder {
-    color: var(--color-placeholder) !important;
-  }
-
-  /* 确保占位符在所有浏览器中显示一致 */
-  input::-webkit-input-placeholder,
-  textarea::-webkit-input-placeholder {
-    color: var(--color-placeholder) !important;
-    opacity: 1 !important;
-  }
-
-  input::-moz-placeholder,
-  textarea::-moz-placeholder {
-    color: var(--color-placeholder) !important;
-    opacity: 1 !important;
-  }
-
-  input:-ms-input-placeholder,
-  textarea:-ms-input-placeholder {
-    color: var(--color-placeholder) !important;
-    opacity: 1 !important;
-  }
 }
 
-/* Custom components with Tailwind */
+/* 核心功能样式 */
 @layer components {
-  .animated-gradient {
-    @apply bg-gradient-to-br from-primary-600 via-purple-600 to-indigo-700;
-    background-size: 400% 400%;
-    animation: gradient 15s ease infinite;
-  }
-
-  .glass-effect {
-    background-color: var(--color-bg-overlay-light);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--color-border-secondary);
-  }
-
-  .card-glass {
-    @apply bg-white dark:bg-gray-800 backdrop-blur-lg border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 p-4; /* 减小内边距和圆角 */
-  }
-
-  .btn-primary {
-    @apply bg-gradient-to-r from-primary-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:from-primary-700 hover:to-indigo-700 transform hover:-translate-y-0.5 shadow-md hover:shadow-lg transition-all duration-200; /* 减小内边距和圆角 */
-  }
-
-  .btn-secondary {
-    background-color: var(--color-bg-overlay-light);
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    transition: all 0.2s;
-    transform: translateY(0);
-  }
-
-  .btn-secondary:hover {
-    background-color: var(--color-bg-overlay-medium);
-    transform: translateY(-2px);
-  }
-
-  .nav-glass {
-    @apply bg-white/95 backdrop-blur-lg border-b border-gray-200 shadow-sm;
-  }
-
-  .dark .nav-glass {
-    @apply bg-gray-900/98 border-b border-gray-700;
-  }
-
-  /* Header navigation link styles with better dark mode contrast */
-  .dark .nav-glass .nav-link {
-    @apply text-gray-300 hover:bg-gray-800/50 hover:text-white;
-  }
-
-  .dark .nav-glass .nav-link.active {
-    @apply bg-gray-800/60 text-blue-400 shadow-md border border-blue-500/30;
-  }
-
-  .input-modern {
-    @apply w-full px-3 py-1.5 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 shadow-sm text-sm; /* 减小内边距、圆角和字体大小 */
-  }
-
-  .modal-modern {
-    @apply fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50;
-  }
-
-  .modal-content-modern {
-    @apply bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl p-6 max-w-lg w-full mx-4 shadow-xl transform transition-all duration-300; /* 减小内边距和圆角 */
-  }
-
-  .badge-modern {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; /* 减小内边距 */
-  }
-
-  .btn-modern {
-    @apply px-3 py-1.5 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow-md text-sm; /* 减小内边距和字体大小 */
-  }
-
-  /* 基于CSS变量的标准按钮样式 */
-  .btn-primary-modern {
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-    border: 1px solid var(--color-primary);
-  }
-  .btn-primary-modern:hover:not(:disabled) {
-    background: var(--color-primary-dark);
-    border-color: var(--color-primary-dark);
-  }
-
-  .btn-secondary-modern {
-    background: var(--color-bg-tertiary);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-  }
-  .btn-secondary-modern:hover:not(:disabled) {
-    background: var(--color-border-secondary);
-    border-color: var(--color-border);
-  }
-
-  .btn-danger-modern {
-    background: var(--color-error);
-    color: var(--color-text-inverse);
-    border: 1px solid var(--color-error);
-  }
-  .btn-danger-modern:hover:not(:disabled) {
-    background: var(--color-error-dark);
-    border-color: var(--color-error-dark);
-  }
-
-  .btn-success-modern {
-    background: var(--color-success);
-    color: var(--color-text-inverse);
-    border: 1px solid var(--color-success);
-  }
-  .btn-success-modern:hover:not(:disabled) {
-    background: var(--color-success-dark);
-    border-color: var(--color-success-dark);
-  }
-
-  .btn-warning-modern {
-    background: var(--color-warning);
-    color: var(--color-text-inverse);
-    border: 1px solid var(--color-warning);
-  }
-  .btn-warning-modern:hover:not(:disabled) {
-    background: var(--color-warning-dark);
-    border-color: var(--color-warning-dark);
-  }
-
-  /* 禁用状态 */
-  .btn-modern:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none !important;
-  }
-
-  /* 紧凑布局相关类 */
-  .compact-container {
-    @apply p-3; /* 减小容器内边距 */
-  }
-
-  .compact-card {
-    @apply p-3 mb-3; /* 减小卡片内边距和下边距 */
-  }
-
-  .compact-section {
-    @apply mb-4; /* 减小区块下边距 */
-  }
-
-  .compact-text {
-    @apply text-sm; /* 减小文本大小 */
-  }
-
-  .compact-title {
-    @apply text-lg font-semibold mb-2; /* 减小标题大小和下边距 */
-  }
-
-  .compact-subtitle {
-    @apply text-sm font-medium mb-1; /* 减小副标题大小和下边距 */
-  }
-
-  .compact-list {
-    @apply space-y-1; /* 减小列表项间距 */
-  }
-
-  .compact-grid {
-    @apply gap-3; /* 减小网格间距 */
-  }
-
-  /* 自定义滚动条样式 */
+  /* 自定义滚动条样式 - 涉及伪元素，无法内联 */
   .scrollbar-custom {
     scrollbar-width: thin;
     scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
@@ -420,7 +48,7 @@
     background-color: rgba(107, 114, 128, 0.7);
   }
 
-  /* Markdown content basic styles */
+  /* Markdown 内容样式 - 正在使用，样式复杂 */
   .markdown-content h1,
   .markdown-content h2,
   .markdown-content h3,
@@ -429,33 +57,40 @@
   .markdown-content h6 {
     @apply font-semibold text-gray-800 dark:text-gray-200 mt-4 mb-2;
   }
+
   .markdown-content p {
     @apply leading-relaxed mb-3 text-gray-900 dark:text-gray-100;
   }
+
   .markdown-content ul,
   .markdown-content ol {
     @apply pl-5 mb-3;
   }
+
   .markdown-content li {
     @apply list-disc text-gray-900 dark:text-gray-100;
   }
+
   .markdown-content code {
     @apply bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5 text-sm text-gray-900 dark:text-gray-100;
     border: 1px solid #e5e7eb;
   }
+
   .markdown-content pre {
     @apply bg-gray-100 dark:bg-gray-800 rounded p-3 overflow-x-auto text-sm border border-gray-200 dark:border-gray-700;
   }
+
   .markdown-content a {
     @apply text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline;
   }
+
   .markdown-content img {
     max-width: 100%;
     height: auto;
     border-radius: 0.5rem;
   }
 
-  /* High-contrast highlight.js styles (works with rehype-highlight) */
+  /* Highlight.js 语法高亮样式 */
   .markdown-content pre code.hljs,
   .markdown-content pre.hljs {
     background: #f8fafc;
@@ -465,65 +100,79 @@
     border-radius: 0.5rem;
     border: 1px solid #e5e7eb;
   }
+
   .dark .markdown-content pre code.hljs,
   .dark .markdown-content pre.hljs {
     background: #1f2937;
     border-color: #374151;
   }
+
   .markdown-content .hljs {
     color: #111827;
   }
+
   .dark .markdown-content .hljs {
     color: #e5e7eb;
   }
+
   .markdown-content .hljs-comment,
   .markdown-content .hljs-quote {
     color: #4b5563;
     font-style: italic;
   }
+
   .dark .markdown-content .hljs-comment,
   .dark .markdown-content .hljs-quote {
     color: #9ca3af;
   }
+
   .markdown-content .hljs-keyword,
   .markdown-content .hljs-selector-tag {
     color: #7c3aed;
     font-weight: 600;
   }
+
   .dark .markdown-content .hljs-keyword,
   .dark .markdown-content .hljs-selector-tag {
     color: #a78bfa;
   }
+
   .markdown-content .hljs-string,
   .markdown-content .hljs-symbol,
   .markdown-content .hljs-bullet {
     color: #16a34a;
   }
+
   .dark .markdown-content .hljs-string,
   .dark .markdown-content .hljs-symbol,
   .dark .markdown-content .hljs-bullet {
     color: #4ade80;
   }
+
   .markdown-content .hljs-number,
   .markdown-content .hljs-literal,
   .markdown-content .hljs-type {
     color: #f59e0b;
   }
+
   .dark .markdown-content .hljs-number,
   .dark .markdown-content .hljs-literal,
   .dark .markdown-content .hljs-type {
     color: #fbbf24;
   }
+
   .markdown-content .hljs-title,
   .markdown-content .hljs-section,
   .markdown-content .hljs-function {
     color: #2563eb;
   }
+
   .dark .markdown-content .hljs-title,
   .dark .markdown-content .hljs-section,
   .dark .markdown-content .hljs-function {
     color: #60a5fa;
   }
+
   .markdown-content .hljs-variable,
   .markdown-content .hljs-template-variable,
   .markdown-content .hljs-attribute,
@@ -531,6 +180,7 @@
   .markdown-content .hljs-name {
     color: #db2777;
   }
+
   .dark .markdown-content .hljs-variable,
   .dark .markdown-content .hljs-template-variable,
   .dark .markdown-content .hljs-attribute,
@@ -538,12 +188,14 @@
   .dark .markdown-content .hljs-name {
     color: #f472b6;
   }
+
   .markdown-content .hljs-built_in,
   .markdown-content .hljs-builtin-name,
   .markdown-content .hljs-meta,
   .markdown-content .hljs-link {
     color: #0ea5e9;
   }
+
   .dark .markdown-content .hljs-built_in,
   .dark .markdown-content .hljs-builtin-name,
   .dark .markdown-content .hljs-meta,
@@ -552,226 +204,153 @@
   }
 }
 
-/* Custom utilities */
-@layer utilities {
-  .text-shadow {
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .text-shadow-lg {
-    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
-  }
-
-  .animate-bounce-subtle {
-    animation: bounceSubtle 2s ease-in-out infinite;
-  }
-
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-in-out;
-  }
-
-  .animate-slide-up {
-    animation: slideUp 0.3s ease-out;
-  }
+/* 主题切换相关样式 - 新增 */
+:root {
+  --theme-primary: #3b82f6;
+  --theme-primary-hover: #2563eb;
+  --theme-active-bg: rgba(59, 130, 246, 0.1);
+  --theme-active-border: rgba(59, 130, 246, 0.3);
+  --theme-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Keyframes for animations */
-@keyframes gradient {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-@keyframes fadeIn {
-  0% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  0% {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0px);
-    opacity: 1;
-  }
-}
-
-@keyframes bounceSubtle {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
-
-/* Switch 组件样式覆盖 */
-.ant-switch:not(.ant-switch-checked) {
-  background-color: #ef4444 !important; /* 关闭状态：红色背景 */
-  border-color: #ef4444 !important;
-}
-
-.ant-switch.ant-switch-checked {
-  background-color: #10b981 !important; /* 开启状态：绿色背景 */
-  border-color: #10b981 !important;
-}
-
-.ant-switch-inner {
-  color: #ffffff !important; /* 文字颜色：白色 */
-}
-
-.ant-switch-handle {
-  background-color: #ffffff !important; /* 滑块颜色：白色 */
-  border: 1px solid #e5e7eb !important;
-  border-radius: 50% !important; /* 保持圆形 */
-}
-
-/* 暗色模式下的 Switch 样式调整 */
-.dark .ant-switch {
-  border-color: #374151 !important;
-}
-
-.dark .ant-switch-handle {
-  border-color: #4b5563 !important;
-}
-
-/* 全局暗黑模式重置样式 - 强制覆盖顽固的白色背景 */
 .dark {
-  color-scheme: dark;
+  --theme-primary: #60a5fa;
+  --theme-primary-hover: #3b82f6;
+  --theme-active-bg: rgba(96, 165, 250, 0.15);
+  --theme-active-border: rgba(96, 165, 250, 0.4);
 }
 
-/* 强制覆盖 Ant Design 组件的白色背景 */
-.dark .ant-card,
-.dark .ant-modal,
-.dark .ant-popover,
-.dark .ant-tooltip,
-.dark .ant-dropdown {
-  background-color: var(--color-bg-secondary, #1f2937) !important;
+/* 导航栏玻璃态效果 */
+.nav-glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.6);
 }
 
-.dark .ant-card-head,
-.dark .ant-modal-header,
-.dark .ant-popover-inner,
-.dark .ant-dropdown-menu {
-  background-color: var(--color-bg-elevated, #1f2937) !important;
+.dark .nav-glass {
+  background: rgba(17, 24, 39, 0.8);
+  border-bottom: 1px solid rgba(55, 65, 81, 0.6);
 }
 
-.dark .ant-card-body {
-  background-color: var(--color-bg-secondary, #1f2937) !important;
+/* 导航链接交互效果 */
+.nav-link {
+  position: relative;
+  overflow: hidden;
+  transition: var(--theme-transition);
+  cursor: pointer;
 }
 
-/* 强制覆盖文本颜色 */
-.dark .ant-card-head-title,
-.dark .ant-modal-title,
-.dark .ant-typography {
-  color: var(--color-text-primary, #f9fafb) !important;
+.nav-link:hover {
+  transform: translateY(-1px);
 }
 
-/* 强制覆盖所有 pre 标签的背景色 */
-.dark pre {
-  background-color: var(--color-bg-secondary, #1f2937) !important;
-  color: var(--color-text-primary, #f9fafb) !important;
+.nav-link.active {
+  color: var(--theme-primary);
+  background: var(--theme-active-bg);
+  border: 1px solid var(--theme-active-border);
 }
 
-/* 强制覆盖所有 code 标签的背景色 */
-.dark code {
-  background-color: var(--color-bg-tertiary, #374151) !important;
-  color: var(--color-text-primary, #f9fafb) !important;
+.nav-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 2px;
+  background: var(--theme-primary);
+  border-radius: 1px;
 }
 
-/* 强制覆盖 Ant Design Card 组件的白色背景 */
-.dark .ant-card {
-  background-color: transparent !important;
+/* 主题切换器容器 */
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border-radius: 0.5rem;
+  background: rgba(243, 244, 246, 1);
+  border: 1px solid rgba(229, 231, 235, 1);
 }
 
-.dark .ant-card-body {
-  background-color: transparent !important;
+.dark .theme-switcher {
+  background: rgba(55, 65, 81, 1);
+  border: 1px solid rgba(75, 85, 99, 1);
 }
 
-/* 确保 Card 内的直接子 div 正确继承背景色 */
-.dark .ant-card > div {
-  background-color: transparent !important;
+/* 主题切换按钮 */
+.theme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  transition: var(--theme-transition);
+  cursor: pointer;
+  border: none;
+  background: transparent;
 }
 
-/* 确保 JSON 显示区域的背景色正确 */
-.dark .ant-card div[class*="bg-gray-900"] {
-  background-color: var(--color-bg-secondary, #1f2937) !important;
+.theme-btn:hover {
+  background: rgba(107, 114, 128, 0.1);
 }
 
-/* 确保 pre 标签在 Card 内也能正确显示背景色 */
-.dark .ant-card pre {
-  background-color: var(--color-bg-tertiary, #374151) !important;
-  border-color: var(--color-border, #374151) !important;
+.theme-btn.active {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--theme-primary);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
-.dark .ant-card code {
-  background-color: var(--color-bg-quaternary, #4b5563) !important;
+.dark .theme-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-/* 按钮可访问性增强样式 */
-.dark button {
-  transition: background-color 0.2s ease, color 0.2s ease;
+.dark .theme-btn.active {
+  background: rgba(96, 165, 250, 0.15);
+  color: var(--theme-primary);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
 }
 
-/* 确保所有自定义按钮在暗黑模式下都有足够的对比度 */
-.dark button[class*="hover:bg-gray-"]:hover {
-  background-color: var(--btn-bg-hover, #374151) !important;
-  color: var(--btn-text-hover, #f9fafb) !important;
+/* 现代按钮样式 */
+.btn-modern {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: var(--theme-transition);
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-/* 针对 cursor-pointer 按钮的强化样式 */
-.dark button[class*="cursor-pointer"]:hover {
-  background-color: var(--btn-bg-hover, #374151) !important;
-  color: var(--btn-text-hover, #f9fafb) !important;
+.btn-modern:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* 统一的可访问按钮样式类 */
-.btn-accessible {
-  background-color: var(--btn-bg-hover);
-  color: var(--btn-text-hover);
-  transition: all 0.2s ease;
+.btn-modern:active {
+  transform: translateY(0);
 }
 
-.btn-accessible:hover {
-  background-color: var(--btn-bg-active);
-  color: var(--btn-text-active);
-  transform: scale(1.02);
+/* 响应式优化 */
+@media (max-width: 640px) {
+  .theme-switcher {
+    padding: 0.0625rem;
+    gap: 0.0625rem;
+  }
+
+  .theme-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.875rem;
+  }
 }
 
-/* 确保 Ant Design 组件内的按钮可访问性 */
-.dark .ant-card button,
-.dark .ant-modal button {
-  background-color: var(--color-bg-tertiary) !important;
-  color: var(--color-text-primary) !important;
-}
-
-.dark .ant-card button:hover,
-.dark .ant-modal button:hover {
-  background-color: var(--color-bg-active) !important;
-  color: var(--color-text-inverse) !important;
-}
+/* 极致简化完成 - 新增主题切换相关样式 */

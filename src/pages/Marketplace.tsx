@@ -340,9 +340,9 @@ const Marketplace: React.FC = memo(() => {
   const getPlatformBadgeColor = useCallback((platform: string) => {
     switch (platform) {
       case t('marketplace.platforms.modelscope'):
-        return 'var(--color-platform-mada)'
+        return '#ea580c'  // orange-600
       default:
-        return 'var(--color-platform-default)'
+        return '#6b7280'  // gray-500
     }
   }, [])
 
@@ -385,16 +385,10 @@ const Marketplace: React.FC = memo(() => {
         <Flex gap='small' style={{ marginBottom: '12px' }}>
           {/* Logo */}
           <div
+            className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 flex items-center justify-center"
             style={{
-              flexShrink: 0,
               width: '48px',
               height: '48px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              backgroundColor: 'var(--color-bg-tertiary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
             }}>
             {service.logo_url ? (
               <img
@@ -415,10 +409,10 @@ const Marketplace: React.FC = memo(() => {
             <Flex
               gap='small'
               align='center'
+              className="mt-1 text-sm text-gray-500 dark:text-gray-400"
               style={{
                 marginTop: '4px',
                 fontSize: '14px',
-                color: 'var(--color-text-tertiary)',
               }}>
               <Flex align='center' gap='small'>
                 <span>👤</span>
@@ -454,12 +448,12 @@ const Marketplace: React.FC = memo(() => {
             </Flex>
           </Badge>
           {service.is_verified && (
-            <Badge color='var(--color-success)'>
+            <Badge color="#10b981">
               {t('marketplace.badges.verified')}
             </Badge>
           )}
           {service.is_hosted && (
-            <Badge color='var(--color-primary)'>
+            <Badge color="#2563eb">
               {t('marketplace.badges.hosted')}
             </Badge>
           )}
@@ -469,7 +463,7 @@ const Marketplace: React.FC = memo(() => {
           <Space size='large'>
             {typeof service.github_stars === 'number' &&
               service.github_stars > 0 && (
-                <Text style={{ color: 'var(--color-warning)' }}>
+                <Text className="text-yellow-600 dark:text-yellow-400">
                   ⭐ {service.github_stars.toLocaleString()}
                 </Text>
               )}

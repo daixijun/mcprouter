@@ -275,12 +275,11 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
           <Flex justify='space-between' align='center' wrap='wrap'>
             <Text strong>
               工具清单 ( 启用:{' '}
-              <span
-                style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>
+              <span className="text-green-600 dark:text-green-400 font-bold">
                 {enabledToolsCount}
               </span>{' '}
               | 禁用:{' '}
-              <span style={{ color: 'var(--color-error)', fontWeight: 'bold' }}>
+              <span className="text-red-600 dark:text-red-400 font-bold">
                 {disabledToolsCount}
               </span>{' '}
               |{' '}

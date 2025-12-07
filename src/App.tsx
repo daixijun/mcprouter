@@ -1,15 +1,11 @@
-import { invoke } from '@tauri-apps/api/core'
 import { App as AntdApp } from 'antd'
 import {
   Activity,
-  Info,
   Key,
   Menu,
-  Moon,
   Package,
   Server,
   Settings as SettingsIcon,
-  Sun,
   X,
 } from 'lucide-react'
 import { memo } from 'react'
@@ -18,6 +14,7 @@ import './App.css'
 import AboutModal from './components/AboutModal'
 import AntdConfigProvider from './components/AntdConfigProvider'
 import LanguageSelector from './components/LanguageSelector'
+import ThemeSelector from './components/ThemeSelector'
 import { AppProvider, useAppContext } from './contexts/AppContext'
 import Dashboard from './pages/Dashboard'
 import Marketplace from './pages/Marketplace'
@@ -27,21 +24,8 @@ import TokenManagement from './pages/TokenManagement'
 
 // 内部应用组件，使用 Context
 const AppContent = memo(() => {
-  const { state, setThemeMode, setActiveTab, toggleMenu, toggleAbout } =
-    useAppContext()
-  const { message } = AntdApp.useApp()
+  const { state, setActiveTab, toggleMenu, toggleAbout } = useAppContext()
   const { t } = useTranslation()
-
-  // Handle theme change
-  const handleThemeChange = async (mode: 'light' | 'dark' | 'auto') => {
-    setThemeMode(mode)
-    try {
-      await invoke('set_theme', { theme: mode })
-    } catch (error) {
-      console.error('Failed to save theme:', error)
-      message.error(t('common.error.save_theme_failed'))
-    }
-  }
 
   const tabs = [
     { id: 'overview', label: t('nav.overview'), icon: Activity },
@@ -110,44 +94,7 @@ const AppContent = memo(() => {
                       })}
                     </nav>
                     {/* Theme Switcher */}
-                    <div
-                    className='flex items-center space-x-0.5 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700'
-                    style={{
-                      backgroundColor: 'var(--color-bg-secondary)',
-                      border: '1px solid var(--color-border)'
-                    }}
-                  >
-                      <button
-                        onClick={() => handleThemeChange('auto')}
-                        className={`p-1.5 rounded-md transition-all duration-200 ${
-                          state.themeMode === 'auto'
-                            ? 'bg-gray-50 dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-200 dark:border-blue-500/30'
-                            : 'text-gray-700 hover:text-blue-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
-                        }`}
-                        title={t('dashboard.theme.auto')}>
-                        <Info size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleThemeChange('light')}
-                        className={`p-1.5 rounded-md transition-all duration-200 ${
-                          state.themeMode === 'light'
-                            ? 'bg-gray-50 dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-sm border border-amber-200 dark:border-amber-500/30'
-                            : 'text-gray-700 hover:text-amber-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
-                        }`}
-                        title={t('dashboard.theme.light')}>
-                        <Sun size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleThemeChange('dark')}
-                        className={`p-1.5 rounded-md transition-all duration-200 ${
-                          state.themeMode === 'dark'
-                            ? 'bg-gray-50 dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/30'
-                            : 'text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
-                        }`}
-                        title={t('dashboard.theme.dark')}>
-                        <Moon size={16} />
-                      </button>
-                    </div>
+                    <ThemeSelector type='desktop' />
                     {/* Language Selector */}
                     <div className='ml-3'>
                       <LanguageSelector size='small' />
@@ -185,49 +132,11 @@ const AppContent = memo(() => {
                       })}
                       {/* Mobile Theme Switcher */}
                       <div className='pt-2 border-t border-gray-200/50 dark:border border-solid mt-2'>
-                        <div className='px-3 py-1 text-xs text-gray-500 '>
+                        <div className='px-3 py-1 text-xs text-gray-500'>
                           {t('dashboard.theme.title')}
                         </div>
-                        <div className='flex items-center space-x-1 mt-1'>
-                          <button
-                            onClick={() => {
-                              handleThemeChange('auto')
-                              toggleMenu()
-                            }}
-                            className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                              state.themeMode === 'auto'
-                                ? 'bg-white text-blue-600 shadow-md border border-blue-200 dark:bg-gray-700  dark:border-blue-500/30'
-                                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white'
-                            }`}>
-                            <Info size={16} />
-                            <span>{t('dashboard.theme.auto')}</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleThemeChange('light')
-                              toggleMenu()
-                            }}
-                            className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                              state.themeMode === 'light'
-                                ? 'bg-white text-amber-600 shadow-md border border-amber-200 dark:bg-gray-700 dark:text-amber-400 dark:border-amber-500/30'
-                                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white'
-                            }`}>
-                            <Sun size={16} />
-                            <span>{t('dashboard.theme.light')}</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleThemeChange('dark')
-                              toggleMenu()
-                            }}
-                            className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                              state.themeMode === 'dark'
-                                ? 'bg-white text-indigo-600 shadow-md border border-indigo-200 dark:bg-gray-700 dark:text-indigo-400 dark:border-indigo-500/30'
-                                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white'
-                            }`}>
-                            <Moon size={16} />
-                            <span>{t('dashboard.theme.dark')}</span>
-                          </button>
+                        <div className='px-3 py-2'>
+                          <ThemeSelector type='mobile' showLabel={true} />
                         </div>
                         {/* Mobile Language Selector */}
                         <div className='pt-2 border-t border-gray-200/50 dark:border border-solid mt-2'>
