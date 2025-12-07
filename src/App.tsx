@@ -110,13 +110,19 @@ const AppContent = memo(() => {
                       })}
                     </nav>
                     {/* Theme Switcher */}
-                    <div className='flex items-center space-x-0.5 bg-gray-200 dark:bg-gray-800/90 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700'>
+                    <div
+                    className='flex items-center space-x-0.5 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700'
+                    style={{
+                      backgroundColor: 'var(--color-bg-secondary)',
+                      border: '1px solid var(--color-border)'
+                    }}
+                  >
                       <button
                         onClick={() => handleThemeChange('auto')}
                         className={`p-1.5 rounded-md transition-all duration-200 ${
                           state.themeMode === 'auto'
-                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-200 dark:border-blue-500/30'
-                            : 'text-gray-900 hover:text-blue-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
+                            ? 'bg-gray-50 dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-200 dark:border-blue-500/30'
+                            : 'text-gray-700 hover:text-blue-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
                         }`}
                         title={t('dashboard.theme.auto')}>
                         <Info size={16} />
@@ -125,8 +131,8 @@ const AppContent = memo(() => {
                         onClick={() => handleThemeChange('light')}
                         className={`p-1.5 rounded-md transition-all duration-200 ${
                           state.themeMode === 'light'
-                            ? 'bg-white dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-sm border border-amber-200 dark:border-amber-500/30'
-                            : 'text-gray-900 hover:text-amber-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
+                            ? 'bg-gray-50 dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-sm border border-amber-200 dark:border-amber-500/30'
+                            : 'text-gray-700 hover:text-amber-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
                         }`}
                         title={t('dashboard.theme.light')}>
                         <Sun size={16} />
@@ -135,8 +141,8 @@ const AppContent = memo(() => {
                         onClick={() => handleThemeChange('dark')}
                         className={`p-1.5 rounded-md transition-all duration-200 ${
                           state.themeMode === 'dark'
-                            ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/30'
-                            : 'text-gray-900 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
+                            ? 'bg-gray-50 dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/30'
+                            : 'text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800/50'
                         }`}
                         title={t('dashboard.theme.dark')}>
                         <Moon size={16} />

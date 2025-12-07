@@ -251,10 +251,18 @@ const Dashboard: React.FC = () => {
         <div className='w-full space-y-3'>
           <div className='relative'>
             <div
-              className='bg-transparent dark:bg-gray-900 rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'
-              // style={{ backgroundColor: 'var(--color-bg-secondary)' }}
+              className='rounded p-3 overflow-auto max-h-64 border border-gray-200 dark:border-gray-700'
+              style={{
+                backgroundColor: 'var(--color-bg-secondary)'
+              }}
             >
-              <pre className='text-xs whitespace-pre-wrap text-gray-800 dark:text-gray-100 pr-16 font-mono'>
+              <pre
+                className='text-xs whitespace-pre-wrap pr-16 font-mono'
+                style={{
+                  backgroundColor: 'transparent',
+                  color: 'var(--color-text-primary)'
+                }}
+              >
                 {JSON.stringify(generatedConfig, null, 2)}
               </pre>
             </div>
