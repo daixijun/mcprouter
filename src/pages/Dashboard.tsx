@@ -12,11 +12,11 @@ import {
 import Card from 'antd/es/card'
 import {
   Activity,
+  Database,
   Key,
+  MessageSquare,
   Server,
-  TrendingUp,
   Wrench,
-  XCircle,
 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -33,8 +33,10 @@ const Dashboard: React.FC = () => {
     enabled_servers: 0,
     failed_servers: 0,
     healthy_services: 0,
-    connected_services: 0,
     total_tools: 0,
+    total_resources: 0,
+    total_prompts: 0,
+    total_prompt_templates: 0,
     active_clients: 0,
     startup_time: '',
   })
@@ -296,29 +298,29 @@ const Dashboard: React.FC = () => {
 
         <Card size='small' className='p-2'>
           <Statistic
-            title={t('dashboard.stats.failed_servers')}
-            value={stats.failed_servers}
-            prefix={<XCircle size={14} />}
-            styles={{ content: { color: '#ff4d4f', fontSize: '18px' } }}
+            title={t('dashboard.stats.total_prompts')}
+            value={formatNumber(stats.total_prompts)}
+            prefix={<MessageSquare size={14} />}
+            styles={{ content: { color: '#722ed1', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
 
         <Card size='small' className='p-2'>
           <Statistic
-            title={t('dashboard.stats.connected_services')}
-            value={formatNumber(stats.connected_services)}
-            prefix={<TrendingUp size={14} />}
-            styles={{ content: { color: '#13c2c2', fontSize: '18px' } }}
+            title={t('dashboard.stats.total_prompt_templates')}
+            value={formatNumber(stats.total_prompt_templates)}
+            prefix={<MessageSquare size={14} />}
+            styles={{ content: { color: '#52c41a', fontSize: '18px' } }}
             className='text-xs'
           />
         </Card>
 
         <Card size='small' className='p-2'>
           <Statistic
-            title={t('dashboard.system_info.uptime')}
-            value={currentUptime}
-            prefix={<Activity size={14} />}
+            title={t('dashboard.stats.total_resources')}
+            value={formatNumber(stats.total_resources)}
+            prefix={<Database size={14} />}
             styles={{ content: { color: '#fa8c16', fontSize: '18px' } }}
             className='text-xs'
           />
@@ -529,80 +531,101 @@ const Dashboard: React.FC = () => {
         </div>
       </Card>
 
-      {/* 系统状态概览 */}
+      {/* 系统状态 */}
       <Card
         title={
           <Space>
             <Activity size={16} />
-            {t('dashboard.system_info.title')}
+            {t('dashboard.system_status.title')}
           </Space>
         }>
-        <div className='flex flex-wrap gap-8'>
-          {/* 系统信息 */}
-          <div className='flex-1 min-w-[200px]'>
-            <Text strong className='block mb-2'>
-              {t('dashboard.system_info.version')}
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          {/* MCP 聚合接口状态 */}
+          <div className='space-y-4'>
+            <Text strong className='block mb-3'>
+              {t('dashboard.aggregator.title')}
             </Text>
-            <Space direction='vertical' size='small' className='text-sm'>
-              <div>
-                <Text type='secondary'>{t('dashboard.system_info.os')}: </Text>
-                <Text>{stats.os_info?.type || 'Unknown'}</Text>
-              </div>
-              <div>
+            <Space direction='vertical' size='small' className='w-full'>
+              <div className='flex justify-between items-center'>
                 <Text type='secondary'>
-                  {t('dashboard.system_info.os_version')}:{' '}
+                  {t('dashboard.aggregator.endpoint')}:
                 </Text>
-                <Text>{stats.os_info?.version || 'Unknown'}</Text>
+                <Text
+                  copyable={{ text: stats.aggregator?.endpoint }}
+                  className='font-mono text-sm'>
+                  {stats.aggregator?.endpoint}
+                </Text>
               </div>
-              <div>
+              <div className='flex justify-between items-center'>
                 <Text type='secondary'>
-                  {t('dashboard.system_info.arch')}:{' '}
+                  {t('dashboard.aggregator.status')}:
                 </Text>
-                <Text>{stats.os_info?.arch || 'Unknown'}</Text>
+                <div className='flex items-center space-x-2'>
+                  <div
+                    className='w-2 h-2 rounded-full'
+                    style={{
+                      backgroundColor:
+                        stats.aggregator?.status === 'running'
+                          ? '#52c41a'
+                          : stats.aggregator?.status === 'error'
+                          ? '#ff4d4f'
+                          : '#8c8c8c',
+                    }}
+                  />
+                  <Text
+                    style={{
+                      color:
+                        stats.aggregator?.status === 'running'
+                          ? '#52c41a'
+                          : stats.aggregator?.status === 'error'
+                          ? '#ff4d4f'
+                          : '#8c8c8c',
+                    }}>
+                    {stats.aggregator?.status === 'running' &&
+                      t('dashboard.aggregator.running')}
+                    {stats.aggregator?.status === 'stopped' &&
+                      t('dashboard.aggregator.stopped')}
+                    {stats.aggregator?.status === 'error' &&
+                      t('dashboard.aggregator.error')}
+                  </Text>
+                </div>
+              </div>
+              <div className='flex justify-between items-center'>
+                <Text type='secondary'>
+                  {t('dashboard.aggregator.connected_services')}:
+                </Text>
+                <Text strong>{stats.aggregator?.connected_services || 0}</Text>
               </div>
             </Space>
           </div>
 
-          {/* 聚合接口信息 */}
-          <div className='flex-1 min-w-[200px]'>
-            <Text strong className='block mb-2'>
-              {t('dashboard.aggregator.title')}
+          {/* 系统信息 */}
+          <div className='space-y-4'>
+            <Text strong className='block mb-3'>
+              {t('dashboard.system_info.runtime')}
             </Text>
-            <Space direction='vertical' size='small' className='text-sm'>
-              <div>
+            <Space orientation='vertical' size='small' className='w-full'>
+              <div className='flex justify-between items-center'>
                 <Text type='secondary'>
-                  {t('dashboard.aggregator.endpoint')}:{' '}
+                  {t('dashboard.system_info.uptime')}:
                 </Text>
-                <Text copyable={{ text: stats.aggregator?.endpoint }}>
-                  {stats.aggregator?.endpoint}
+                <Text strong>{currentUptime}</Text>
+              </div>
+              <div className='flex justify-between items-center'>
+                <Text type='secondary'>
+                  {t('dashboard.system_info.startup_time')}:
+                </Text>
+                <Text className='text-sm'>
+                  {stats.startup_time
+                    ? new Date(stats.startup_time).toLocaleString()
+                    : '-'}
                 </Text>
               </div>
-              <div>
+              <div className='flex justify-between items-center'>
                 <Text type='secondary'>
-                  {t('dashboard.aggregator.status')}:{' '}
+                  {t('dashboard.system_info.active_clients')}:
                 </Text>
-                <Text
-                  style={{
-                    color:
-                      stats.aggregator?.status === 'running'
-                        ? '#52c41a'
-                        : stats.aggregator?.status === 'error'
-                        ? '#ff4d4f'
-                        : '#8c8c8c',
-                  }}>
-                  {stats.aggregator?.status === 'running' &&
-                    t('dashboard.aggregator.running')}
-                  {stats.aggregator?.status === 'stopped' &&
-                    t('dashboard.aggregator.stopped')}
-                  {stats.aggregator?.status === 'error' &&
-                    t('dashboard.aggregator.error')}
-                </Text>
-              </div>
-              <div>
-                <Text type='secondary'>
-                  {t('dashboard.aggregator.connections')}:{' '}
-                </Text>
-                <Text>{stats.aggregator?.connected_services}</Text>
+                <Text strong>{stats.active_clients}</Text>
               </div>
             </Space>
           </div>

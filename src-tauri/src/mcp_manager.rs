@@ -289,6 +289,27 @@ impl McpServerManager {
                 entries.get(name).map(|e| e.count)
             };
 
+            // Resource count from cache
+            let resource_count = {
+                let entries = self.resources_cache_entries.read().await;
+                entries.get(name).map(|e| e.count)
+            };
+
+            // Prompt count from cache
+            let prompt_count = {
+                let entries = self.prompts_cache_entries.read().await;
+                entries.get(name).map(|e| e.count)
+            };
+
+            // Prompt template count from cache - count prompts with arguments (templates)
+            let prompt_template_count = {
+                let entries = self.prompts_cache_entries.read().await;
+                entries.get(name).map(|e| {
+                    // Count prompts that have arguments (making them templates)
+                    e.raw.iter().filter(|p| p.arguments.is_some() && !p.arguments.as_ref().unwrap().is_empty()).count()
+                })
+            };
+
             // Set different fields based on transport type, set unneeded fields to None to skip during serialization
             let (transport_str, url, headers, command, args, env_data) = match config.transport {
                 // STDIO transport: remove url/headers fields
@@ -329,6 +350,9 @@ impl McpServerManager {
                 command,
                 args,
                 tool_count,
+                resource_count,
+                prompt_count,
+                prompt_template_count,
             });
         }
 

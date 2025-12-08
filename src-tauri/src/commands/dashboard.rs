@@ -28,7 +28,7 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
         .count();
 
     // Calculate failed services count (enabled but failed to connect)
-    let failed_services = services
+    let failed_servers = services
         .iter()
         .filter(|s| {
             s.enabled && (s.status == "failed" || s.status == "disconnected" || s.status == "error")
@@ -110,25 +110,36 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
         .map(|s| s.tool_count.unwrap_or(0) as u32)
         .sum::<u32>();
 
+    // Calculate total resources count from all services
+    let total_resources = services
+        .iter()
+        .map(|s| s.resource_count.unwrap_or(0) as u32)
+        .sum::<u32>();
+
+    // Calculate total prompts count from all services
+    let total_prompts = services
+        .iter()
+        .map(|s| s.prompt_count.unwrap_or(0) as u32)
+        .sum::<u32>();
+
+    // Calculate total prompt templates count from all services
+    // For now, consider all prompts as templates since MCP prompts are inherently templatable
+    let total_prompt_templates = services
+        .iter()
+        .map(|s| s.prompt_template_count.unwrap_or(s.prompt_count.unwrap_or(0)) as u32)
+        .sum::<u32>();
+
     Ok(serde_json::json!({
         "total_servers": total_services,
         "enabled_servers": enabled_services,
-        "failed_servers": failed_services,
+        "failed_servers": failed_servers,
         "healthy_services": healthy_services,
-        "connected_services": aggregator_stats.get("connected_services").and_then(|v| v.as_u64()).unwrap_or(0),
         "total_tools": total_tools,
+        "total_resources": total_resources,
+        "total_prompts": total_prompts,
+        "total_prompt_templates": total_prompt_templates,
         "active_clients": connections.len(),
         "startup_time": startup_time,
-        "os_info": {
-            "platform": tauri_plugin_os::platform().to_string(),
-            "type": tauri_plugin_os::type_().to_string(),
-            "version": match tauri_plugin_os::version() {
-                tauri_plugin_os::Version::Semantic(major, minor, patch) =>
-                    format!("{}.{}.{}", major, minor, patch),
-                _ => format!("{:?}", tauri_plugin_os::version()).replace('"', "").replace("Semantic", ""),
-            },
-            "arch": tauri_plugin_os::arch().to_string(),
-        },
         "connections": {
             "active_clients": connections.len(),
             "active_services": aggregator_stats.get("active_connections").and_then(|v| v.as_u64()).unwrap_or(0),

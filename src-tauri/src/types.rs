@@ -283,6 +283,12 @@ pub struct McpServerInfo {
     pub args: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_template_count: Option<usize>,
 }
 
 /// MCP服务器工具信息，用于API返回

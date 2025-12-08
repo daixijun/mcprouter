@@ -198,8 +198,10 @@ export interface DashboardStats {
   enabled_servers: number
   failed_servers: number
   healthy_services: number
-  connected_services: number
   total_tools: number
+  total_resources: number
+  total_prompts: number
+  total_prompt_templates: number
   active_clients: number
   startup_time: string
   aggregator?: {
@@ -207,12 +209,6 @@ export interface DashboardStats {
     max_connections?: number
     status?: 'running' | 'stopped' | 'error'
     connected_services?: number
-  }
-  os_info?: {
-    type: string
-    version: string
-    arch: string
-    platform?: string
   }
   connections?: {
     active_clients: number
