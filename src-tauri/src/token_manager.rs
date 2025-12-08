@@ -369,6 +369,12 @@ impl TokenManager {
             .ok_or_else(|| McpError::NotFound(format!("Token with ID '{}' not found", token_id)))
     }
 
+    /// Get all tokens with full token values (for Dashboard configuration generation)
+    pub async fn get_all_tokens(&self) -> Result<Vec<Token>> {
+        let tokens = self.tokens.read().await;
+        Ok(tokens.values().cloned().collect())
+    }
+
     /// Record usage statistics for a token
     pub async fn record_usage(&self, token_id: &str) -> Result<()> {
         let mut tokens = self.tokens.write().await;

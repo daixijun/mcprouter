@@ -1,8 +1,8 @@
 import { GlobalOutlined } from '@ant-design/icons'
+import { invoke } from '@tauri-apps/api/core'
 import { App as AntdApp, Select, Space, Typography } from 'antd'
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
 import { LANGUAGE_OPTIONS } from '../constants/language'
 
 const { Text } = Typography
@@ -25,10 +25,14 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
 }) => {
   const { i18n, t } = useTranslation()
   const [loading, setLoading] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const { message } = AntdApp.useApp()
 
   const handleLanguageChange = async (newLanguage: string) => {
-    if (newLanguage === i18n.language) return
+    if (newLanguage === i18n.language) {
+      setDropdownOpen(false) // 相同语言时立即关闭
+      return
+    }
 
     setLoading(true)
     try {
@@ -36,6 +40,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
       // Save language preference to backend
       await invoke('save_language_preference', { language: newLanguage })
       message.success(t('common.language.changed_success'))
+      setDropdownOpen(false) // 成功后关闭
     } catch (error) {
       message.error(t('common.language.change_failed'))
       console.error('Language change failed:', error)
@@ -67,6 +72,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
       <Select
         value={i18n.language}
         onChange={handleLanguageChange}
+        open={dropdownOpen}
+        onOpenChange={setDropdownOpen}
         loading={loading}
         size={size}
         placement={placement}

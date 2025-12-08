@@ -1,12 +1,27 @@
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { App, Space, Statistic, Typography } from 'antd'
+import {
+  App,
+  Button,
+  Select,
+  Space,
+  Statistic,
+  Tooltip,
+  Typography,
+} from 'antd'
 import Card from 'antd/es/card'
-import { Activity, Server, TrendingUp, Wrench, XCircle } from 'lucide-react'
+import {
+  Activity,
+  Key,
+  Server,
+  TrendingUp,
+  Wrench,
+  XCircle,
+} from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppContext } from '../contexts/AppContext'
-import type { DashboardStats } from '../types'
+import type { DashboardStats, Token } from '../types'
 
 const { Text } = Typography
 
@@ -26,6 +41,12 @@ const Dashboard: React.FC = () => {
   const { message } = App.useApp()
   const [isLoading, setIsLoading] = useState(true)
   const [currentUptime, setCurrentUptime] = useState<string>('-')
+
+  // Token 状态管理
+  const [tokens, setTokens] = useState<Token[]>([])
+  const [selectedTokenId, setSelectedTokenId] = useState<string | undefined>()
+  const [isTokensLoading, setIsTokensLoading] = useState(false)
+  const [tokenDropdownOpen, setTokenDropdownOpen] = useState(false)
 
   // 加载仪表板数据
   const loadDashboardData = async () => {
@@ -50,7 +71,41 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadDashboardData()
+    loadTokens()
   }, [])
+
+  // 加载 Token 列表
+  const loadTokens = async () => {
+    try {
+      setIsTokensLoading(true)
+      const tokenList = await invoke<Token[]>('get_tokens_for_dashboard')
+      setTokens(tokenList)
+
+      // 如果有可用的 token，选择第一个有效的
+      const availableTokens = tokenList.filter(
+        (token) => token.enabled && !token.is_expired,
+      )
+      if (availableTokens.length > 0 && !selectedTokenId) {
+        setSelectedTokenId(availableTokens[0].id)
+      }
+    } catch (error) {
+      console.error('Failed to load tokens:', error)
+      message.error(t('dashboard.token.load_failed'))
+    } finally {
+      setIsTokensLoading(false)
+    }
+  }
+
+  // Token 选择处理
+  const handleTokenChange = (tokenId: string | undefined) => {
+    setSelectedTokenId(tokenId)
+    setTokenDropdownOpen(false) // 选择后立即关闭下拉菜单
+  }
+
+  // 获取选中的 Token
+  const getSelectedToken = () => {
+    return tokens.find((token) => token.id === selectedTokenId)
+  }
 
   // 格式化运行时间
   const formatUptime = (seconds: number) => {
@@ -75,11 +130,44 @@ const Dashboard: React.FC = () => {
     return num.toString()
   }
 
+  const selectedToken = getSelectedToken()
+
+  // Token 状态辅助函数
+  const formatTokenExpiration = (token: Token) => {
+    if (!token.expires_at) return t('dashboard.token.status.never_expires')
+    const now = Date.now()
+    const expiry = token.expires_at * 1000 // Convert from seconds to milliseconds
+    const diff = expiry - now
+
+    if (diff <= 0) return t('dashboard.token.status.expired')
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+
+    if (days > 0) return t('dashboard.token.status.expires_days', { days })
+    if (hours > 0) return t('dashboard.token.status.expires_hours', { hours })
+    return t('dashboard.token.status.expires_soon')
+  }
+
+  const getTokenStatusColor = (token: Token) => {
+    if (!token.enabled) return '#8c8c8c' // gray
+    if (token.is_expired) return '#ff4d4f' // red
+    const now = Date.now()
+    const expiry = token.expires_at ? token.expires_at * 1000 : 0
+    const diff = expiry - now
+    if (diff > 0 && diff < 24 * 60 * 60 * 1000) return '#faad14' // orange (less than 24h)
+    return '#52c41a' // green
+  }
+
   const generatedConfig = {
     mcpServers: {
       mcprouter: {
         type: 'http',
         url: stats.aggregator?.endpoint || '',
+        ...(selectedToken && {
+          headers: {
+            Authorization: `Bearer ${selectedToken.value}`,
+          },
+        }),
       },
     },
   }
@@ -94,24 +182,18 @@ const Dashboard: React.FC = () => {
       | 'vscode',
   ) => {
     const endpoint = stats.aggregator?.endpoint || ''
-    const base = {
-      mcpServers: {
-        mcprouter: {
-          type: 'http',
-          url: endpoint,
-        },
-      },
-    }
+    const authHeaders = selectedToken
+      ? { Authorization: `Bearer ${selectedToken.value}` }
+      : {}
+
     switch (client) {
       case 'cherrystudio':
         const cherrystudioConfig = {
-          ...base,
           mcpServers: {
-            ...base.mcpServers,
             mcprouter: {
-              ...base.mcpServers.mcprouter,
               type: 'streamableHttp',
               baseUrl: endpoint,
+              ...(selectedToken && { headers: authHeaders }),
             },
           },
         }
@@ -125,6 +207,7 @@ const Dashboard: React.FC = () => {
           name: 'mcprouter',
           type: 'streamable_http',
           url: endpoint,
+          ...(selectedToken && { headers: authHeaders }),
         }
         return `cursor://anysphere.cursor-deeplink/mcp/install?name=mcprouter&config=${btoa(
           JSON.stringify(cursorConfig),
@@ -135,6 +218,7 @@ const Dashboard: React.FC = () => {
           name: 'mcprouter',
           url: endpoint,
           type: 'http',
+          ...(selectedToken && { headers: authHeaders }),
         }
         return `vscode:mcp/install?${encodeURIComponent(
           JSON.stringify(vscodeConfig),
@@ -251,21 +335,133 @@ const Dashboard: React.FC = () => {
         }
         loading={isLoading}>
         <div className='w-full space-y-3'>
+          {/* Token 选择区域 */}
+          <div
+            className='flex items-center justify-between p-3 rounded border'
+            style={{
+              backgroundColor: state.isDarkMode ? '#1f2937' : '#f9fafb',
+              borderColor: state.isDarkMode ? '#374151' : '#e5e7eb',
+            }}>
+            <div className='flex items-center space-x-3 flex-1'>
+              <Key
+                size={16}
+                className={state.isDarkMode ? 'text-blue-400' : 'text-blue-600'}
+              />
+              <Text className='font-medium'>{t('dashboard.token.title')}</Text>
+              <Select
+                value={selectedTokenId}
+                onChange={handleTokenChange}
+                open={tokenDropdownOpen}
+                onOpenChange={setTokenDropdownOpen}
+                placeholder={
+                  tokens.length === 0
+                    ? t('dashboard.token.no_available')
+                    : t('dashboard.token.select')
+                }
+                loading={isTokensLoading}
+                disabled={tokens.length === 0}
+                style={{ width: 200 }}
+                className='flex-1 max-w-xs'>
+                <Select.Option value={undefined} key='no-token'>
+                  <Space>
+                    <span style={{ color: '#8c8c8c' }}>
+                      {t('dashboard.token.none')}
+                    </span>
+                  </Space>
+                </Select.Option>
+                {tokens.map((token) => (
+                  <Select.Option
+                    value={token.id}
+                    key={token.id}
+                    disabled={!token.enabled || token.is_expired}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        minWidth: 0, // 防止 flex 子项溢出
+                        gap: '8px', // 确保间隔
+                      }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: 'hidden',
+                        }}>
+                        <div
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            backgroundColor: getTokenStatusColor(token),
+                            flexShrink: 0, // 防止被压缩
+                            marginRight: 8,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontWeight: 500,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                          }}>
+                          {token.name}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: '#8c8c8c',
+                          flexShrink: 0, // 防止被压缩
+                          marginLeft: 8,
+                        }}>
+                        {formatTokenExpiration(token)}
+                      </span>
+                    </div>
+                  </Select.Option>
+                ))}
+              </Select>
+              {selectedToken && (
+                <Tooltip
+                  title={t('dashboard.token.selected_tooltip', {
+                    name: getSelectedToken()?.name,
+                  })}>
+                  <div className='ml-3 text-sm text-green-600 dark:text-green-400'>
+                    ✓ {t('dashboard.token.configured')}
+                  </div>
+                </Tooltip>
+              )}
+            </div>
+            {tokens.length === 0 && (
+              <Button
+                type='primary'
+                size='small'
+                onClick={() => {
+                  // 可以在这里添加跳转到 Token 管理页面的逻辑
+                  message.info(t('dashboard.token.create_hint'))
+                }}>
+                创建 Token
+              </Button>
+            )}
+          </div>
+
           <div className='relative'>
             <div
               className='rounded p-3 overflow-auto max-h-64 border'
               style={{
                 backgroundColor: state.isDarkMode ? '#1f2937' : '#f3f4f6',
-                borderColor: state.isDarkMode ? '#374151' : '#e5e7eb'
-              }}
-            >
+                borderColor: state.isDarkMode ? '#374151' : '#e5e7eb',
+              }}>
               <pre
                 className='text-xs whitespace-pre-wrap pr-16 font-mono'
                 style={{
                   color: state.isDarkMode ? '#f9fafb' : '#111827',
-                  backgroundColor: 'transparent'
-                }}
-              >
+                  backgroundColor: 'transparent',
+                }}>
                 {JSON.stringify(generatedConfig, null, 2)}
               </pre>
             </div>

@@ -354,3 +354,37 @@
 }
 
 /* 极致简化完成 - 新增主题切换相关样式 */
+
+/* 下拉菜单关闭问题修复 - 样式优化 */
+/* 确保下拉菜单层级正确 */
+.ant-select-dropdown {
+  z-index: 1050 !important;
+}
+
+/* 确保点击事件能正确传递 */
+.ant-select-dropdown .ant-select-item {
+  pointer-events: auto !important;
+}
+
+/* 修复可能的玻璃态效果冲突 */
+.nav-glass .ant-select-dropdown {
+  backdrop-filter: none !important;
+}
+
+/* 确保下拉菜单项可以正常点击 */
+.ant-select-item-option:hover {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+
+.ant-select-item-option-selected {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+
+/* 深色模式下的下拉菜单样式 */
+.dark .ant-select-dropdown .ant-select-item-option:hover {
+  background-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+.dark .ant-select-dropdown .ant-select-item-option-selected {
+  background-color: rgba(96, 165, 250, 0.25) !important;
+}

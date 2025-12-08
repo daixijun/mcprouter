@@ -275,6 +275,20 @@ pub async fn validate_token(
     }
 }
 
+/// Get tokens for Dashboard (including actual token values for configuration generation)
+#[tauri::command]
+pub async fn get_tokens_for_dashboard(state: State<'_, TokenManagerState>) -> Result<Vec<Token>> {
+    let token_manager_guard = state.read().await;
+
+    let token_manager = token_manager_guard
+        .as_ref()
+        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
+        .clone();
+
+    let tokens = token_manager.get_all_tokens().await?;
+    Ok(tokens)
+}
+
 /// Token validation result
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidationResult {

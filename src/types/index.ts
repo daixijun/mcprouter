@@ -229,6 +229,7 @@ export type ToolCallResult = Record<string, any> | null
 // Token Management Types
 export interface Token {
   id: string
+  value: string  // 实际的 token 值，用于配置生成
   name: string
   description?: string
   created_at: number

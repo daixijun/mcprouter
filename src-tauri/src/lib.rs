@@ -687,6 +687,7 @@ pub async fn run() {
             get_token_stats,
             cleanup_expired_tokens,
             validate_token,
+            get_tokens_for_dashboard,
             // Permission Management Commands
             get_available_permissions,
             // Language Management Commands
