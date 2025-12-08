@@ -240,7 +240,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
               disabled={disabled || totalCount === 0}>
               {t('tool.tab.invert')}
             </Button>
-            <Divider type='vertical' />
+            <Divider orientation='vertical' />
             <Button size='small' onClick={expandAll} disabled={disabled}>
               {t('tool.tab.expand_all')}
             </Button>

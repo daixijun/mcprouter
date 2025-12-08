@@ -545,7 +545,7 @@ const Dashboard: React.FC = () => {
             <Text strong className='block mb-3'>
               {t('dashboard.aggregator.title')}
             </Text>
-            <Space direction='vertical' size='small' className='w-full'>
+            <Space orientation='vertical' size='small' className='w-full'>
               <div className='flex justify-between items-center'>
                 <Text type='secondary'>
                   {t('dashboard.aggregator.endpoint')}:
