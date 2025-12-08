@@ -386,6 +386,7 @@ impl TokenManager {
                 allowed_tools: token.allowed_tools.clone(),
                 allowed_resources: token.allowed_resources.clone(),
                 allowed_prompts: token.allowed_prompts.clone(),
+                allowed_prompt_templates: token.allowed_prompt_templates.clone(),
             });
         }
 
@@ -676,7 +677,11 @@ impl TokenManager {
                 *tools = tools.iter().map(|p| p.replace('/', "__")).collect();
                 if *tools != original_tools {
                     needs_migration = true;
-                    migration_details.push(format!("tools: {} -> {}", original_tools.join(", "), tools.join(", ")));
+                    migration_details.push(format!(
+                        "tools: {} -> {}",
+                        original_tools.join(", "),
+                        tools.join(", ")
+                    ));
                 }
             }
 
@@ -722,7 +727,11 @@ impl TokenManager {
                 *prompts = prompts.iter().map(|p| p.replace('/', "__")).collect();
                 if *prompts != original_prompts {
                     needs_migration = true;
-                    migration_details.push(format!("prompts: {} -> {}", original_prompts.join(", "), prompts.join(", ")));
+                    migration_details.push(format!(
+                        "prompts: {} -> {}",
+                        original_prompts.join(", "),
+                        prompts.join(", ")
+                    ));
                 }
             }
 
@@ -732,7 +741,11 @@ impl TokenManager {
                 *templates = templates.iter().map(|p| p.replace('/', "__")).collect();
                 if *templates != original_templates {
                     needs_migration = true;
-                    migration_details.push(format!("prompt_templates: {} -> {}", original_templates.join(", "), templates.join(", ")));
+                    migration_details.push(format!(
+                        "prompt_templates: {} -> {}",
+                        original_templates.join(", "),
+                        templates.join(", ")
+                    ));
                 }
             }
 
@@ -756,11 +769,7 @@ impl TokenManager {
             );
 
             for (token_name, details) in migrated_tokens {
-                tracing::info!(
-                    "Token '{}': {}",
-                    token_name,
-                    details.join("; ")
-                );
+                tracing::info!("Token '{}': {}", token_name, details.join("; "));
             }
         }
 
@@ -778,9 +787,9 @@ impl TokenManager {
             McpError::InternalError(format!("Failed to read tokens file for backup: {}", e))
         })?;
 
-        fs::write(&backup_path, content).await.map_err(|e| {
-            McpError::InternalError(format!("Failed to create backup file: {}", e))
-        })?;
+        fs::write(&backup_path, content)
+            .await
+            .map_err(|e| McpError::InternalError(format!("Failed to create backup file: {}", e)))?;
 
         tracing::info!("Created backup file: {:?}", backup_path);
         Ok(())
@@ -872,6 +881,7 @@ pub struct TokenInfo {
     pub allowed_tools: Option<Vec<String>>,
     pub allowed_resources: Option<Vec<String>>,
     pub allowed_prompts: Option<Vec<String>>,
+    pub allowed_prompt_templates: Option<Vec<String>>,
 }
 
 /// Constant-time string comparison to prevent timing attacks

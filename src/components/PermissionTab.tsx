@@ -46,35 +46,38 @@ const getCheckedValues = (
   selectedPermissions: string[],
   permissionType: string
 ): string[] => {
+  
   // 性能优化：分离通配符和精确权限，优化查找效率
   const wildcards = selectedPermissions.filter(p => p.includes("*"));
   const exactPermissions = selectedPermissions.filter(p => !p.includes("*"));
   const exactSet = new Set(exactPermissions);
 
+  
   const checkedValues = groupPermissions.filter((permission) => {
     // 首先检查精确匹配
     if (exactSet.has(permission)) {
-      console.log(`✓ ${permission} - exact match`);
-      return true;
+            return true;
     }
 
     // 然后检查通配符匹配
     const wildcardMatch = wildcards.some(pattern => {
       const matches = matchesPattern(pattern, permission);
-      if (matches) {
-        console.log(`✓ ${permission} - wildcard match with "${pattern}"`);
-      }
-      return matches;
+            return matches;
     });
 
-    if (!wildcardMatch) {
-      console.log(`✗ ${permission} - no match`);
-    }
-
+    
     return wildcardMatch;
   });
 
-  console.log(`[${permissionType}] Final checkedValues:`, checkedValues);
+  // 特殊处理：对于 prompt_templates，添加简单的验证
+  if (permissionType === 'prompt_templates') {
+    // 检查是否有数据格式问题
+    const hasInvalidFormat = checkedValues.some(perm => !perm.includes('__'));
+    if (hasInvalidFormat) {
+      console.warn(`⚠️ [PermissionTab] prompt_templates 发现格式异常的权限ID:`, checkedValues.filter(p => !p.includes('__')));
+    }
+  }
+
   return checkedValues;
 }
 
@@ -102,24 +105,33 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
   const [searchValue, setSearchValue] = useState(searchText)
   const [expandedServers, setExpandedServers] = useState<string[]>([])
 
+  // 添加组件级别的调试信息
+  
+  // 对于 prompt_templates 进行额外检查
+  if (type === 'prompt_templates') {
+    console.log(`🔍 [PermissionTab] prompt_templates 专项检查:`)
+    console.log(`  - permissionItems 数量: ${permissionItems.length}`)
+    console.log(`  - permissionItems:`, permissionItems.map(item => ({ id: item.id, description: item.description })))
+
+    // 检查权限项目是否包含所有权限
+    const permissionIds = permissions
+    const itemIds = permissionItems.map(item => item.id)
+    const missingItems = permissionIds.filter(id => !itemIds.includes(id))
+
+    if (missingItems.length > 0) {
+      console.warn(`⚠️ [PermissionTab] 发现未匹配的权限项:`, missingItems)
+    }
+  }
+
   // 根据权限ID获取描述信息
   const getPermissionDescription = (permissionId: string): string => {
     const item = permissionItems.find((item) => item.id === permissionId)
     return item?.description || ''
   }
 
-  // 获取权限显示名称
-  const getDisplayName = (permission: string, item?: PermissionItem): string => {
-    if (type === 'prompt_templates') {
-      // 优先使用 item.name
-      if (item && (item as any).name) {
-        return (item as any).name
-      }
-      // 否则从 permission ID 解析
-      const parts = permission.split('__')
-      return parts.length > 1 ? parts[1] : permission
-    }
-    // 其他类型保持原有逻辑
+  // 获取权限显示名称 - 统一处理所有权限类型
+  const getDisplayName = (permission: string): string => {
+    // 所有权限类型统一使用相同的逻辑：通过 __ 分隔符解析显示名称
     const parts = permission.split('__')
     return parts.length > 1 ? parts[1] : permission
   }

@@ -41,7 +41,8 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
 
   // 计算各类型的权限统计
   const permissionStats = useMemo(() => {
-    return {
+
+    const stats = {
       tools: {
         total: availablePermissions.tools.length,
         selected: value.allowed_tools?.length || 0,
@@ -67,6 +68,9 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
         selectedItems: value.allowed_prompt_templates || [],
       },
     }
+
+    
+    return stats
   }, [availablePermissions, value])
 
   const handlePermissionChange = (
@@ -77,6 +81,7 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       ...value,
       [`allowed_${type}`]: selectedPermissions,
     }
+
     onChange?.(newPermissions)
   }
 

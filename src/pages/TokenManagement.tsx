@@ -88,14 +88,25 @@ const TokenManagement: React.FC = () => {
     // 当权限数据加载完成且编辑模态框打开时，设置表单权限值
     if (editModalVisible && editingToken && !editPermissionsLoading) {
       const currentPermissions = editForm.getFieldValue('permissions')
-      // 只在权限数据为空或未初始化时设置
-      if (!currentPermissions || Object.keys(currentPermissions).length === 0) {
+      const initialPermissions = getInitialPermissions()
+
+      // 检查权限数据完整性并设置表单
+      const hasValidPermissions =
+        initialPermissions && Object.keys(initialPermissions).length > 0
+
+      if (hasValidPermissions) {
+        // 设置权限值，确保数据同步
         editForm.setFieldsValue({
-          permissions: getInitialPermissions(),
+          permissions: initialPermissions,
         })
       }
     }
-  }, [availablePermissions, editPermissionsLoading, editModalVisible, editingToken])
+  }, [
+    availablePermissions,
+    editPermissionsLoading,
+    editModalVisible,
+    editingToken,
+  ])
 
   const fetchTokens = async () => {
     setLoading(true)
@@ -309,12 +320,13 @@ const TokenManagement: React.FC = () => {
     setEditPermissionsLoading(true)
 
     try {
-      // 先加载权限数据，确保数据完整
+      // 加载权限数据，确保数据完整
       await fetchAvailablePermissions(true)
 
       // 权限数据加载完成后，再打开Drawer
       setEditModalVisible(true)
     } catch (error) {
+      console.error('权限数据加载失败:', error)
       message.error('加载权限数据失败，请重试')
     } finally {
       setEditPermissionsLoading(false)
@@ -916,11 +928,13 @@ const TokenManagement: React.FC = () => {
         placement='right'
         afterOpenChange={(open) => {
           if (open && editingToken && !editPermissionsLoading) {
-            // 确保权限数据已加载完成后再设置表单值
+            const initialPermissions = getInitialPermissions()
+
+            // 设置表单值
             editForm.setFieldsValue({
               name: editingToken.name,
               description: editingToken.description,
-              permissions: getInitialPermissions(),
+              permissions: initialPermissions,
             })
           }
         }}>
