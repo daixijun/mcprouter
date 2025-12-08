@@ -148,7 +148,7 @@ impl AuthContext {
             // 这里需要SessionInfo支持更新访问时间
             // 但由于SessionInfo被Arc包装，我们需要可变引用
             // 可以考虑在SessionManager中添加update_session_access方法
-            tracing::debug!("更新session {} 的访问时间", session.id);
+            tracing::debug!("Updating access time for session {}", session.id);
         }
     }
 }

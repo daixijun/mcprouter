@@ -461,7 +461,7 @@ impl McpAggregator {
         // Create server config
         let server_config = StreamableHttpServerConfig {
             sse_keep_alive: Some(std::time::Duration::from_secs(self.config.timeout_seconds)),
-            stateful_mode: false, // 修改为false，与客户端allow_stateless=true保持一致
+            stateful_mode: false, // Set to false to match client allow_stateless=true
             cancellation_token: tokio_util::sync::CancellationToken::new(),
         };
 
@@ -1325,16 +1325,22 @@ impl ServerHandler for McpAggregator {
     ) -> Result<CallToolResult, RmcpErrorData> {
         tracing::debug!("Call tool request received for name: {}", request.name);
 
-        // 如果认证未启用，允许所有工具调用
+        // If authentication is disabled, allow all tool calls
         if !self.config.is_auth_enabled() {
-            tracing::debug!("认证未启用，允许工具调用: {}", request.name);
+            tracing::debug!(
+                "Authentication disabled, allowing tool call: {}",
+                request.name
+            );
         } else {
-            // 创建AuthContext进行权限验证
+            // Create AuthContext for permission validation
             let auth_context = AuthContext::from_request_context(_context);
 
-            // 检查是否有有效会话
+            // Check if there is a valid session
             if !auth_context.has_valid_session() {
-                tracing::warn!("拒绝未认证的call_tool请求: {}", request.name);
+                tracing::warn!(
+                    "Rejected unauthenticated call_tool request: {}",
+                    request.name
+                );
                 return Err(RmcpErrorData::new(
                     ErrorCode(401),
                     "Authentication required for call_tool".to_string(),
@@ -1342,9 +1348,12 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            // 检查会话是否过期
+            // Check if session has expired
             if auth_context.is_session_expired() {
-                tracing::warn!("拒绝过期会话的call_tool请求: {}", request.name);
+                tracing::warn!(
+                    "Rejected expired session call_tool request: {}",
+                    request.name
+                );
                 return Err(RmcpErrorData::new(
                     ErrorCode(401),
                     "Session expired for call_tool".to_string(),
@@ -1352,9 +1361,9 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            // 检查工具权限
+            // Check tool permission
             if !auth_context.has_tool_permission(&request.name) {
-                tracing::warn!("拒绝无权限的工具调用: {}", request.name);
+                tracing::warn!("Rejected unauthorized tool call: {}", request.name);
                 return Err(RmcpErrorData::new(
                     ErrorCode(403),
                     format!("Access denied: tool '{}' is not permitted", request.name),
@@ -1362,7 +1371,7 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            tracing::debug!("工具 {} 权限验证通过", request.name);
+            tracing::debug!("Tool {} permission verification passed", request.name);
         }
 
         // Parse the tool name to extract server name and original name
@@ -1419,17 +1428,17 @@ impl ServerHandler for McpAggregator {
     ) -> Result<ListPromptsResult, RmcpErrorData> {
         tracing::debug!("List prompts request received");
 
-        // 如果认证未启用，返回所有提示词
+        // If authentication is disabled, return all prompts
         if !self.config.is_auth_enabled() {
             return self.list_prompts_all(_request).await;
         }
 
-        // 创建AuthContext进行权限验证
+        // Create AuthContext for permission validation
         let auth_context = AuthContext::from_request_context(_context);
 
-        // 检查是否有有效会话
+        // Check if there is a valid session
         if !auth_context.has_valid_session() {
-            tracing::warn!("拒绝未认证的list_prompts请求");
+            tracing::warn!("Rejected unauthenticated list_prompts request");
             return Err(RmcpErrorData::new(
                 ErrorCode(401),
                 "Authentication required for list_prompts".to_string(),
@@ -1437,9 +1446,9 @@ impl ServerHandler for McpAggregator {
             ));
         }
 
-        // 检查会话是否过期
+        // Check if session has expired
         if auth_context.is_session_expired() {
-            tracing::warn!("拒绝过期会话的list_prompts请求");
+            tracing::warn!("Rejected expired session list_prompts request");
             return Err(RmcpErrorData::new(
                 ErrorCode(401),
                 "Session expired for list_prompts".to_string(),
@@ -1465,17 +1474,17 @@ impl ServerHandler for McpAggregator {
         let page_size = 100usize;
         match self.get_prompts_from_memory().await {
             Ok(prompts) => {
-                // 保存原始数量用于日志记录
+                // Save original count for logging
                 let original_count = prompts.len();
 
-                // 根据权限过滤提示词
+                // Filter prompts based on permissions
                 let filtered_prompts: Vec<_> = prompts
                     .into_iter()
                     .filter(|prompt| auth_context.has_prompt_permission(&prompt.name))
                     .collect();
 
                 tracing::info!(
-                    "权限过滤后剩余 {} 个提示词（总共 {} 个）",
+                    "Permission filtering: {} prompts remaining (filtered from {} total)",
                     filtered_prompts.len(),
                     original_count
                 );
@@ -1492,7 +1501,7 @@ impl ServerHandler for McpAggregator {
                 } else {
                     None
                 };
-                tracing::debug!("成功列出 {} 个有权限的提示词", total);
+                tracing::debug!("Successfully listed {} authorized prompts", total);
                 Ok(ListPromptsResult {
                     meta: None,
                     prompts: slice,
@@ -1500,7 +1509,7 @@ impl ServerHandler for McpAggregator {
                 })
             }
             Err(e) => {
-                tracing::error!("获取提示词列表失败: {}", e);
+                tracing::error!("Failed to get prompt list: {}", e);
                 Err(RmcpErrorData::new(
                     ErrorCode(500),
                     format!("Failed to list prompts: {}", e),
@@ -1517,16 +1526,22 @@ impl ServerHandler for McpAggregator {
     ) -> Result<GetPromptResult, RmcpErrorData> {
         tracing::debug!("Get prompt request received for name: {}", request.name);
 
-        // 如果认证未启用，允许所有提示词获取
+        // If authentication is disabled, allow all prompt access
         if !self.config.is_auth_enabled() {
-            tracing::debug!("认证未启用，允许提示词获取: {}", request.name);
+            tracing::debug!(
+                "Authentication disabled, allowing prompt access: {}",
+                request.name
+            );
         } else {
-            // 创建AuthContext进行权限验证
+            // Create AuthContext for permission validation
             let auth_context = AuthContext::from_request_context(_context);
 
-            // 检查是否有有效会话
+            // Check if there is a valid session
             if !auth_context.has_valid_session() {
-                tracing::warn!("拒绝未认证的get_prompt请求: {}", request.name);
+                tracing::warn!(
+                    "Rejected unauthenticated get_prompt request: {}",
+                    request.name
+                );
                 return Err(RmcpErrorData::new(
                     ErrorCode(401),
                     "Authentication required for get_prompt".to_string(),
@@ -1631,17 +1646,17 @@ impl ServerHandler for McpAggregator {
     ) -> Result<ListResourcesResult, RmcpErrorData> {
         tracing::debug!("List resources request received");
 
-        // 如果认证未启用，返回所有资源
+        // If authentication is disabled, return all resources
         if !self.config.is_auth_enabled() {
             return self.list_resources_all(_request).await;
         }
 
-        // 创建AuthContext进行权限验证
+        // Create AuthContext for permission validation
         let auth_context = AuthContext::from_request_context(_context);
 
-        // 检查是否有有效会话
+        // Check if there is a valid session
         if !auth_context.has_valid_session() {
-            tracing::warn!("拒绝未认证的list_resources请求");
+            tracing::warn!("Rejected unauthenticated list_resources request");
             return Err(RmcpErrorData::new(
                 ErrorCode(401),
                 "Authentication required for list_resources".to_string(),
@@ -1677,17 +1692,17 @@ impl ServerHandler for McpAggregator {
         let page_size = 100usize;
         match self.get_resources_from_memory().await {
             Ok(resources) => {
-                // 保存原始数量用于日志记录
+                // Save original count for logging
                 let original_count = resources.len();
 
-                // 根据权限过滤资源
+                // Filter resources based on permissions
                 let filtered_resources: Vec<_> = resources
                     .into_iter()
                     .filter(|resource| auth_context.has_resource_permission(&resource.uri))
                     .collect();
 
                 tracing::info!(
-                    "权限过滤后剩余 {} 个资源（总共 {} 个）",
+                    "Permission filtering: {} resources remaining (filtered from {} total)",
                     filtered_resources.len(),
                     original_count
                 );
@@ -1704,7 +1719,7 @@ impl ServerHandler for McpAggregator {
                 } else {
                     None
                 };
-                tracing::debug!("成功列出 {} 个有权限的资源", total);
+                tracing::debug!("Successfully listed {} authorized resources", total);
                 Ok(ListResourcesResult {
                     meta: None,
                     resources: slice,
@@ -1712,7 +1727,7 @@ impl ServerHandler for McpAggregator {
                 })
             }
             Err(e) => {
-                tracing::error!("获取资源列表失败: {}", e);
+                tracing::error!("Failed to get resource list: {}", e);
                 Err(RmcpErrorData::new(
                     ErrorCode(500),
                     format!("Failed to list resources: {}", e),
@@ -1729,9 +1744,12 @@ impl ServerHandler for McpAggregator {
     ) -> Result<ReadResourceResult, RmcpErrorData> {
         tracing::debug!("Read resource request received for URI: {}", request.uri);
 
-        // 如果认证未启用，允许所有资源读取
+        // If authentication is disabled, allow all resource reads
         if !self.config.is_auth_enabled() {
-            tracing::debug!("认证未启用，允许资源读取: {}", request.uri);
+            tracing::debug!(
+                "Authentication disabled, allowing resource read: {}",
+                request.uri
+            );
         } else {
             // 创建AuthContext进行权限验证
             let auth_context = AuthContext::from_request_context(_context);
@@ -1766,7 +1784,7 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            tracing::debug!("资源 {} 权限验证通过", request.uri);
+            tracing::debug!("Resource {} permission verification passed", request.uri);
         }
 
         // Parse the URI to extract server name and original URI
