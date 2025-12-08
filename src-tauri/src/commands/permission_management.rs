@@ -14,6 +14,8 @@ pub struct AvailablePermissions {
     pub tools: Vec<PermissionItem>,
     pub resources: Vec<PermissionItem>,
     pub prompts: Vec<PermissionItem>,
+    #[serde(default)]
+    pub prompt_templates: Vec<PermissionItem>,
 }
 
 /// Get all available permissions for token configuration
@@ -32,6 +34,9 @@ pub async fn get_available_permissions() -> Result<AvailablePermissions> {
     let prompts_with_desc = service_manager
         .get_all_available_prompts_with_descriptions()
         .await;
+    let prompt_templates_with_desc = service_manager
+        .get_all_available_prompt_templates_with_descriptions()
+        .await;
 
     let tools: Vec<PermissionItem> = tools_with_desc
         .into_iter()
@@ -47,10 +52,15 @@ pub async fn get_available_permissions() -> Result<AvailablePermissions> {
         .into_iter()
         .map(|(id, description)| PermissionItem { id, description })
         .collect();
+    let prompt_templates: Vec<PermissionItem> = prompt_templates_with_desc
+        .into_iter()
+        .map(|(id, description)| PermissionItem { id, description })
+        .collect();
 
     Ok(AvailablePermissions {
         tools,
         resources,
         prompts,
+        prompt_templates,
     })
 }

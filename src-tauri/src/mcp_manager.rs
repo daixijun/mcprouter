@@ -1189,7 +1189,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for resource_info in &cache_entry.infos {
-                all_resources.push(format!("{}__{}", server_name, resource_info.name));
+                all_resources.push(format!("{}__{}", server_name, resource_info.uri));
             }
         }
 
@@ -1204,8 +1204,19 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for resource_info in &cache_entry.infos {
-                let resource_id = format!("{}__{}", server_name, resource_info.name);
-                let description = resource_info.description.clone().unwrap_or_default();
+                let resource_id = format!("{}__{}", server_name, resource_info.uri);
+                let description = resource_info
+                    .description
+                    .clone()
+                    .filter(|d| !d.is_empty())
+                    .or_else(|| {
+                        if resource_info.name.is_empty() {
+                            None
+                        } else {
+                            Some(resource_info.name.clone())
+                        }
+                    })
+                    .unwrap_or_else(|| resource_info.uri.clone());
                 all_resources.push((resource_id, description));
             }
         }
@@ -1244,6 +1255,63 @@ impl McpServerManager {
 
         all_prompts.sort_by(|a, b| a.0.cmp(&b.0));
         all_prompts
+    }
+
+    /// Get all available prompt templates (prompts with arguments) for permission management
+    pub async fn get_all_available_prompt_templates(&self) -> Vec<String> {
+        let entries = self.prompts_cache_entries.read().await;
+        let mut templates = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for prompt in &cache_entry.raw {
+                let has_arguments = prompt
+                    .arguments
+                    .as_ref()
+                    .map(|args| !args.is_empty())
+                    .unwrap_or(false);
+                if has_arguments {
+                    templates.push(format!("{}__{}", server_name, prompt.name));
+                }
+            }
+        }
+
+        templates.sort();
+        templates
+    }
+
+    /// Get all available prompt templates with descriptions for permission management
+    pub async fn get_all_available_prompt_templates_with_descriptions(&self) -> Vec<(String, String)> {
+        let entries = self.prompts_cache_entries.read().await;
+        let mut templates = Vec::new();
+
+        for (server_name, cache_entry) in entries.iter() {
+            for prompt in &cache_entry.raw {
+                let has_arguments = prompt
+                    .arguments
+                    .as_ref()
+                    .map(|args| !args.is_empty())
+                    .unwrap_or(false);
+                if has_arguments {
+                    let template_id = format!("{}__{}", server_name, prompt.name);
+                    let description = prompt
+                        .description
+                        .clone()
+                        .filter(|d| !d.is_empty())
+                        .unwrap_or_else(|| {
+                            let arg_count = prompt
+                                .arguments
+                                .as_ref()
+                                .map(|a| a.len())
+                                .unwrap_or(0);
+                            format!("Template with {} argument(s)", arg_count)
+                        });
+                    templates.push((template_id, description));
+                }
+            }
+        }
+
+        templates.sort_by(|a, b| a.0.cmp(&b.0));
+        templates
     }
 }
 

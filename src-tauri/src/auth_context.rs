@@ -193,4 +193,38 @@ impl AuthContext {
             PermissionResult::InsufficientPermissions
         }
     }
+
+    /// 验证资源权限并返回详细结果
+    pub fn check_resource_permission_with_result(&self, resource_uri: &str) -> PermissionResult {
+        if !self.has_valid_session() {
+            return PermissionResult::NotAuthenticated;
+        }
+
+        if self.is_session_expired() {
+            return PermissionResult::SessionExpired;
+        }
+
+        if self.has_resource_permission(resource_uri) {
+            PermissionResult::Allowed
+        } else {
+            PermissionResult::InsufficientPermissions
+        }
+    }
+
+    /// 验证提示词权限并返回详细结果
+    pub fn check_prompt_permission_with_result(&self, prompt_name: &str) -> PermissionResult {
+        if !self.has_valid_session() {
+            return PermissionResult::NotAuthenticated;
+        }
+
+        if self.is_session_expired() {
+            return PermissionResult::SessionExpired;
+        }
+
+        if self.has_prompt_permission(prompt_name) {
+            PermissionResult::Allowed
+        } else {
+            PermissionResult::InsufficientPermissions
+        }
+    }
 }

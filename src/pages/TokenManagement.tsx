@@ -65,6 +65,7 @@ const TokenManagement: React.FC = () => {
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
   const [permissionsLoading, setPermissionsLoading] = useState(false)
+  const [editPermissionsLoading, setEditPermissionsLoading] = useState(false)
 
   // Permission options state
   const [availablePermissions, setAvailablePermissions] =
@@ -82,6 +83,19 @@ const TokenManagement: React.FC = () => {
     fetchStats()
     fetchAvailablePermissions()
   }, [])
+
+  useEffect(() => {
+    // 当权限数据加载完成且编辑模态框打开时，设置表单权限值
+    if (editModalVisible && editingToken && !editPermissionsLoading) {
+      const currentPermissions = editForm.getFieldValue('permissions')
+      // 只在权限数据为空或未初始化时设置
+      if (!currentPermissions || Object.keys(currentPermissions).length === 0) {
+        editForm.setFieldsValue({
+          permissions: getInitialPermissions(),
+        })
+      }
+    }
+  }, [availablePermissions, editPermissionsLoading, editModalVisible, editingToken])
 
   const fetchTokens = async () => {
     setLoading(true)
@@ -156,8 +170,13 @@ const TokenManagement: React.FC = () => {
   }
 
   // Fetch available permissions options
-  const fetchAvailablePermissions = async (): Promise<void> => {
-    setPermissionsLoading(true)
+  const fetchAvailablePermissions = async (isEdit = false): Promise<void> => {
+    if (isEdit) {
+      setEditPermissionsLoading(true)
+    } else {
+      setPermissionsLoading(true)
+    }
+
     try {
       const result = await invoke<AvailablePermissions>(
         'get_available_permissions',
@@ -182,21 +201,33 @@ const TokenManagement: React.FC = () => {
       })
       message.error('权限数据加载失败')
     } finally {
-      setPermissionsLoading(false)
+      if (isEdit) {
+        setEditPermissionsLoading(false)
+      } else {
+        setPermissionsLoading(false)
+      }
     }
   }
 
   const handleCreateToken = async (values: any) => {
     try {
+      const permissions = values.permissions || {}
       const request = {
         name: values.name,
         description: values.description,
         expires_in: values.expires_in === -1 ? null : values.expires_in,
-        allowed_tools: values.permissions?.allowed_tools || [],
-        allowed_resources: values.permissions?.allowed_resources || [],
-        allowed_prompts: values.permissions?.allowed_prompts || [],
-        allowed_prompt_templates:
-          values.permissions?.allowed_prompt_templates || [],
+        allowed_tools: permissions.allowed_tools?.length
+          ? permissions.allowed_tools
+          : undefined,
+        allowed_resources: permissions.allowed_resources?.length
+          ? permissions.allowed_resources
+          : undefined,
+        allowed_prompts: permissions.allowed_prompts?.length
+          ? permissions.allowed_prompts
+          : undefined,
+        allowed_prompt_templates: permissions.allowed_prompt_templates?.length
+          ? permissions.allowed_prompt_templates
+          : undefined,
       }
 
       const response = await invoke<any>('create_token', {
@@ -275,8 +306,19 @@ const TokenManagement: React.FC = () => {
 
   const handleEditToken = async (token: Token) => {
     setEditingToken(token)
-    setEditModalVisible(true) // 先打开模态框
-    await fetchAvailablePermissions() // 异步加载权限数据
+    setEditPermissionsLoading(true)
+
+    try {
+      // 先加载权限数据，确保数据完整
+      await fetchAvailablePermissions(true)
+
+      // 权限数据加载完成后，再打开Drawer
+      setEditModalVisible(true)
+    } catch (error) {
+      message.error('加载权限数据失败，请重试')
+    } finally {
+      setEditPermissionsLoading(false)
+    }
   }
 
   const handleUpdateToken = async (values: any) => {
@@ -843,6 +885,7 @@ const TokenManagement: React.FC = () => {
           <Space>
             <EditOutlined />
             {t('token.modal.edit_title')}
+            {editPermissionsLoading && <span>(加载权限中...)</span>}
           </Space>
         }
         open={editModalVisible}
@@ -872,7 +915,8 @@ const TokenManagement: React.FC = () => {
         size={800}
         placement='right'
         afterOpenChange={(open) => {
-          if (open && editingToken) {
+          if (open && editingToken && !editPermissionsLoading) {
+            // 确保权限数据已加载完成后再设置表单值
             editForm.setFieldsValue({
               name: editingToken.name,
               description: editingToken.description,
@@ -914,7 +958,7 @@ const TokenManagement: React.FC = () => {
             name='permissions'
             label={t('token.form.permissions')}
             tooltip={t('token.form.permissions_tooltip')}>
-            {permissionsLoading ? (
+            {editPermissionsLoading ? (
               <Card>
                 <Skeleton active paragraph={{ rows: 6 }} />
               </Card>
@@ -925,7 +969,7 @@ const TokenManagement: React.FC = () => {
                   editForm.setFieldsValue({ permissions })
                 }}
                 availablePermissions={availablePermissions}
-                disabled={permissionsLoading}
+                disabled={editPermissionsLoading}
               />
             )}
           </Form.Item>

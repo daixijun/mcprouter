@@ -674,6 +674,70 @@ impl McpAggregator {
         }
     }
 
+    /// Build a secondary permission key using the resource's display name
+    fn build_resource_name_alias(
+        &self,
+        resource: &rmcp::model::Resource,
+    ) -> Option<String> {
+        if resource.name.is_empty() {
+            return None;
+        }
+        self.parse_resource_uri(&resource.uri)
+            .map(|(server_name, _)| format!("{}__{}", server_name, resource.name.clone()))
+    }
+
+    /// Check whether a token can access the given resource, supporting legacy name-based IDs
+    fn token_can_access_resource(
+        &self,
+        token: &crate::token_manager::Token,
+        resource: &rmcp::model::Resource,
+    ) -> bool {
+        if token.has_resource_permission(&resource.uri) {
+            return true;
+        }
+        if let Some(alias) = self.build_resource_name_alias(resource) {
+            return token.has_resource_permission(&alias);
+        }
+        false
+    }
+
+    /// Evaluate resource permissions for a session with support for alias matching
+    fn evaluate_session_resource_permission(
+        &self,
+        auth_context: &AuthContext,
+        resource: &rmcp::model::Resource,
+    ) -> crate::auth_context::PermissionResult {
+        use crate::auth_context::PermissionResult;
+
+        let primary = auth_context.check_resource_permission_with_result(&resource.uri);
+        if matches!(primary, PermissionResult::InsufficientPermissions) {
+            if let Some(alias) = self.build_resource_name_alias(resource) {
+                if auth_context.has_resource_permission(&alias) {
+                    return PermissionResult::Allowed;
+                }
+            }
+        }
+        primary
+    }
+
+    /// Resolve a legacy alias (server__resourceName) for a prefixed URI via the cache
+    async fn resolve_resource_alias_from_uri(&self, prefixed_uri: &str) -> Option<String> {
+        if let Some((server_name, original_uri)) = self.parse_resource_uri(prefixed_uri) {
+            if let Some(resources) = self
+                .mcp_server_manager
+                .get_cached_resources_raw(&server_name)
+                .await
+            {
+                for resource in resources {
+                    if resource.uri == original_uri && !resource.name.is_empty() {
+                        return Some(format!("{}__{}", server_name, resource.name));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Extract token from Authorization header (for HTTP-level operations)
     pub async fn extract_token_from_auth_header(
         &self,
@@ -712,7 +776,7 @@ impl McpAggregator {
     ) -> Vec<rmcp::model::Resource> {
         resources
             .into_iter()
-            .filter(|resource| token.has_resource_permission(&resource.uri))
+            .filter(|resource| self.token_can_access_resource(token, resource))
             .collect()
     }
 
@@ -1477,10 +1541,30 @@ impl ServerHandler for McpAggregator {
                 // Save original count for logging
                 let original_count = prompts.len();
 
-                // Filter prompts based on permissions
+                // Filter prompts based on permissions with detailed checking
                 let filtered_prompts: Vec<_> = prompts
                     .into_iter()
-                    .filter(|prompt| auth_context.has_prompt_permission(&prompt.name))
+                    .filter(|prompt| {
+                        let permission_result = auth_context.check_prompt_permission_with_result(&prompt.name);
+                        match permission_result {
+                            crate::auth_context::PermissionResult::Allowed => true,
+                            crate::auth_context::PermissionResult::NotAuthenticated => {
+                                tracing::warn!("Prompt {} access denied: not authenticated", prompt.name);
+                                false
+                            }
+                            crate::auth_context::PermissionResult::SessionExpired => {
+                                tracing::warn!("Prompt {} access denied: session expired", prompt.name);
+                                false
+                            }
+                            crate::auth_context::PermissionResult::InsufficientPermissions => {
+                                tracing::debug!(
+                                    "Prompt {} access denied: insufficient permissions",
+                                    prompt.name
+                                );
+                                false
+                            }
+                        }
+                    })
                     .collect();
 
                 tracing::info!(
@@ -1695,10 +1779,31 @@ impl ServerHandler for McpAggregator {
                 // Save original count for logging
                 let original_count = resources.len();
 
-                // Filter resources based on permissions
+                // Filter resources based on permissions with detailed checking
                 let filtered_resources: Vec<_> = resources
                     .into_iter()
-                    .filter(|resource| auth_context.has_resource_permission(&resource.uri))
+                    .filter(|resource| {
+                        let permission_result =
+                            self.evaluate_session_resource_permission(&auth_context, resource);
+                        match permission_result {
+                            crate::auth_context::PermissionResult::Allowed => true,
+                            crate::auth_context::PermissionResult::NotAuthenticated => {
+                                tracing::warn!("Resource {} access denied: not authenticated", resource.uri);
+                                false
+                            }
+                            crate::auth_context::PermissionResult::SessionExpired => {
+                                tracing::warn!("Resource {} access denied: session expired", resource.uri);
+                                false
+                            }
+                            crate::auth_context::PermissionResult::InsufficientPermissions => {
+                                tracing::debug!(
+                                    "Resource {} access denied: insufficient permissions",
+                                    resource.uri
+                                );
+                                false
+                            }
+                        }
+                    })
                     .collect();
 
                 tracing::info!(
@@ -1775,7 +1880,14 @@ impl ServerHandler for McpAggregator {
             }
 
             // 检查资源权限
-            if !auth_context.has_resource_permission(&request.uri) {
+            let mut has_permission = auth_context.has_resource_permission(&request.uri);
+            if !has_permission {
+                if let Some(alias) = self.resolve_resource_alias_from_uri(&request.uri).await {
+                    has_permission = auth_context.has_resource_permission(&alias);
+                }
+            }
+
+            if !has_permission {
                 tracing::warn!("拒绝无权限的资源读取: {}", request.uri);
                 return Err(RmcpErrorData::new(
                     ErrorCode(403),

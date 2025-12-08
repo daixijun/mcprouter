@@ -27,6 +27,58 @@ import { PermissionItem } from '../types'
 const { Search } = Input
 const { Text } = Typography
 
+// 实现与后端一致的通配符匹配函数
+// 参考：src-tauri/src/token_manager.rs 第101-112行的 matches_pattern 方法
+const matchesPattern = (pattern: string, item: string): boolean => {
+  if (pattern === "*") return true; // 全局通配符
+  if (pattern.endsWith("__*")) {
+    // 服务器通配符: "server__*" matches "server__tool" but not "server__"
+    const server = pattern.slice(0, -3);
+    const prefix = `${server}__`;
+    return item.startsWith(prefix) && item.length > prefix.length;
+  }
+  return pattern === item; // 精确匹配
+}
+
+// 获取当前组中已选中的权限值（支持通配符匹配）
+const getCheckedValues = (
+  groupPermissions: string[],
+  selectedPermissions: string[],
+  permissionType: string
+): string[] => {
+  // 性能优化：分离通配符和精确权限，优化查找效率
+  const wildcards = selectedPermissions.filter(p => p.includes("*"));
+  const exactPermissions = selectedPermissions.filter(p => !p.includes("*"));
+  const exactSet = new Set(exactPermissions);
+
+  const checkedValues = groupPermissions.filter((permission) => {
+    // 首先检查精确匹配
+    if (exactSet.has(permission)) {
+      console.log(`✓ ${permission} - exact match`);
+      return true;
+    }
+
+    // 然后检查通配符匹配
+    const wildcardMatch = wildcards.some(pattern => {
+      const matches = matchesPattern(pattern, permission);
+      if (matches) {
+        console.log(`✓ ${permission} - wildcard match with "${pattern}"`);
+      }
+      return matches;
+    });
+
+    if (!wildcardMatch) {
+      console.log(`✗ ${permission} - no match`);
+    }
+
+    return wildcardMatch;
+  });
+
+  console.log(`[${permissionType}] Final checkedValues:`, checkedValues);
+  return checkedValues;
+}
+
+
 interface PermissionTabProps {
   type: 'tools' | 'resources' | 'prompts' | 'prompt_templates'
   permissions: string[]
@@ -354,9 +406,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                 }>
                 {isExpanded && (
                   <Checkbox.Group
-                    value={group.permissions.filter((p) =>
-                      selectedPermissions.includes(p),
-                    )}
+                    value={getCheckedValues(group.permissions, selectedPermissions, type)}
                     onChange={handlePermissionChange}
                     disabled={disabled}
                     style={{ width: '100%' }}>
