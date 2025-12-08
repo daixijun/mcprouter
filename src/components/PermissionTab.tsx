@@ -108,6 +108,22 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     return item?.description || ''
   }
 
+  // 获取权限显示名称
+  const getDisplayName = (permission: string, item?: PermissionItem): string => {
+    if (type === 'prompt_templates') {
+      // 优先使用 item.name
+      if (item && (item as any).name) {
+        return (item as any).name
+      }
+      // 否则从 permission ID 解析
+      const parts = permission.split('__')
+      return parts.length > 1 ? parts[1] : permission
+    }
+    // 其他类型保持原有逻辑
+    const parts = permission.split('__')
+    return parts.length > 1 ? parts[1] : permission
+  }
+
   // 获取权限类型对应的图标
   const getTypeIcon = () => {
     switch (type) {
@@ -129,22 +145,13 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     const groups: Record<string, string[]> = {}
 
     permissions.forEach((permission) => {
-      if (type === 'prompt_templates') {
-        // 提示词模板使用特殊分组逻辑
-        const templateGroupName = t('token.permissions.prompt_templates_group')
-        if (!groups[templateGroupName]) {
-          groups[templateGroupName] = []
+      // 统一使用服务器分组逻辑，包括 prompt_templates
+      const [server, ...rest] = permission.split('__')
+      if (server && rest.length > 0) {
+        if (!groups[server]) {
+          groups[server] = []
         }
-        groups[templateGroupName].push(permission)
-      } else {
-        // 其他权限类型使用原有的服务器分组逻辑
-        const [server, ...rest] = permission.split('__')
-        if (server && rest.length > 0) {
-          if (!groups[server]) {
-            groups[server] = []
-          }
-          groups[server].push(permission)
-        }
+        groups[server].push(permission)
       }
     })
 
@@ -422,16 +429,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                                 gap: '4px',
                               }}>
                               <Text>
-                                {type === 'prompt_templates'
-                                  ? (() => {
-                                      const item = permissionItems.find(
-                                        (item) => item.id === permission,
-                                      )
-                                      return item
-                                        ? (item as any).name || permission
-                                        : permission
-                                    })()
-                                  : permission.split('__')[1] || permission}
+                                {getDisplayName(permission, permissionItems.find(item => item.id === permission))}
                               </Text>
                               {(() => {
                                 const description =
