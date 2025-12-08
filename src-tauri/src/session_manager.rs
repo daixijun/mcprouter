@@ -152,6 +152,15 @@ impl SessionManager {
         }
     }
 
+    /// 验证session并检查提示词模板权限
+    pub fn check_prompt_template_permission(&self, session_id: &str, template_name: &str) -> bool {
+        if let Some(session) = self.get_session(session_id) {
+            session.token.has_prompt_template_permission(template_name)
+        } else {
+            false
+        }
+    }
+
     /// 移除session
     pub fn remove_session(&self, session_id: &str) -> bool {
         tracing::info!("Removing session {}", session_id);

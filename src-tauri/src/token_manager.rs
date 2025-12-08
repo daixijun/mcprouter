@@ -34,6 +34,8 @@ pub struct Token {
     pub allowed_resources: Option<Vec<String>>, // e.g., ["filesystem/logs/*"]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_prompts: Option<Vec<String>>, // e.g., ["codegen/*"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompt_templates: Option<Vec<String>>, // e.g., ["prompt-gallery__template_name"]
 }
 
 impl Token {
@@ -42,6 +44,7 @@ impl Token {
         self.allowed_tools.is_none()
             && self.allowed_resources.is_none()
             && self.allowed_prompts.is_none()
+            && self.allowed_prompt_templates.is_none()
     }
 
     /// Check if token is expired
@@ -84,14 +87,25 @@ impl Token {
         }
     }
 
+    /// Check if token has permission to access a specific prompt template
+    pub fn has_prompt_template_permission(&self, template_name: &str) -> bool {
+        match &self.allowed_prompt_templates {
+            None => self.is_unrestricted(), // Require explicit prompt templates list once any permissions are set
+            Some(allowed) => allowed
+                .iter()
+                .any(|pattern| self.matches_pattern(pattern, template_name)),
+        }
+    }
+
     /// Pattern matching function for permissions
     fn matches_pattern(&self, pattern: &str, item: &str) -> bool {
         match pattern {
             "*" => true, // Global wildcard
-            _ if pattern.ends_with("/*") => {
-                // Server wildcard: "server/*" matches "server/tool"
-                let server = &pattern[..pattern.len() - 2];
-                item.starts_with(&format!("{}/", server))
+            _ if pattern.ends_with("__*") => {
+                // Server wildcard: "server__*" matches "server__tool" but not "server__"
+                let server = &pattern[..pattern.len() - 3];
+                let prefix = format!("{}__", server);
+                item.starts_with(&prefix) && item.len() > prefix.len()
             }
             _ => pattern == item, // Exact match
         }
@@ -116,38 +130,90 @@ mod tests {
             allowed_tools: None,
             allowed_resources: None,
             allowed_prompts: None,
+            allowed_prompt_templates: None,
         }
     }
 
     #[test]
     fn unrestricted_token_allows_everything() {
         let token = base_token();
-        assert!(token.has_tool_permission("any/tool"));
-        assert!(token.has_resource_permission("any/resource"));
-        assert!(token.has_prompt_permission("any/prompt"));
+        assert!(token.has_tool_permission("any__tool"));
+        assert!(token.has_resource_permission("any__resource"));
+        assert!(token.has_prompt_permission("any__prompt"));
+        assert!(token.has_prompt_template_permission("any__template"));
     }
 
     #[test]
     fn restricting_tools_disallows_other_categories_by_default() {
         let mut token = base_token();
-        token.allowed_tools = Some(vec!["server/tool_a".into()]);
+        token.allowed_tools = Some(vec!["server__tool_a".into()]);
 
-        assert!(token.has_tool_permission("server/tool_a"));
-        assert!(!token.has_tool_permission("server/tool_b"));
-        assert!(!token.has_prompt_permission("server/prompt_a"));
-        assert!(!token.has_resource_permission("server/resource"));
+        assert!(token.has_tool_permission("server__tool_a"));
+        assert!(!token.has_tool_permission("server__tool_b"));
+        assert!(!token.has_prompt_permission("server__prompt_a"));
+        assert!(!token.has_resource_permission("server__resource"));
+        assert!(!token.has_prompt_template_permission("server__template"));
     }
 
     #[test]
     fn explicit_wildcard_can_allow_category_when_other_permissions_set() {
         let mut token = base_token();
-        token.allowed_prompts = Some(vec!["server/prompt_a".into()]);
+        token.allowed_prompts = Some(vec!["server__prompt_a".into()]);
         token.allowed_tools = Some(vec!["*".into()]);
 
-        assert!(token.has_tool_permission("another/tool"));
-        assert!(token.has_prompt_permission("server/prompt_a"));
-        assert!(!token.has_prompt_permission("server/prompt_b"));
-        assert!(!token.has_resource_permission("server/resource"));
+        assert!(token.has_tool_permission("another__tool"));
+        assert!(token.has_prompt_permission("server__prompt_a"));
+        assert!(!token.has_prompt_permission("server__prompt_b"));
+        assert!(!token.has_resource_permission("server__resource"));
+    }
+
+    #[test]
+    fn test_double_underscore_wildcard_matching() {
+        let mut token = base_token();
+        token.allowed_tools = Some(vec!["server__*".into()]);
+
+        assert!(token.has_tool_permission("server__tool_a"));
+        assert!(token.has_tool_permission("server__tool_b"));
+        assert!(token.has_tool_permission("server__some_complex_tool_name"));
+        assert!(!token.has_tool_permission("other_server__tool"));
+        assert!(!token.has_tool_permission("server"));
+        assert!(!token.has_tool_permission("server__"));
+    }
+
+    #[test]
+    fn test_prompt_template_permissions() {
+        let mut token = base_token();
+        token.allowed_prompt_templates = Some(vec![
+            "prompt-gallery__code_review".into(),
+            "template-system__*".into(),
+        ]);
+
+        assert!(token.has_prompt_template_permission("prompt-gallery__code_review"));
+        assert!(token.has_prompt_template_permission("template-system__debug_template"));
+        assert!(token.has_prompt_template_permission("template-system__custom_template"));
+        assert!(!token.has_prompt_template_permission("other-gallery__code_review"));
+        assert!(!token.has_prompt_template_permission("prompt-gallery__other_template"));
+    }
+
+    #[test]
+    fn test_all_permission_types_with_double_underscore() {
+        let mut token = base_token();
+        token.allowed_tools = Some(vec!["filesystem__*".into()]);
+        token.allowed_resources = Some(vec!["database__*".into()]);
+        token.allowed_prompts = Some(vec!["codegen__*".into()]);
+        token.allowed_prompt_templates = Some(vec!["gallery__*".into()]);
+
+        // Test positive cases
+        assert!(token.has_tool_permission("filesystem__read_file"));
+        assert!(token.has_resource_permission("database__users"));
+        assert!(token.has_prompt_permission("codegen__generate_class"));
+        assert!(token.has_prompt_template_permission("gallery__review_template"));
+
+        // Test negative cases
+        assert!(!token.has_tool_permission("other__tool"));
+        assert!(!token.has_resource_permission("other__resource"));
+        assert!(!token.has_prompt_permission("other__prompt"));
+        assert!(!token.has_prompt_template_permission("other__template"));
     }
 }
 
@@ -220,7 +286,7 @@ impl TokenManager {
         description: Option<String>,
         expires_in: Option<u64>, // Duration in seconds from now
     ) -> Result<Token> {
-        self.create_with_permissions(name, description, expires_in, None, None, None)
+        self.create_with_permissions(name, description, expires_in, None, None, None, None)
             .await
     }
 
@@ -233,6 +299,7 @@ impl TokenManager {
         allowed_tools: Option<Vec<String>>,
         allowed_resources: Option<Vec<String>>,
         allowed_prompts: Option<Vec<String>>,
+        allowed_prompt_templates: Option<Vec<String>>,
     ) -> Result<Token> {
         // Validate input
         if name.trim().is_empty() {
@@ -281,6 +348,7 @@ impl TokenManager {
             allowed_tools,
             allowed_resources,
             allowed_prompts,
+            allowed_prompt_templates,
         };
 
         // Add to storage
@@ -446,6 +514,7 @@ impl TokenManager {
         allowed_tools: Option<Option<Vec<String>>>,
         allowed_resources: Option<Option<Vec<String>>>,
         allowed_prompts: Option<Option<Vec<String>>>,
+        allowed_prompt_templates: Option<Option<Vec<String>>>,
     ) -> Result<Token> {
         let mut tokens = self.tokens.write().await;
 
@@ -505,6 +574,9 @@ impl TokenManager {
             }
             if let Some(new_prompts) = allowed_prompts {
                 token.allowed_prompts = new_prompts;
+            }
+            if let Some(new_prompt_templates) = allowed_prompt_templates {
+                token.allowed_prompt_templates = new_prompt_templates;
             }
 
             let updated_token = token.clone();
@@ -586,6 +658,106 @@ impl TokenManager {
         Ok(())
     }
 
+    /// Migrate permission formats from '/' to '__' separator
+    async fn migrate_permission_formats(&self) -> Result<()> {
+        let mut tokens = self.tokens.write().await;
+        let mut migration_count = 0;
+        let mut migrated_tokens = Vec::new();
+
+        for (_id, token) in tokens.iter_mut() {
+            let mut needs_migration = false;
+            let mut migration_details = Vec::new();
+
+            // Check tools permissions
+            if let Some(ref mut tools) = token.allowed_tools {
+                let original_tools = tools.clone();
+                *tools = tools.iter().map(|p| p.replace('/', "__")).collect();
+                if *tools != original_tools {
+                    needs_migration = true;
+                    migration_details.push(format!("tools: {} -> {}", original_tools.join(", "), tools.join(", ")));
+                }
+            }
+
+            // Check resources permissions
+            if let Some(ref mut resources) = token.allowed_resources {
+                let original_resources = resources.clone();
+                *resources = resources.iter().map(|p| p.replace('/', "__")).collect();
+                if *resources != original_resources {
+                    needs_migration = true;
+                    migration_details.push(format!("resources: {} -> {}", original_resources.join(", "), resources.join(", ")));
+                }
+            }
+
+            // Check prompts permissions
+            if let Some(ref mut prompts) = token.allowed_prompts {
+                let original_prompts = prompts.clone();
+                *prompts = prompts.iter().map(|p| p.replace('/', "__")).collect();
+                if *prompts != original_prompts {
+                    needs_migration = true;
+                    migration_details.push(format!("prompts: {} -> {}", original_prompts.join(", "), prompts.join(", ")));
+                }
+            }
+
+            // Check prompt templates permissions
+            if let Some(ref mut templates) = token.allowed_prompt_templates {
+                let original_templates = templates.clone();
+                *templates = templates.iter().map(|p| p.replace('/', "__")).collect();
+                if *templates != original_templates {
+                    needs_migration = true;
+                    migration_details.push(format!("prompt_templates: {} -> {}", original_templates.join(", "), templates.join(", ")));
+                }
+            }
+
+            if needs_migration {
+                migration_count += 1;
+                migrated_tokens.push((token.name.clone(), migration_details));
+            }
+        }
+
+        if migration_count > 0 {
+            // Create backup before migration
+            self.create_backup().await?;
+
+            // Save migrated tokens
+            drop(tokens);
+            self.save().await?;
+
+            tracing::info!(
+                "Migrated permissions for {} tokens from '/' to '__' format",
+                migration_count
+            );
+
+            for (token_name, details) in migrated_tokens {
+                tracing::info!(
+                    "Token '{}': {}",
+                    token_name,
+                    details.join("; ")
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a backup of the current tokens file
+    async fn create_backup(&self) -> Result<()> {
+        if !self.file_path.exists() {
+            return Ok(());
+        }
+
+        let backup_path = self.file_path.with_extension("json.backup");
+        let content = fs::read_to_string(&self.file_path).await.map_err(|e| {
+            McpError::InternalError(format!("Failed to read tokens file for backup: {}", e))
+        })?;
+
+        fs::write(&backup_path, content).await.map_err(|e| {
+            McpError::InternalError(format!("Failed to create backup file: {}", e))
+        })?;
+
+        tracing::info!("Created backup file: {:?}", backup_path);
+        Ok(())
+    }
+
     /// Load tokens from file
     pub async fn load(&self) -> Result<()> {
         if !self.file_path.exists() {
@@ -611,6 +783,7 @@ impl TokenManager {
                     token.allowed_tools = None;
                     token.allowed_resources = None;
                     token.allowed_prompts = None;
+                    token.allowed_prompt_templates = None;
                     migrated_tokens.insert(id, token);
                 }
 
@@ -623,9 +796,18 @@ impl TokenManager {
                 );
             }
             2 => {
-                // Version 2: Current version, load directly
+                // Version 2: Current version, ensure prompt templates field exists
+                let mut migrated_tokens = HashMap::new();
+                for (id, mut token) in storage.tokens {
+                    // Ensure prompt templates field exists (for backward compatibility)
+                    if token.allowed_prompt_templates.is_none() {
+                        token.allowed_prompt_templates = None;
+                    }
+                    migrated_tokens.insert(id, token);
+                }
+
                 let mut tokens = self.tokens.write().await;
-                *tokens = storage.tokens;
+                *tokens = migrated_tokens;
             }
             _ => {
                 return Err(McpError::InternalError(format!(
@@ -637,6 +819,10 @@ impl TokenManager {
 
         let tokens = self.tokens.read().await;
         tracing::info!("Loaded {} tokens from storage", tokens.len());
+
+        // Check and migrate permission formats from '/' to '__'
+        drop(tokens);
+        self.migrate_permission_formats().await?;
 
         Ok(())
     }

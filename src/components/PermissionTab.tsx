@@ -86,7 +86,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
         groups[templateGroupName].push(permission)
       } else {
         // 其他权限类型使用原有的服务器分组逻辑
-        const [server, ...rest] = permission.split('/')
+        const [server, ...rest] = permission.split('__')
         if (server && rest.length > 0) {
           if (!groups[server]) {
             groups[server] = []
@@ -317,7 +317,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                         </Text>
                         {(() => {
                           const serverDescription = permissionItems.find(
-                            (item) => item.id.startsWith(group.server + '/'),
+                            (item) => item.id.startsWith(group.server + '__'),
                           )?.description
                           if (!serverDescription) return null
 
@@ -381,7 +381,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                                         ? (item as any).name || permission
                                         : permission
                                     })()
-                                  : permission.split('/')[1] || permission}
+                                  : permission.split('__')[1] || permission}
                               </Text>
                               {(() => {
                                 const description =

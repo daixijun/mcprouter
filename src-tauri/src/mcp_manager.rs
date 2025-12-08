@@ -1157,7 +1157,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for tool_info in &cache_entry.infos {
-                all_tools.push(format!("{}/{}", server_name, tool_info.name));
+                all_tools.push(format!("{}__{}", server_name, tool_info.name));
             }
         }
 
@@ -1172,7 +1172,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for tool_info in &cache_entry.infos {
-                let tool_id = format!("{}/{}", server_name, tool_info.name);
+                let tool_id = format!("{}__{}", server_name, tool_info.name);
                 let description = tool_info.description.clone();
                 all_tools.push((tool_id, description));
             }
@@ -1189,7 +1189,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for resource_info in &cache_entry.infos {
-                all_resources.push(format!("{}/{}", server_name, resource_info.name));
+                all_resources.push(format!("{}__{}", server_name, resource_info.name));
             }
         }
 
@@ -1204,7 +1204,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for resource_info in &cache_entry.infos {
-                let resource_id = format!("{}/{}", server_name, resource_info.name);
+                let resource_id = format!("{}__{}", server_name, resource_info.name);
                 let description = resource_info.description.clone().unwrap_or_default();
                 all_resources.push((resource_id, description));
             }
@@ -1221,7 +1221,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for prompt_info in &cache_entry.infos {
-                all_prompts.push(format!("{}/{}", server_name, prompt_info.name));
+                all_prompts.push(format!("{}__{}", server_name, prompt_info.name));
             }
         }
 
@@ -1236,7 +1236,7 @@ impl McpServerManager {
 
         for (server_name, cache_entry) in entries.iter() {
             for prompt_info in &cache_entry.infos {
-                let prompt_id = format!("{}/{}", server_name, prompt_info.name);
+                let prompt_id = format!("{}__{}", server_name, prompt_info.name);
                 let description = prompt_info.description.clone().unwrap_or_default();
                 all_prompts.push((prompt_id, description));
             }

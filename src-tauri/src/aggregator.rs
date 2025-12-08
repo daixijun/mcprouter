@@ -570,7 +570,7 @@ impl McpAggregator {
                 let mut prefixed = Vec::new();
                 for mut tool in cached {
                     let original_name = tool.name.clone();
-                    tool.name = format!("{}/{}", server_name, original_name).into();
+                    tool.name = format!("{}__{}", server_name, original_name).into();
                     if tool.description.is_none() {
                         tool.description = Some("No description".into());
                     }
@@ -606,7 +606,7 @@ impl McpAggregator {
                 let mut prefixed = Vec::new();
                 for resource in cached {
                     let original_uri = resource.uri.clone();
-                    let prefixed_uri = format!("{}/{}", server_name, original_uri);
+                    let prefixed_uri = format!("{}__{}", server_name, original_uri);
                     let mut prefixed_resource = resource.clone();
                     prefixed_resource.uri = prefixed_uri;
                     prefixed.push(prefixed_resource);
@@ -638,7 +638,7 @@ impl McpAggregator {
                 let mut prefixed = Vec::new();
                 for mut prompt in cached {
                     let original_name = prompt.name.clone();
-                    prompt.name = format!("{}/{}", server_name, original_name);
+                    prompt.name = format!("{}__{}", server_name, original_name);
                     prefixed.push(prompt);
                 }
                 aggregated_prompts.extend(prefixed);
@@ -649,7 +649,7 @@ impl McpAggregator {
 
     /// Parse tool name with server prefix
     fn parse_tool_name(&self, tool_name: &str) -> Option<(String, String)> {
-        if let Some((server_name, original_name)) = tool_name.split_once('/') {
+        if let Some((server_name, original_name)) = tool_name.split_once("__") {
             Some((server_name.to_string(), original_name.to_string()))
         } else {
             None
@@ -658,7 +658,7 @@ impl McpAggregator {
 
     /// Parse resource URI with server prefix
     fn parse_resource_uri(&self, uri: &str) -> Option<(String, String)> {
-        if let Some((server_name, original_uri)) = uri.split_once('/') {
+        if let Some((server_name, original_uri)) = uri.split_once("__") {
             Some((server_name.to_string(), original_uri.to_string()))
         } else {
             None
@@ -667,7 +667,7 @@ impl McpAggregator {
 
     /// Parse prompt name with server prefix
     fn parse_prompt_name(&self, prompt_name: &str) -> Option<(String, String)> {
-        if let Some((server_name, original_name)) = prompt_name.split_once('/') {
+        if let Some((server_name, original_name)) = prompt_name.split_once("__") {
             Some((server_name.to_string(), original_name.to_string()))
         } else {
             None
@@ -1379,7 +1379,7 @@ impl ServerHandler for McpAggregator {
             self.parse_tool_name(&request.name).ok_or_else(|| {
                 RmcpErrorData::new(
                     ErrorCode(400),
-                    format!("Invalid tool name format: {}", request.name),
+                    format!("Invalid tool name format: {}. Expected format: 'server__tool_name'", request.name),
                     None,
                 )
             })?;
@@ -1577,7 +1577,7 @@ impl ServerHandler for McpAggregator {
             self.parse_prompt_name(&request.name).ok_or_else(|| {
                 RmcpErrorData::new(
                     ErrorCode(400),
-                    format!("Invalid prompt name format: {}", request.name),
+                    format!("Invalid prompt name format: {}. Expected format: 'server__prompt_name'", request.name),
                     None,
                 )
             })?;
@@ -1792,7 +1792,7 @@ impl ServerHandler for McpAggregator {
             self.parse_resource_uri(&request.uri).ok_or_else(|| {
                 RmcpErrorData::new(
                     ErrorCode(400),
-                    format!("Invalid resource URI format: {}", request.uri),
+                    format!("Invalid resource URI format: {}. Expected format: 'server__resource_uri'", request.uri),
                     None,
                 )
             })?;

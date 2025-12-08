@@ -142,6 +142,15 @@ impl AuthContext {
         }
     }
 
+    /// 检查提示词模板权限
+    pub fn has_prompt_template_permission(&self, template_name: &str) -> bool {
+        if let Some(session) = &self.session_info {
+            session.token.has_prompt_template_permission(template_name)
+        } else {
+            false
+        }
+    }
+
     /// 更新session的最后访问时间
     pub fn update_session_access(&self) {
         if let Some(session) = &self.session_info {

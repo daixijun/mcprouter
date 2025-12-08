@@ -16,6 +16,7 @@ pub struct CreateTokenRequest {
     pub allowed_tools: Option<Vec<String>>, // e.g., ["filesystem/*", "database/query"]
     pub allowed_resources: Option<Vec<String>>, // e.g., ["filesystem/logs/*"]
     pub allowed_prompts: Option<Vec<String>>, // e.g., ["codegen/*"]
+    pub allowed_prompt_templates: Option<Vec<String>>, // e.g., ["prompt-gallery__template_name"]
 }
 
 /// Request for updating an existing token
@@ -28,6 +29,7 @@ pub struct UpdateTokenRequest {
     pub allowed_tools: Option<Option<Vec<String>>>,
     pub allowed_resources: Option<Option<Vec<String>>>,
     pub allowed_prompts: Option<Option<Vec<String>>>,
+    pub allowed_prompt_templates: Option<Option<Vec<String>>>,
 }
 
 /// Response containing the created token
@@ -75,6 +77,7 @@ pub async fn create_token(
             request.allowed_tools,
             request.allowed_resources,
             request.allowed_prompts,
+            request.allowed_prompt_templates,
         )
         .await?;
     Ok(CreateTokenResponse { token })
@@ -101,6 +104,7 @@ pub async fn update_token(
             request.allowed_tools,
             request.allowed_resources,
             request.allowed_prompts,
+            request.allowed_prompt_templates,
         )
         .await?;
     Ok(UpdateTokenResponse {
