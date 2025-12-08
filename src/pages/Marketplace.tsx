@@ -340,9 +340,9 @@ const Marketplace: React.FC = memo(() => {
   const getPlatformBadgeColor = useCallback((platform: string) => {
     switch (platform) {
       case t('marketplace.platforms.modelscope'):
-        return '#ea580c'  // orange-600
+        return '#ea580c' // orange-600
       default:
-        return '#6b7280'  // gray-500
+        return '#6b7280' // gray-500
     }
   }, [])
 
@@ -385,7 +385,7 @@ const Marketplace: React.FC = memo(() => {
         <Flex gap='small' style={{ marginBottom: '12px' }}>
           {/* Logo */}
           <div
-            className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 flex items-center justify-center"
+            className='shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 flex items-center justify-center'
             style={{
               width: '48px',
               height: '48px',
@@ -409,7 +409,7 @@ const Marketplace: React.FC = memo(() => {
             <Flex
               gap='small'
               align='center'
-              className="mt-1 text-sm text-gray-500 dark:text-gray-400"
+              className='mt-1 text-sm text-gray-500 dark:text-gray-400'
               style={{
                 marginTop: '4px',
                 fontSize: '14px',
@@ -448,14 +448,10 @@ const Marketplace: React.FC = memo(() => {
             </Flex>
           </Badge>
           {service.is_verified && (
-            <Badge color="#10b981">
-              {t('marketplace.badges.verified')}
-            </Badge>
+            <Badge color='#10b981'>{t('marketplace.badges.verified')}</Badge>
           )}
           {service.is_hosted && (
-            <Badge color="#2563eb">
-              {t('marketplace.badges.hosted')}
-            </Badge>
+            <Badge color='#2563eb'>{t('marketplace.badges.hosted')}</Badge>
           )}
         </Flex>
 
@@ -463,7 +459,7 @@ const Marketplace: React.FC = memo(() => {
           <Space size='large'>
             {typeof service.github_stars === 'number' &&
               service.github_stars > 0 && (
-                <Text className="text-yellow-600 dark:text-yellow-400">
+                <Text className='text-yellow-600 dark:text-yellow-400'>
                   ⭐ {service.github_stars.toLocaleString()}
                 </Text>
               )}
