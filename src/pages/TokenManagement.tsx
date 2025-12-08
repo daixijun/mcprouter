@@ -24,6 +24,7 @@ import {
   Popconfirm,
   Row,
   Select,
+  Skeleton,
   Space,
   Statistic,
   Switch,
@@ -63,6 +64,7 @@ const TokenManagement: React.FC = () => {
   const [editingToken, setEditingToken] = useState<Token | null>(null)
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
+  const [permissionsLoading, setPermissionsLoading] = useState(false)
 
   // Permission options state
   const [availablePermissions, setAvailablePermissions] =
@@ -70,12 +72,15 @@ const TokenManagement: React.FC = () => {
       tools: [],
       resources: [],
       prompts: [],
+      prompt_templates: [],
+      prompt_categories: [],
     })
 
   // Fetch tokens and stats on component mount
   useEffect(() => {
     fetchTokens()
     fetchStats()
+    fetchAvailablePermissions()
   }, [])
 
   const fetchTokens = async () => {
@@ -152,29 +157,49 @@ const TokenManagement: React.FC = () => {
 
   // Fetch available permissions options
   const fetchAvailablePermissions = async (): Promise<void> => {
+    setPermissionsLoading(true)
     try {
       const result = await invoke<AvailablePermissions>(
         'get_available_permissions',
       )
-      setAvailablePermissions(result)
-      message.success(t('token.messages.load_permissions_success'))
+
+      // 设置真实权限数据，确保包含提示词模板字段
+      setAvailablePermissions({
+        ...result,
+        prompt_templates: result.prompt_templates || [],
+        prompt_categories: result.prompt_categories || []
+      })
     } catch (error) {
       console.error('Failed to fetch available permissions:', error)
-      message.error(t('token.messages.load_permissions_failed'))
+
+      // 设置空结构而不是模拟数据，确保界面可以正常工作
+      setAvailablePermissions({
+        tools: [],
+        resources: [],
+        prompts: [],
+        prompt_templates: [],
+        prompt_categories: []
+      })
+      message.error('权限数据加载失败')
+    } finally {
+      setPermissionsLoading(false)
     }
   }
 
   const handleCreateToken = async (values: any) => {
     try {
+      const request = {
+        name: values.name,
+        description: values.description,
+        expires_in: values.expires_in,
+        allowed_tools: values.permissions?.allowed_tools || [],
+        allowed_resources: values.permissions?.allowed_resources || [],
+        allowed_prompts: values.permissions?.allowed_prompts || [],
+        allowed_prompt_templates: values.permissions?.allowed_prompt_templates || [],
+      }
+
       const response = await invoke<any>('create_token', {
-        request: {
-          name: values.name,
-          description: values.description,
-          expires_in: values.expires_in,
-          allowed_tools: values.permissions?.allowed_tools || [],
-          allowed_resources: values.permissions?.allowed_resources || [],
-          allowed_prompts: values.permissions?.allowed_prompts || [],
-        },
+        request,
       })
       setCreatedToken({
         id: response.token.id,
@@ -249,8 +274,8 @@ const TokenManagement: React.FC = () => {
 
   const handleEditToken = async (token: Token) => {
     setEditingToken(token)
-    await fetchAvailablePermissions()
-    setEditModalVisible(true)
+    setEditModalVisible(true)  // 先打开模态框
+    await fetchAvailablePermissions()  // 异步加载权限数据
   }
 
   const handleUpdateToken = async (values: any) => {
@@ -261,27 +286,23 @@ const TokenManagement: React.FC = () => {
         id: editingToken.id,
         name: values.name,
         description: values.description,
-        allowed_tools:
-          values.permissions?.allowed_tools?.length > 0
-            ? values.permissions.allowed_tools
-            : undefined,
-        allowed_resources:
-          values.permissions?.allowed_resources?.length > 0
-            ? values.permissions.allowed_resources
-            : undefined,
-        allowed_prompts:
-          values.permissions?.allowed_prompts?.length > 0
-            ? values.permissions.allowed_prompts
-            : undefined,
+        allowed_tools: values.permissions?.allowed_tools?.length > 0
+          ? values.permissions.allowed_tools
+          : undefined,
+        allowed_resources: values.permissions?.allowed_resources?.length > 0
+          ? values.permissions.allowed_resources
+          : undefined,
+        allowed_prompts: values.permissions?.allowed_prompts?.length > 0
+          ? values.permissions.allowed_prompts
+          : undefined,
+        allowed_prompt_templates: values.permissions?.allowed_prompt_templates?.length > 0
+          ? values.permissions.allowed_prompt_templates
+          : undefined,
       }
-
-      console.log('Updating token with request:', updateRequest)
 
       const response = await invoke<UpdateTokenResponse>('update_token', {
         request: updateRequest,
       })
-
-      console.log('Token update response:', response)
 
       message.success(
         t('token.messages.update_success', { name: response.token.name }),
@@ -315,6 +336,17 @@ const TokenManagement: React.FC = () => {
       })
     } else {
       return t('token.status.recently')
+    }
+  }
+
+  // 辅助函数：从editingToken获取初始权限数据
+  const getInitialPermissions = () => {
+    if (!editingToken) return {}
+    return {
+      allowed_tools: editingToken.allowed_tools || [],
+      allowed_resources: editingToken.allowed_resources || [],
+      allowed_prompts: editingToken.allowed_prompts || [],
+      allowed_prompt_templates: editingToken.allowed_prompt_templates || [],
     }
   }
 
@@ -352,10 +384,15 @@ const TokenManagement: React.FC = () => {
       title: t('token.table.permissions'),
       key: 'permissions',
       render: (_, record) => {
+        // 计算所有权限类型的数量
         const hasPermissions =
           record.allowed_tools?.length ||
           record.allowed_resources?.length ||
-          record.allowed_prompts?.length
+          record.allowed_prompts?.length ||
+          record.allowed_prompt_templates?.length ||
+          record.allowed_prompt_categories?.length ||
+          record.prompt_template_access
+
         if (!hasPermissions) {
           return <Tag color='green'>{t('token.permissions.unrestricted')}</Tag>
         }
@@ -363,37 +400,82 @@ const TokenManagement: React.FC = () => {
         const permissionCount =
           (record.allowed_tools?.length || 0) +
           (record.allowed_resources?.length || 0) +
-          (record.allowed_prompts?.length || 0)
+          (record.allowed_prompts?.length || 0) +
+          (record.allowed_prompt_templates?.length || 0) +
+          (record.allowed_prompt_categories?.length || 0)
+
+        // 计算细粒度权限数量
+        const fineGrainedCount = record.prompt_template_access
+          ? Object.values(record.prompt_template_access).reduce(
+              (sum, permissions) => sum + (permissions?.length || 0), 0)
+          : 0
+
+        const totalCount = permissionCount + fineGrainedCount
 
         return (
           <Tooltip
             title={
-              <div>
+              <div style={{ maxWidth: 300 }}>
                 {record.allowed_tools && record.allowed_tools.length > 0 && (
                   <div>
                     <strong>{t('token.permissions.tools')}:</strong>{' '}
-                    {record.allowed_tools.join(', ')}
+                    {record.allowed_tools.slice(0, 3).join(', ')}
+                    {record.allowed_tools.length > 3 && '...'}
                   </div>
                 )}
                 {record.allowed_resources &&
                   record.allowed_resources.length > 0 && (
                     <div>
                       <strong>{t('token.permissions.resources')}:</strong>{' '}
-                      {record.allowed_resources.join(', ')}
+                      {record.allowed_resources.slice(0, 3).join(', ')}
+                      {record.allowed_resources.length > 3 && '...'}
                     </div>
                   )}
                 {record.allowed_prompts &&
                   record.allowed_prompts.length > 0 && (
                     <div>
                       <strong>{t('token.permissions.prompts')}:</strong>{' '}
-                      {record.allowed_prompts.join(', ')}
+                      {record.allowed_prompts.slice(0, 3).join(', ')}
+                      {record.allowed_prompts.length > 3 && '...'}
                     </div>
                   )}
+                {record.allowed_prompt_templates &&
+                  record.allowed_prompt_templates.length > 0 && (
+                    <div>
+                      <strong>提示词模板:</strong>{' '}
+                      {record.allowed_prompt_templates.slice(0, 3).join(', ')}
+                      {record.allowed_prompt_templates.length > 3 && '...'}
+                    </div>
+                  )}
+                {record.allowed_prompt_categories &&
+                  record.allowed_prompt_categories.length > 0 && (
+                    <div>
+                      <strong>模板分类:</strong>{' '}
+                      {record.allowed_prompt_categories.slice(0, 3).join(', ')}
+                      {record.allowed_prompt_categories.length > 3 && '...'}
+                    </div>
+                  )}
+                {record.access_level && (
+                  <div>
+                    <strong>访问级别:</strong>{' '}
+                    <Tag color={record.access_level === 'admin' ? 'red' :
+                              record.access_level === 'premium' ? 'purple' :
+                              record.access_level === 'standard' ? 'blue' : 'green'}>
+                      {record.access_level.toUpperCase()}
+                    </Tag>
+                  </div>
+                )}
+                {fineGrainedCount > 0 && (
+                  <div>
+                    <strong>细粒度权限:</strong>{' '}
+                    {fineGrainedCount} 项
+                  </div>
+                )}
               </div>
             }>
-            <Tag color='blue'>
+            <Tag color={totalCount > 10 ? 'red' : totalCount > 5 ? 'orange' : 'blue'}>
               {t('token.permissions.permissions_count', {
-                count: permissionCount,
+                count: totalCount,
               })}
             </Tag>
           </Tooltip>
@@ -563,7 +645,20 @@ const TokenManagement: React.FC = () => {
               name='permissions'
               label={t('token.form.permissions')}
               tooltip={t('token.form.permissions_tooltip')}>
-              <PermissionSelector availablePermissions={availablePermissions} />
+              {permissionsLoading ? (
+                <Card>
+                  <Skeleton active paragraph={{ rows: 4 }} />
+                </Card>
+              ) : (
+                <PermissionSelector
+                  value={{}}
+                  onChange={(permissions) => {
+                    form.setFieldsValue({ permissions })
+                  }}
+                  availablePermissions={availablePermissions}
+                  disabled={permissionsLoading}
+                />
+              )}
             </Form.Item>
 
             <Form.Item>
@@ -806,11 +901,7 @@ const TokenManagement: React.FC = () => {
             editForm.setFieldsValue({
               name: editingToken.name,
               description: editingToken.description,
-              permissions: {
-                allowed_tools: editingToken.allowed_tools || [],
-                allowed_resources: editingToken.allowed_resources || [],
-                allowed_prompts: editingToken.allowed_prompts || [],
-              },
+              permissions: getInitialPermissions()
             })
           }
         }}>
@@ -822,7 +913,11 @@ const TokenManagement: React.FC = () => {
               { required: true, message: t('token.validation.name_required') },
               { max: 100, message: t('token.validation.name_max_length') },
             ]}>
-            <Input placeholder={t('token.form.name_placeholder')} />
+            <Input
+              placeholder={t('token.form.name_placeholder')}
+              readOnly
+              style={{ cursor: 'not-allowed', backgroundColor: '#f5f5f5' }}
+            />
           </Form.Item>
 
           <Form.Item
@@ -840,11 +935,25 @@ const TokenManagement: React.FC = () => {
             />
           </Form.Item>
 
+          
           <Form.Item
             name='permissions'
             label={t('token.form.permissions')}
             tooltip={t('token.form.permissions_tooltip')}>
-            <PermissionSelector availablePermissions={availablePermissions} />
+            {permissionsLoading ? (
+              <Card>
+                <Skeleton active paragraph={{ rows: 6 }} />
+              </Card>
+            ) : (
+              <PermissionSelector
+                value={getInitialPermissions()}
+                onChange={(permissions) => {
+                  editForm.setFieldsValue({ permissions })
+                }}
+                availablePermissions={availablePermissions}
+                disabled={permissionsLoading}
+              />
+            )}
           </Form.Item>
         </Form>
       </Drawer>

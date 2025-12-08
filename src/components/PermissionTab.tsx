@@ -4,6 +4,7 @@ import {
   DownOutlined,
   FileTextOutlined,
   FolderOutlined,
+  MessageOutlined,
   SearchOutlined,
   SelectOutlined,
   UpOutlined,
@@ -27,7 +28,7 @@ const { Search } = Input
 const { Text } = Typography
 
 interface PermissionTabProps {
-  type: 'tools' | 'resources' | 'prompts'
+  type: 'tools' | 'resources' | 'prompts' | 'prompt_templates'
   permissions: string[]
   selectedPermissions: string[]
   onChange: (permissions: string[]) => void
@@ -64,6 +65,8 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
         return <FolderOutlined />
       case 'prompts':
         return <FileTextOutlined />
+      case 'prompt_templates':
+        return <MessageOutlined />
       default:
         return <ApiOutlined />
     }
@@ -74,12 +77,22 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     const groups: Record<string, string[]> = {}
 
     permissions.forEach((permission) => {
-      const [server, ...rest] = permission.split('/')
-      if (server && rest.length > 0) {
-        if (!groups[server]) {
-          groups[server] = []
+      if (type === 'prompt_templates') {
+        // 提示词模板使用特殊分组逻辑
+        const templateGroupName = t('token.permissions.prompt_templates_group')
+        if (!groups[templateGroupName]) {
+          groups[templateGroupName] = []
         }
-        groups[server].push(permission)
+        groups[templateGroupName].push(permission)
+      } else {
+        // 其他权限类型使用原有的服务器分组逻辑
+        const [server, ...rest] = permission.split('/')
+        if (server && rest.length > 0) {
+          if (!groups[server]) {
+            groups[server] = []
+          }
+          groups[server].push(permission)
+        }
       }
     })
 
@@ -92,7 +105,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
         ).length,
       }))
       .sort((a, b) => a.server.localeCompare(b.server))
-  }, [permissions, selectedPermissions])
+  }, [permissions, selectedPermissions, type])
 
   // 过滤后的分组权限
   const filteredGroups = useMemo(() => {
@@ -241,9 +254,12 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
             <Text type='secondary'>
               {getTypeIcon()}
               {type === 'tools' && t('tool.tab.tools_permissions_selected')}
-              {type === 'resources' && t('tool.tab.resources_permissions_selected')}
+              {type === 'resources' &&
+                t('tool.tab.resources_permissions_selected')}
               {type === 'prompts' && t('tool.tab.prompts_permissions_selected')}
-              {' '}{allSelectedCount} / {totalCount} {t('tool.tab.permissions_suffix')}
+              {type === 'prompt_templates' && t('tool.tab.prompt_templates_permissions_selected')}{' '}
+              {allSelectedCount} / {totalCount}{' '}
+              {t('tool.tab.permissions_suffix')}
             </Text>
             {filteredGroups.length < groupedPermissions.length && (
               <Text type='warning'>
@@ -259,7 +275,9 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
       {filteredGroups.length === 0 ? (
         <Card size='small'>
           <div style={{ textAlign: 'center', padding: '20px' }}>
-            {searchValue ? t('tool.tab.no_match_found') : t('tool.tab.no_permissions_available')}
+            {searchValue
+              ? t('tool.tab.no_match_found')
+              : t('tool.tab.no_permissions_available')}
           </div>
         </Card>
       ) : (
@@ -354,7 +372,16 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                                 gap: '4px',
                               }}>
                               <Text>
-                                {permission.split('/')[1] || permission}
+                                {type === 'prompt_templates'
+                                  ? (() => {
+                                      const item = permissionItems.find(
+                                        (item) => item.id === permission,
+                                      )
+                                      return item
+                                        ? (item as any).name || permission
+                                        : permission
+                                    })()
+                                  : permission.split('/')[1] || permission}
                               </Text>
                               {(() => {
                                 const description =

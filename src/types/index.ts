@@ -238,6 +238,7 @@ export interface Token {
   allowed_tools?: string[]
   allowed_resources?: string[]
   allowed_prompts?: string[]
+  allowed_prompt_templates?: string[]
 }
 
 export interface CreateTokenRequest {
@@ -248,6 +249,7 @@ export interface CreateTokenRequest {
   allowed_tools?: string[]
   allowed_resources?: string[]
   allowed_prompts?: string[]
+  allowed_prompt_templates?: string[]
 }
 
 export interface CreateTokenResponse {
@@ -269,6 +271,7 @@ export interface UpdateTokenRequest {
   allowed_tools?: string[] | undefined
   allowed_resources?: string[] | undefined
   allowed_prompts?: string[] | undefined
+  allowed_prompt_templates?: string[] | undefined
 }
 
 export interface UpdateTokenResponse {
@@ -284,6 +287,8 @@ export interface AvailablePermissions {
   tools: PermissionItem[]
   resources: PermissionItem[]
   prompts: PermissionItem[]
+  prompt_templates?: PermissionItem[]
+  prompt_categories?: PermissionItem[]
 }
 
 export interface TokenStats {

@@ -1,6 +1,7 @@
 import {
   AppstoreOutlined,
   DatabaseOutlined,
+  FileTextOutlined,
   MessageOutlined,
 } from '@ant-design/icons'
 import type { TabsProps } from 'antd'
@@ -17,11 +18,13 @@ interface PermissionSelectorProps {
     allowed_tools?: string[]
     allowed_resources?: string[]
     allowed_prompts?: string[]
+    allowed_prompt_templates?: string[]
   }
   onChange?: (permissions: {
     allowed_tools?: string[]
     allowed_resources?: string[]
     allowed_prompts?: string[]
+    allowed_prompt_templates?: string[]
   }) => void
   availablePermissions: AvailablePermissions
   disabled?: boolean
@@ -56,6 +59,12 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
         selected: value.allowed_prompts?.length || 0,
         items: availablePermissions.prompts,
         selectedItems: value.allowed_prompts || [],
+      },
+      prompt_templates: {
+        total: (availablePermissions.prompt_templates || []).length,
+        selected: value.allowed_prompt_templates?.length || 0,
+        items: availablePermissions.prompt_templates || [],
+        selectedItems: value.allowed_prompt_templates || [],
       },
     }
   }, [availablePermissions, value])
@@ -163,6 +172,37 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
           disabled={disabled}
           searchText={searchText}
           permissionItems={permissionStats.prompts.items}
+        />
+      ),
+    },
+    {
+      key: 'prompt_templates',
+      label: (
+        <Space>
+          <FileTextOutlined />
+          <span>{t('token.permissions.prompt_templates')}</span>
+          <Badge
+            count={permissionStats.prompt_templates.selected}
+            showZero
+            size='small'
+            style={{ backgroundColor: '#fa8c16' }}
+          />
+          <Text type='secondary'>
+            ({permissionStats.prompt_templates.selected}/{permissionStats.prompt_templates.total})
+          </Text>
+        </Space>
+      ),
+      children: (
+        <PermissionTab
+          type='prompt_templates'
+          permissions={permissionStats.prompt_templates.items.map((item) => item.id)}
+          selectedPermissions={permissionStats.prompt_templates.selectedItems}
+          onChange={(permissions) =>
+            handlePermissionChange('prompt_templates', permissions)
+          }
+          disabled={disabled}
+          searchText={searchText}
+          permissionItems={permissionStats.prompt_templates.items}
         />
       ),
     },
