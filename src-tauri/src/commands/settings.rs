@@ -608,10 +608,9 @@ pub async fn get_system_command_paths(command: String) -> Result<Vec<String>> {
     // Use which crate to find all occurrences of the command in PATH
     if let Ok(found_paths) = which::which_all_global(&command) {
         for path in found_paths {
-            if let Ok(canonical_path) = path.canonicalize() {
-                if let Some(path_str) = canonical_path.to_str() {
-                    paths.insert(path_str.to_string());
-                }
+            // Use original path without resolving symlinks
+            if let Some(path_str) = path.to_str() {
+                paths.insert(path_str.to_string());
             }
         }
     }
