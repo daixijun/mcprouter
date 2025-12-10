@@ -6,10 +6,8 @@
 //! - Application global configuration
 
 pub mod file_manager;
-pub mod mcp_server_config;
 
 pub use file_manager::*;
-pub use mcp_server_config::*;
 
 // Re-export AppConfig for convenience
 pub use crate::AppConfig;

@@ -49,6 +49,9 @@ pub enum McpError {
     #[error("Permission denied: {0}")]
     PermissionError(String),
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     #[error("Database connection failed: {0}")]
     DatabaseConnectionError(String),
 
@@ -73,6 +76,9 @@ pub enum McpError {
     #[error("Invalid configuration: {0}")]
     InvalidConfiguration(String),
 
+    #[error("Internal error: {0}")]
+    Internal(String),
+
     #[error("Tool error: {0}")]
     ToolError(String),
 
@@ -87,6 +93,12 @@ pub enum McpError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    #[error("Unsupported operation: {0}")]
+    UnsupportedOperation(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 // SQLx support removed during migration to config files
@@ -100,6 +112,12 @@ impl From<McpError> for InvokeError {
 impl From<ConfigError> for McpError {
     fn from(error: ConfigError) -> Self {
         McpError::ConfigError(error.to_string())
+    }
+}
+
+impl From<crate::storage::StorageError> for McpError {
+    fn from(error: crate::storage::StorageError) -> Self {
+        McpError::DatabaseQueryError(error.to_string())
     }
 }
 

@@ -21,7 +21,6 @@ pub async fn list_marketplace_services(
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn install_marketplace_service(
-    app_handle: tauri::AppHandle,
     service_id: String,
     env: Option<Vec<(String, String)>>,
 ) -> Result<McpServerConfig> {
@@ -65,9 +64,11 @@ pub async fn install_marketplace_service(
     };
 
     // Persist into service manager
-    SERVICE_MANAGER
-        .add_mcp_server(&app_handle, config.clone())
-        .await?;
+    let service_manager = {
+        let guard = SERVICE_MANAGER.lock().unwrap();
+        guard.as_ref().unwrap().clone()
+    };
+    service_manager.add_mcp_server(config.clone()).await?;
 
     // Try to connect immediately to retrieve version (cache only)
     match MCP_CLIENT_MANAGER.ensure_connection(&config, false).await {

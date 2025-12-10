@@ -386,11 +386,11 @@ describe('便捷函数', () => {
       expect(summary).toBe('Access to 2 tools, 1 resources, 3 prompt templates')
     })
 
-    it('应该处理完全访问权限', () => {
+    it('应该处理没有权限的情况', () => {
       const permissions: TokenPermissions = {}
 
       const summary = generatePermissionSummary(permissions)
-      expect(summary).toBe('Full access')
+      expect(summary).toBe('No permissions')
     })
   })
 })
@@ -435,8 +435,8 @@ describe('边界情况测试', () => {
       action: PermissionAction.EXECUTE
     })
 
-    // 没有限制应该允许访问
-    expect(result.allowed).toBe(true)
+    // 没有权限应该拒绝访问
+    expect(result.allowed).toBe(false)
   })
 
   it('应该处理权限检查错误', async () => {

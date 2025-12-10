@@ -10,7 +10,7 @@ use axum::{
     extract::Request,
     http::StatusCode,
     middleware::{self, Next},
-    response::Response,
+    response::{Json, Response},
 };
 use rmcp::model::{
     CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult,
@@ -27,9 +27,9 @@ use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use chrono;
 
 /// Permission validation error types
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum PermissionError {
     ToolAccessDenied { tool_name: String },
@@ -72,7 +72,6 @@ impl std::fmt::Display for PermissionError {
 impl std::error::Error for PermissionError {}
 
 /// MCP Operation types for permission validation
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum McpOperation {
     ListTools,
@@ -85,7 +84,6 @@ pub enum McpOperation {
 
 /// Extract MCP operation from HTTP request path and method
 /// This function extracts operation information without consuming the request body
-#[allow(dead_code)]
 pub fn extract_mcp_operation_from_request(req: &Request<Body>) -> Result<McpOperation, StatusCode> {
     let uri = req.uri().path();
     let method = req.method();
@@ -110,7 +108,6 @@ pub fn extract_mcp_operation_from_request(req: &Request<Body>) -> Result<McpOper
 
 /// Extract MCP operation from JSON request body
 /// This function is used by MCP handlers to perform detailed permission validation
-#[allow(dead_code)]
 pub async fn extract_mcp_operation_from_body(bytes: &[u8]) -> Result<McpOperation, StatusCode> {
     // Try to parse as JSON to determine operation type
     if bytes.is_empty() {
@@ -182,30 +179,53 @@ async fn dynamic_bearer_auth_middleware(
     next: Next,
     token_manager: Arc<TokenManager>,
 ) -> Result<Response, StatusCode> {
+    let uri = req.uri().path();
+    let method = req.method();
+
+    tracing::debug!("=== Authentication Debug ===");
+    tracing::debug!("Request: {} {}", method, uri);
+
     // Extract Authorization header
     let auth_header = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
 
+    tracing::debug!("Authorization header present: {}", auth_header.is_some());
+    if let Some(header) = auth_header {
+        tracing::debug!("Authorization header length: {}", header.len());
+        if header.len() > 20 {
+            tracing::debug!("Authorization header preview: {}...{}",
+                &header[..10], &header[header.len()-10..]);
+        } else {
+            tracing::debug!("Authorization header: {}", header);
+        }
+    }
+
     // Validate Bearer token format and value
     let token_value = match auth_header {
         Some(header) if header.starts_with("Bearer ") => {
-            Some(&header[7..]) // Skip "Bearer "
+            let token = &header[7..]; // Skip "Bearer "
+            tracing::debug!("Bearer token extracted, length: {}", token.len());
+            Some(token)
         }
-        Some(_) => {
-            tracing::warn!("Authentication failed: invalid Authorization header format");
+        Some(header) => {
+            tracing::warn!("Authentication failed: invalid Authorization header format. Expected 'Bearer <token>', got: {}",
+                if header.len() > 50 { format!("{}...", &header[..50]) } else { header.to_string() });
             return Err(StatusCode::UNAUTHORIZED);
         }
         None => {
-            tracing::warn!("Authentication failed: missing Authorization header");
+            tracing::warn!("Authentication failed: missing Authorization header for {} {}", method, uri);
             return Err(StatusCode::UNAUTHORIZED);
         }
     };
 
     // Validate token using TokenManager
     if let Some(token_value) = token_value {
+        tracing::debug!("Validating token with TokenManager...");
         if let Some(token_id) = token_manager.validate_token(token_value).await {
+            tracing::info!("Authentication successful for token_id: {}", token_id);
+
             // Record usage statistics asynchronously
             let manager_clone = token_manager.clone();
             let token_id_clone = token_id.clone();
@@ -216,45 +236,72 @@ async fn dynamic_bearer_auth_middleware(
             });
 
             // Try to get full token information and create session
+            tracing::debug!("Retrieving full token information for token_id: {}", token_id);
             if let Ok(token) = token_manager.get_token_by_id(&token_id).await {
+                tracing::debug!("Token information retrieved, creating session...");
                 // Create session for this authenticated request
-                let session_id = get_session_manager().create_session(token.clone());
+                let session_manager = get_session_manager().unwrap();
+                let session_id = session_manager.create_session(token.clone());
+
+                tracing::debug!("Session created with ID: {}", session_id);
 
                 // Get the complete session info
-                if let Some(session_info) = get_session_manager().get_session(&session_id) {
+                if let Some(session_info) = session_manager.get_session(&session_id) {
+                    tracing::debug!("Session info retrieved, storing in request extensions");
                     // Store session info in request extensions for MCP layer to access
                     req.extensions_mut()
-                        .insert(SessionInfoExtension(Arc::new(session_info)));
+                        .insert(SessionInfoExtension(Arc::new(session_info.into())));
                     req.extensions_mut()
                         .insert(SessionIdExtension(session_id.clone()));
 
-                    tracing::debug!(
+                    tracing::info!(
                         "Authentication successful for token: {}, session: {}",
                         token_id,
                         session_id
                     );
                 } else {
-                    tracing::debug!(
+                    tracing::warn!(
                         "Authentication successful for token: {} (session info retrieval failed)",
                         token_id
                     );
                 }
             } else {
-                tracing::debug!(
-                    "Authentication successful for token: {} (session creation skipped)",
+                tracing::warn!(
+                    "Authentication successful for token: {} (session creation skipped - token not found)",
                     token_id
                 );
             }
 
+            tracing::debug!("Proceeding to MCP handler");
             Ok(next.run(req).await)
         } else {
-            tracing::warn!("Authentication failed: invalid token");
+            tracing::warn!("Authentication failed: invalid token value. Token validation returned None.");
             Err(StatusCode::UNAUTHORIZED)
         }
     } else {
-        tracing::warn!("Authentication failed: invalid Authorization header format");
-        Err(StatusCode::UNAUTHORIZED)
+        tracing::error!("Unexpected state: token_value is None after extraction");
+        Err(StatusCode::INTERNAL_SERVER_ERROR)
     }
+}
+
+/// Health check endpoint handler
+async fn health_check() -> Json<Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "service": "MCP Aggregator"
+    }))
+}
+
+/// Debug status endpoint handler
+async fn debug_status(Json(_params): Json<Value>) -> Result<Json<Value>, StatusCode> {
+    // This would require access to the aggregator instance
+    // For now, return basic info
+    Ok(Json(serde_json::json!({
+        "service": "MCP Aggregator",
+        "status": "running",
+        "message": "Debug endpoint working"
+    })))
 }
 
 /// MCP Aggregator Server - implements MCP protocol
@@ -283,12 +330,27 @@ impl McpAggregator {
         }
     }
 
+    /// New constructor that accepts any TokenManager implementation
+    pub fn new_with_trait(
+        mcp_server_manager: Arc<McpServerManager>,
+        mcp_client_manager: Arc<McpClientManager>,
+        config: Arc<ServerConfig>,
+        token_manager: Arc<TokenManager>,
+    ) -> Self {
+        Self {
+            mcp_server_manager,
+            mcp_client_manager,
+            config,
+            token_manager,
+            shutdown_signal: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
     /// Check if the given token has permission to access the specified tool
     /// Returns Result with detailed error information for audit logging
-    #[allow(dead_code)]
     pub async fn check_tool_permission(
         &self,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
         tool_name: &str,
     ) -> Result<(), PermissionError> {
         if token.has_tool_permission(tool_name) {
@@ -301,10 +363,9 @@ impl McpAggregator {
     }
 
     /// Check if the given token has permission to access the specified resource
-    #[allow(dead_code)]
     pub async fn check_resource_permission(
         &self,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
         resource_uri: &str,
     ) -> Result<(), PermissionError> {
         if token.has_resource_permission(resource_uri) {
@@ -317,10 +378,9 @@ impl McpAggregator {
     }
 
     /// Check if the given token has permission to access the specified prompt
-    #[allow(dead_code)]
     pub async fn check_prompt_permission(
         &self,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
         prompt_name: &str,
     ) -> Result<(), PermissionError> {
         if token.has_prompt_permission(prompt_name) {
@@ -333,10 +393,9 @@ impl McpAggregator {
     }
 
     /// Validate token status and return detailed error if invalid
-    #[allow(dead_code)]
     pub async fn validate_token_status(
         &self,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
     ) -> Result<(), PermissionError> {
         if token.is_expired() {
             Err(PermissionError::TokenExpired)
@@ -459,14 +518,14 @@ impl McpAggregator {
         let service_factory = move || Ok(aggregator_for_service.as_ref().clone());
 
         // Create server config
-        let server_config = StreamableHttpServerConfig {
+        let server_info = StreamableHttpServerConfig {
             sse_keep_alive: Some(std::time::Duration::from_secs(self.config.timeout_seconds)),
             stateful_mode: false, // Set to false to match client allow_stateless=true
             cancellation_token: tokio_util::sync::CancellationToken::new(),
         };
 
         // Create StreamableHttpService
-        let service = StreamableHttpService::new(service_factory, session_manager, server_config);
+        let service = StreamableHttpService::new(service_factory, session_manager, server_info);
 
         // Build router with conditional authentication middleware
         let router = if self.config.is_auth_enabled() {
@@ -474,13 +533,18 @@ impl McpAggregator {
             let token_manager = self.token_manager.clone();
             axum::Router::new()
                 .nest_service("/mcp", service)
+                .route("/health", axum::routing::get(health_check))
+                .route("/debug/status", axum::routing::post(debug_status))
                 .layer(middleware::from_fn(move |req, next| {
                     let token_manager = token_manager.clone();
                     async move { dynamic_bearer_auth_middleware(req, next, token_manager).await }
                 }))
         } else {
             tracing::info!("Authentication disabled - running without auth middleware");
-            axum::Router::new().nest_service("/mcp", service)
+            axum::Router::new()
+                .nest_service("/mcp", service)
+                .route("/health", axum::routing::get(health_check))
+                .route("/debug/status", axum::routing::post(debug_status))
         };
 
         // Bind TCP listener
@@ -528,15 +592,15 @@ impl McpAggregator {
     }
 
     pub async fn get_statistics(&self) -> Value {
-        let entries = self.mcp_server_manager.tools_cache_entries.read().await;
+        let entries = self.mcp_server_manager.get_tools_cache_entries();
         let total = entries.len();
         let ttl = self.mcp_server_manager.get_tools_cache_ttl_seconds();
-        let updated_count: usize = entries.values().map(|e| e.count).sum();
-        let latest = entries.values().map(|e| e.last_updated).max();
+        let updated_count: usize = entries.iter().map(|e| e.len()).sum();
+        let latest = std::time::SystemTime::now();
         serde_json::json!({
             "status": "running",
             "message": "Aggregator initialized",
-            "tool_cache": { "enabled": true, "entries": total, "ttl_seconds": ttl, "tools_total": updated_count, "last_updated": latest.map(|d| d.to_rfc3339()) }
+            "tool_cache": { "enabled": true, "entries": total, "ttl_seconds": ttl, "tools_total": updated_count, "last_updated": latest.duration_since(std::time::UNIX_EPOCH).ok().map(|d| format!("{}", d.as_secs())) }
         })
     }
 
@@ -544,33 +608,33 @@ impl McpAggregator {
     async fn get_tools_from_memory(&self) -> Result<Vec<McpTool>, McpError> {
         let mut aggregated_tools: Vec<McpTool> = Vec::new();
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
-        let servers = servers_lock.read().await;
+        let servers = servers_lock?;
         tracing::debug!("Found {} MCP servers in memory", servers.len());
-        for (name, config) in servers.iter() {
+        for server_info in servers.iter() {
             tracing::info!(
                 "Server '{}' - enabled: {}, transport: {:?}, tools: {}",
-                name,
-                config.enabled,
-                config.transport,
+                server_info.name,
+                server_info.enabled,
+                server_info.transport,
                 {
-                    let tc = self.mcp_server_manager.tools_cache_entries.read().await;
-                    tc.get(name).map(|v| v.count).unwrap_or(0)
+                    let tc = self.mcp_server_manager.get_tools_cache_entries();
+                    tc.get(&server_info.name).map(|v| v.len()).unwrap_or(0)
                 }
             );
         }
-        for (server_name, server_config) in servers.iter() {
-            if !server_config.enabled {
+        for server_info in servers.iter() {
+            if !server_info.enabled {
                 continue;
             }
             if let Some(cached) = self
                 .mcp_server_manager
-                .get_raw_cached_tools(server_name)
+                .get_raw_cached_tools(&server_info.name)
                 .await
             {
                 let mut prefixed = Vec::new();
                 for mut tool in cached {
                     let original_name = tool.name.clone();
-                    tool.name = format!("{}__{}", server_name, original_name).into();
+                    tool.name = format!("{}__{}", server_info.name, original_name).into();
                     if tool.description.is_none() {
                         tool.description = Some("No description".into());
                     }
@@ -586,27 +650,27 @@ impl McpAggregator {
     async fn get_resources_from_memory(&self) -> Result<Vec<rmcp::model::Resource>, McpError> {
         let mut aggregated_resources: Vec<rmcp::model::Resource> = Vec::new();
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
-        let servers = servers_lock.read().await;
+        let servers = servers_lock?;
         tracing::info!(
             "Found {} MCP servers in memory for resources",
             servers.len()
         );
 
-        for (server_name, server_config) in servers.iter() {
-            if !server_config.enabled {
+        for server_info in servers.iter() {
+            if !server_info.enabled {
                 continue;
             }
 
             // Get from cache directly
             if let Some(cached) = self
                 .mcp_server_manager
-                .get_cached_resources_raw(server_name)
+                .get_cached_resources_raw(&server_info.name)
                 .await
             {
                 let mut prefixed = Vec::new();
                 for resource in cached {
                     let original_uri = resource.uri.clone();
-                    let prefixed_uri = format!("{}__{}", server_name, original_uri);
+                    let prefixed_uri = format!("{}__{}", server_info.name, original_uri);
                     let mut prefixed_resource = resource.clone();
                     prefixed_resource.uri = prefixed_uri;
                     prefixed.push(prefixed_resource);
@@ -621,24 +685,24 @@ impl McpAggregator {
     async fn get_prompts_from_memory(&self) -> Result<Vec<rmcp::model::Prompt>, McpError> {
         let mut aggregated_prompts: Vec<rmcp::model::Prompt> = Vec::new();
         let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
-        let servers = servers_lock.read().await;
+        let servers = servers_lock?;
         tracing::debug!("Found {} MCP servers in memory for prompts", servers.len());
 
-        for (server_name, server_config) in servers.iter() {
-            if !server_config.enabled {
+        for server_info in servers.iter() {
+            if !server_info.enabled {
                 continue;
             }
 
             // Get from cache directly
             if let Some(cached) = self
                 .mcp_server_manager
-                .get_cached_prompts_raw(server_name)
+                .get_cached_prompts_raw(&server_info.name)
                 .await
             {
                 let mut prefixed = Vec::new();
                 for mut prompt in cached {
                     let original_name = prompt.name.clone();
-                    prompt.name = format!("{}__{}", server_name, original_name);
+                    prompt.name = format!("{}__{}", server_info.name, original_name);
                     prefixed.push(prompt);
                 }
                 aggregated_prompts.extend(prefixed);
@@ -675,10 +739,7 @@ impl McpAggregator {
     }
 
     /// Build a secondary permission key using the resource's display name
-    fn build_resource_name_alias(
-        &self,
-        resource: &rmcp::model::Resource,
-    ) -> Option<String> {
+    fn build_resource_name_alias(&self, resource: &rmcp::model::Resource) -> Option<String> {
         if resource.name.is_empty() {
             return None;
         }
@@ -689,7 +750,7 @@ impl McpAggregator {
     /// Check whether a token can access the given resource, supporting legacy name-based IDs
     fn token_can_access_resource(
         &self,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
         resource: &rmcp::model::Resource,
     ) -> bool {
         if token.has_resource_permission(&resource.uri) {
@@ -742,7 +803,7 @@ impl McpAggregator {
     pub async fn extract_token_from_auth_header(
         &self,
         auth_header: &str,
-    ) -> Option<crate::token_manager::Token> {
+    ) -> Option<crate::types::Token> {
         if auth_header.starts_with("Bearer ") {
             let token_value = &auth_header[7..]; // Skip "Bearer "
             if let Some(token_id) = self.token_manager.validate_token(token_value).await {
@@ -755,11 +816,10 @@ impl McpAggregator {
     }
 
     /// Filter tools based on token permissions
-    #[allow(dead_code)]
     fn filter_tools_by_permission(
         &self,
         tools: Vec<McpTool>,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
     ) -> Vec<McpTool> {
         tools
             .into_iter()
@@ -768,11 +828,10 @@ impl McpAggregator {
     }
 
     /// Filter resources based on token permissions
-    #[allow(dead_code)]
     fn filter_resources_by_permission(
         &self,
         resources: Vec<rmcp::model::Resource>,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
     ) -> Vec<rmcp::model::Resource> {
         resources
             .into_iter()
@@ -781,11 +840,10 @@ impl McpAggregator {
     }
 
     /// Filter prompts based on token permissions
-    #[allow(dead_code)]
     fn filter_prompts_by_permission(
         &self,
         prompts: Vec<rmcp::model::Prompt>,
-        token: &crate::token_manager::Token,
+        token: &crate::types::Token,
     ) -> Vec<rmcp::model::Prompt> {
         prompts
             .into_iter()
@@ -1284,15 +1342,30 @@ impl ServerHandler for McpAggregator {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, RmcpErrorData> {
-        tracing::debug!("List tools request received");
+        tracing::info!("=== List Tools Handler ===");
+        tracing::info!("Request parameters: {:?}", _request);
 
         // For now, if authentication is disabled, return all tools
+        tracing::info!("Authentication enabled: {}", self.config.is_auth_enabled());
         if !self.config.is_auth_enabled() {
+            tracing::info!("Authentication disabled, returning all tools");
             return self.list_tools_all(_request).await;
         }
 
         // Create AuthContext from RequestContext
+        tracing::debug!("Creating AuthContext from RequestContext");
         let auth_context = AuthContext::from_request_context(_context);
+
+        tracing::info!("AuthContext created - has_valid_session: {}", auth_context.has_valid_session());
+
+        // Log session details if available
+        if let Some(session_id) = auth_context.session_id() {
+            tracing::info!("Session ID: {}", session_id);
+        }
+
+        if let Some(token) = auth_context.token() {
+            tracing::info!("Token ID: {}", token.id);
+        }
 
         // Check if we have a valid session with permissions
         if !auth_context.has_valid_session() {
@@ -1315,14 +1388,27 @@ impl ServerHandler for McpAggregator {
         }
 
         // Get all tools and filter by session permissions
+        tracing::info!("Getting tools from memory...");
         match self.get_tools_from_memory().await {
             Ok(mut tools) => {
+                tracing::info!("Successfully retrieved {} tools from memory", tools.len());
+
+                // Log first few tool names for debugging
+                if tools.len() > 0 {
+                    let tool_names: Vec<String> = tools.iter().take(5).map(|t| t.name.to_string()).collect();
+                    tracing::info!("First few tools: {:?}", tool_names);
+                }
+
                 // Filter tools based on session permissions
+                let original_count = tools.len();
                 tools.retain(|tool| {
                     let permission_result =
                         auth_context.check_tool_permission_with_result(&tool.name);
-                    match permission_result {
-                        crate::auth_context::PermissionResult::Allowed => true,
+                    let allowed = match permission_result {
+                        crate::auth_context::PermissionResult::Allowed => {
+                            tracing::debug!("Tool {} allowed", tool.name);
+                            true
+                        }
                         crate::auth_context::PermissionResult::NotAuthenticated => {
                             tracing::warn!("Tool {} access denied: not authenticated", tool.name);
                             false
@@ -1332,14 +1418,17 @@ impl ServerHandler for McpAggregator {
                             false
                         }
                         crate::auth_context::PermissionResult::InsufficientPermissions => {
-                            tracing::debug!(
+                            tracing::info!(
                                 "Tool {} access denied: insufficient permissions",
                                 tool.name
                             );
                             false
                         }
-                    }
+                    };
+                    allowed
                 });
+
+                tracing::info!("Permission filtering: {} -> {} tools", original_count, tools.len());
 
                 let mut offset = 0usize;
                 if let Some(param) = _request {
@@ -1443,7 +1532,10 @@ impl ServerHandler for McpAggregator {
             self.parse_tool_name(&request.name).ok_or_else(|| {
                 RmcpErrorData::new(
                     ErrorCode(400),
-                    format!("Invalid tool name format: {}. Expected format: 'server__tool_name'", request.name),
+                    format!(
+                        "Invalid tool name format: {}. Expected format: 'server__tool_name'",
+                        request.name
+                    ),
                     None,
                 )
             })?;
@@ -1545,15 +1637,22 @@ impl ServerHandler for McpAggregator {
                 let filtered_prompts: Vec<_> = prompts
                     .into_iter()
                     .filter(|prompt| {
-                        let permission_result = auth_context.check_prompt_permission_with_result(&prompt.name);
+                        let permission_result =
+                            auth_context.check_prompt_permission_with_result(&prompt.name);
                         match permission_result {
                             crate::auth_context::PermissionResult::Allowed => true,
                             crate::auth_context::PermissionResult::NotAuthenticated => {
-                                tracing::warn!("Prompt {} access denied: not authenticated", prompt.name);
+                                tracing::warn!(
+                                    "Prompt {} access denied: not authenticated",
+                                    prompt.name
+                                );
                                 false
                             }
                             crate::auth_context::PermissionResult::SessionExpired => {
-                                tracing::warn!("Prompt {} access denied: session expired", prompt.name);
+                                tracing::warn!(
+                                    "Prompt {} access denied: session expired",
+                                    prompt.name
+                                );
                                 false
                             }
                             crate::auth_context::PermissionResult::InsufficientPermissions => {
@@ -1661,7 +1760,10 @@ impl ServerHandler for McpAggregator {
             self.parse_prompt_name(&request.name).ok_or_else(|| {
                 RmcpErrorData::new(
                     ErrorCode(400),
-                    format!("Invalid prompt name format: {}. Expected format: 'server__prompt_name'", request.name),
+                    format!(
+                        "Invalid prompt name format: {}. Expected format: 'server__prompt_name'",
+                        request.name
+                    ),
                     None,
                 )
             })?;
@@ -1788,11 +1890,17 @@ impl ServerHandler for McpAggregator {
                         match permission_result {
                             crate::auth_context::PermissionResult::Allowed => true,
                             crate::auth_context::PermissionResult::NotAuthenticated => {
-                                tracing::warn!("Resource {} access denied: not authenticated", resource.uri);
+                                tracing::warn!(
+                                    "Resource {} access denied: not authenticated",
+                                    resource.uri
+                                );
                                 false
                             }
                             crate::auth_context::PermissionResult::SessionExpired => {
-                                tracing::warn!("Resource {} access denied: session expired", resource.uri);
+                                tracing::warn!(
+                                    "Resource {} access denied: session expired",
+                                    resource.uri
+                                );
                                 false
                             }
                             crate::auth_context::PermissionResult::InsufficientPermissions => {
@@ -1904,7 +2012,10 @@ impl ServerHandler for McpAggregator {
             self.parse_resource_uri(&request.uri).ok_or_else(|| {
                 RmcpErrorData::new(
                     ErrorCode(400),
-                    format!("Invalid resource URI format: {}. Expected format: 'server__resource_uri'", request.uri),
+                    format!(
+                        "Invalid resource URI format: {}. Expected format: 'server__resource_uri'",
+                        request.uri
+                    ),
                     None,
                 )
             })?;

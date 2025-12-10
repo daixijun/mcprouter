@@ -8,7 +8,6 @@ import {
   KeyOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SaveOutlined,
 } from '@ant-design/icons'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -41,8 +40,6 @@ import {
   AvailablePermissions,
   Token,
   TokenStats,
-  UpdateTokenRequest,
-  UpdateTokenResponse,
 } from '../types'
 
 const { Text, Paragraph } = Typography
@@ -63,7 +60,6 @@ const TokenManagement: React.FC = () => {
   const [editModalVisible, setEditModalVisible] = useState(false)
   const [editingToken, setEditingToken] = useState<Token | null>(null)
   const [form] = Form.useForm()
-  const [editForm] = Form.useForm()
   const [permissionsLoading, setPermissionsLoading] = useState(false)
   const [editPermissionsLoading, setEditPermissionsLoading] = useState(false)
 
@@ -87,7 +83,6 @@ const TokenManagement: React.FC = () => {
   useEffect(() => {
     // 当权限数据加载完成且编辑模态框打开时，设置表单权限值
     if (editModalVisible && editingToken && !editPermissionsLoading) {
-      const currentPermissions = editForm.getFieldValue('permissions')
       const initialPermissions = getInitialPermissions()
 
       // 检查权限数据完整性并设置表单
@@ -95,10 +90,8 @@ const TokenManagement: React.FC = () => {
         initialPermissions && Object.keys(initialPermissions).length > 0
 
       if (hasValidPermissions) {
-        // 设置权限值，确保数据同步
-        editForm.setFieldsValue({
-          permissions: initialPermissions,
-        })
+        // 权限数据已准备就绪，PermissionSelector 会自动处理
+        // 不需要手动设置表单字段值
       }
     }
   }, [
@@ -112,6 +105,13 @@ const TokenManagement: React.FC = () => {
     setLoading(true)
     try {
       const response = await invoke<Token[]>('list_tokens')
+      console.log('获取到的Token列表:', response.map(t => ({
+        id: t.id,
+        name: t.name,
+        allowed_tools_count: t.allowed_tools?.length || 0,
+        allowed_resources_count: t.allowed_resources?.length || 0,
+        allowed_prompts_count: t.allowed_prompts?.length || 0
+      })))
       setTokens(response)
     } catch (error) {
       message.error(t('token.messages.load_tokens_failed') + ': ' + error)
@@ -316,6 +316,15 @@ const TokenManagement: React.FC = () => {
   }
 
   const handleEditToken = async (token: Token) => {
+    // 打印Token的权限数据用于调试
+    console.log('打开权限编辑，Token权限数据:', {
+      tokenId: token.id,
+      allowed_tools_count: token.allowed_tools?.length || 0,
+      allowed_tools: token.allowed_tools?.slice(0, 3),
+      allowed_resources_count: token.allowed_resources?.length || 0,
+      allowed_prompts_count: token.allowed_prompts?.length || 0
+    })
+
     setEditingToken(token)
     setEditPermissionsLoading(true)
 
@@ -333,45 +342,49 @@ const TokenManagement: React.FC = () => {
     }
   }
 
-  const handleUpdateToken = async (values: any) => {
+  
+  // Handle permissions change with auto-update
+  const handlePermissionChange = async (permissions: {
+    allowed_tools?: string[]
+    allowed_resources?: string[]
+    allowed_prompts?: string[]
+    allowed_prompt_templates?: string[]
+  }) => {
     if (!editingToken) return
 
     try {
-      const updateRequest: UpdateTokenRequest = {
-        id: editingToken.id,
-        name: values.name,
-        description: values.description,
-        allowed_tools:
-          values.permissions?.allowed_tools?.length > 0
-            ? values.permissions.allowed_tools
-            : undefined,
-        allowed_resources:
-          values.permissions?.allowed_resources?.length > 0
-            ? values.permissions.allowed_resources
-            : undefined,
-        allowed_prompts:
-          values.permissions?.allowed_prompts?.length > 0
-            ? values.permissions.allowed_prompts
-            : undefined,
-        allowed_prompt_templates:
-          values.permissions?.allowed_prompt_templates?.length > 0
-            ? values.permissions.allowed_prompt_templates
-            : undefined,
-      }
-
-      const response = await invoke<UpdateTokenResponse>('update_token', {
-        request: updateRequest,
+      // 更新本地状态
+      setEditingToken({
+        ...editingToken,
+        ...permissions
       })
 
-      message.success(
-        t('token.messages.update_success', { name: response.token.name }),
-      )
-      setEditModalVisible(false)
-      setEditingToken(null)
-      await fetchTokens()
+      // 更新tokens列表中的对应token
+      setTokens(prev => prev.map(token =>
+        token.id === editingToken.id
+          ? { ...token, ...permissions }
+          : token
+      ))
+
+      // 调用后端API更新权限
+      const response = await invoke('update_token', {
+        request: {
+          id: editingToken.id,
+          ...permissions
+        }
+      })
+
+      console.log('权限更新成功:', response)
     } catch (error: any) {
-      console.error('Failed to update token:', error)
-      message.error(t('token.messages.update_failed', { error }))
+      console.error('Failed to update permissions:', error)
+      // 错误处理：回滚本地状态
+      setEditingToken(prev => prev ? {
+        ...prev,
+        allowed_tools: editingToken.allowed_tools,
+        allowed_resources: editingToken.allowed_resources,
+        allowed_prompts: editingToken.allowed_prompts,
+        allowed_prompt_templates: editingToken.allowed_prompt_templates
+      } : null)
     }
   }
 
@@ -401,12 +414,16 @@ const TokenManagement: React.FC = () => {
   // 辅助函数：从editingToken获取初始权限数据
   const getInitialPermissions = () => {
     if (!editingToken) return {}
-    return {
-      allowed_tools: editingToken.allowed_tools || [],
-      allowed_resources: editingToken.allowed_resources || [],
-      allowed_prompts: editingToken.allowed_prompts || [],
-      allowed_prompt_templates: editingToken.allowed_prompt_templates || [],
+
+    const permissions = {
+      allowed_tools: editingToken.allowed_tools,
+      allowed_resources: editingToken.allowed_resources,
+      allowed_prompts: editingToken.allowed_prompts,
+      allowed_prompt_templates: editingToken.allowed_prompt_templates,
     }
+
+    
+    return permissions
   }
 
   const getStatusColor = (token: Token) => {
@@ -451,7 +468,7 @@ const TokenManagement: React.FC = () => {
           record.allowed_prompt_templates?.length
 
         if (!hasPermissions) {
-          return <Tag color='green'>{t('token.permissions.unrestricted')}</Tag>
+          return <Tag color='red'>{t('token.permissions.empty')}</Tag>
         }
 
         const permissionCount =
@@ -463,51 +480,14 @@ const TokenManagement: React.FC = () => {
         const totalCount = permissionCount
 
         return (
-          <Tooltip
-            title={
-              <div style={{ maxWidth: 300 }}>
-                {record.allowed_tools && record.allowed_tools.length > 0 && (
-                  <div>
-                    <strong>{t('token.permissions.tools')}:</strong>{' '}
-                    {record.allowed_tools.slice(0, 3).join(', ')}
-                    {record.allowed_tools.length > 3 && '...'}
-                  </div>
-                )}
-                {record.allowed_resources &&
-                  record.allowed_resources.length > 0 && (
-                    <div>
-                      <strong>{t('token.permissions.resources')}:</strong>{' '}
-                      {record.allowed_resources.slice(0, 3).join(', ')}
-                      {record.allowed_resources.length > 3 && '...'}
-                    </div>
-                  )}
-                {record.allowed_prompts &&
-                  record.allowed_prompts.length > 0 && (
-                    <div>
-                      <strong>{t('token.permissions.prompts')}:</strong>{' '}
-                      {record.allowed_prompts.slice(0, 3).join(', ')}
-                      {record.allowed_prompts.length > 3 && '...'}
-                    </div>
-                  )}
-                {record.allowed_prompt_templates &&
-                  record.allowed_prompt_templates.length > 0 && (
-                    <div>
-                      <strong>提示词模板:</strong>{' '}
-                      {record.allowed_prompt_templates.slice(0, 3).join(', ')}
-                      {record.allowed_prompt_templates.length > 3 && '...'}
-                    </div>
-                  )}
-              </div>
+          <Tag
+            color={
+              totalCount > 10 ? 'red' : totalCount > 5 ? 'orange' : 'blue'
             }>
-            <Tag
-              color={
-                totalCount > 10 ? 'red' : totalCount > 5 ? 'orange' : 'blue'
-              }>
-              {t('token.permissions.permissions_count', {
-                count: totalCount,
-              })}
-            </Tag>
-          </Tooltip>
+            {t('token.permissions.permissions_count', {
+              count: totalCount,
+            })}
+          </Tag>
         )
       },
     },
@@ -704,7 +684,7 @@ const TokenManagement: React.FC = () => {
         ) : (
           <div>
             <Alert
-              message={t('token.messages.token_created_warning')}
+              title={t('token.messages.token_created_warning')}
               description={t('token.messages.token_copy_instruction')}
               type='success'
               showIcon
@@ -896,7 +876,7 @@ const TokenManagement: React.FC = () => {
         title={
           <Space>
             <EditOutlined />
-            {t('token.modal.edit_title')}
+            {t('token.actions.edit_permissions')} - {editingToken?.name}
             {editPermissionsLoading && <span>(加载权限中...)</span>}
           </Space>
         }
@@ -905,89 +885,38 @@ const TokenManagement: React.FC = () => {
           setEditModalVisible(false)
           setEditingToken(null)
         }}
-        footer={
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button
-                onClick={() => {
-                  setEditModalVisible(false)
-                  setEditingToken(null)
-                }}>
-                {t('token.actions.cancel')}
-              </Button>
-              <Button
-                type='primary'
-                icon={<SaveOutlined />}
-                onClick={() => editForm.submit()}>
-                {t('token.actions.save_changes')}
-              </Button>
-            </Space>
-          </div>
-        }
+        footer={null}
         size={800}
-        placement='right'
-        afterOpenChange={(open) => {
-          if (open && editingToken && !editPermissionsLoading) {
-            const initialPermissions = getInitialPermissions()
+        placement='right'>
 
-            // 设置表单值
-            editForm.setFieldsValue({
-              name: editingToken.name,
-              description: editingToken.description,
-              permissions: initialPermissions,
-            })
-          }
-        }}>
-        <Form form={editForm} layout='vertical' onFinish={handleUpdateToken}>
-          <Form.Item
-            name='name'
-            label={t('token.form.name')}
-            rules={[
-              { required: true, message: t('token.validation.name_required') },
-              { max: 100, message: t('token.validation.name_max_length') },
-            ]}>
-            <Input
-              placeholder={t('token.form.name_placeholder')}
-              readOnly
-              style={{ cursor: 'not-allowed', backgroundColor: '#f5f5f5' }}
+          {editPermissionsLoading ? (
+          <Card>
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </Card>
+        ) : (
+          <Space orientation='vertical' style={{ width: '100%' }}>
+            {/* 实时更新提示 */}
+            <Alert
+              title={
+                <Space>
+                  <InfoCircleOutlined />
+                  <Typography.Text strong>{t('token.permissions.realtime_update_notice')}</Typography.Text>
+                </Space>
+              }
+              description={t('token.permissions.realtime_update_description')}
+              type="info"
+              showIcon={false}
+              style={{ marginBottom: 16 }}
             />
-          </Form.Item>
 
-          <Form.Item
-            name='description'
-            label={t('token.form.description')}
-            rules={[
-              {
-                max: 500,
-                message: t('token.validation.description_max_length'),
-              },
-            ]}>
-            <Input.TextArea
-              placeholder={t('token.form.description_placeholder')}
-              rows={3}
+            <PermissionSelector
+              value={getInitialPermissions()}
+              onChange={handlePermissionChange}
+              availablePermissions={availablePermissions}
+              disabled={editPermissionsLoading}
             />
-          </Form.Item>
-
-          <Form.Item
-            name='permissions'
-            label={t('token.form.permissions')}
-            tooltip={t('token.form.permissions_tooltip')}>
-            {editPermissionsLoading ? (
-              <Card>
-                <Skeleton active paragraph={{ rows: 6 }} />
-              </Card>
-            ) : (
-              <PermissionSelector
-                value={getInitialPermissions()}
-                onChange={(permissions) => {
-                  editForm.setFieldsValue({ permissions })
-                }}
-                availablePermissions={availablePermissions}
-                disabled={editPermissionsLoading}
-              />
-            )}
-          </Form.Item>
-        </Form>
+          </Space>
+        )}
       </Drawer>
     </div>
   )

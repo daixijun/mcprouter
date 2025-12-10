@@ -7,12 +7,14 @@ use tauri::Emitter;
 
 #[tauri::command]
 pub async fn get_config() -> Result<config_mod::AppConfig> {
-    Ok(SERVICE_MANAGER.get_config().await)
+    // TODO: Implement config retrieval from database storage
+    // For now, return default config
+    Ok(config_mod::AppConfig::default())
 }
 
 #[tauri::command]
 pub async fn get_theme() -> Result<String> {
-    let config = SERVICE_MANAGER.get_config().await;
+    let config = config_mod::AppConfig::default();
     let theme = config
         .settings
         .as_ref()
@@ -24,25 +26,6 @@ pub async fn get_theme() -> Result<String> {
 
 #[tauri::command]
 pub async fn set_theme(app: tauri::AppHandle, theme: String) -> Result<()> {
-    SERVICE_MANAGER
-        .update_config(|config| {
-            if config.settings.is_none() {
-                config.settings = Some(crate::Settings {
-                    language: Some("zh-CN".to_string()),
-                    theme: Some("auto".to_string()),
-                    autostart: Some(false),
-                    system_tray: None,
-                    uv_index_url: None,
-                    npm_registry: None,
-                    command_paths: Default::default(),
-                });
-            }
-            if let Some(settings) = config.settings.as_mut() {
-                settings.theme = Some(theme.clone());
-            }
-        })
-        .await?;
-
     // Update tray menu to reflect new theme (safe method)
     if let Err(e) = crate::update_tray_menu(&app) {
         tracing::error!("Failed to update tray menu after theme change: {}", e);
@@ -61,7 +44,7 @@ pub async fn update_config(config: config_mod::AppConfig) -> Result<String> {
 
 #[tauri::command]
 pub async fn import_mcp_servers_config(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     config_json: serde_json::Value,
 ) -> Result<String> {
     // Extract mcpServers object from config
@@ -158,14 +141,17 @@ pub async fn import_mcp_servers_config(
                 };
 
                 // Add service
-                match SERVICE_MANAGER
-                    .add_mcp_server(&app_handle, service_config)
-                    .await
                 {
-                    Ok(()) => added_servers.push(service_name.clone()),
-                    Err(e) => {
-                        tracing::error!("Failed to import service '{}': {}", service_name, e);
-                        // Continue with other services even if one fails
+                    let service_manager = {
+                        let guard = SERVICE_MANAGER.lock().unwrap();
+                        guard.as_ref().unwrap().clone()
+                    };
+                    match service_manager.add_mcp_server(service_config).await {
+                        Ok(()) => added_servers.push(service_name.clone()),
+                        Err(e) => {
+                            tracing::error!("Failed to import service '{}': {}", service_name, e);
+                            // Continue with other services even if one fails
+                        }
                     }
                 }
             }

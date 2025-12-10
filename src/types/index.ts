@@ -235,10 +235,18 @@ export interface Token {
   is_expired: boolean
   enabled: boolean
   // Permission fields
-  allowed_tools?: string[]
-  allowed_resources?: string[]
-  allowed_prompts?: string[]
-  allowed_prompt_templates?: string[]
+  allowed_tools: string[]
+  allowed_resources: string[]
+  allowed_prompts: string[]
+  allowed_prompt_templates: string[]
+}
+
+export interface TokenForDashboard {
+  id: string
+  name: string
+  token: string
+  expires_at?: number
+  is_expired: boolean
 }
 
 export interface CreateTokenRequest {
@@ -280,7 +288,13 @@ export interface UpdateTokenResponse {
 
 export interface PermissionItem {
   id: string
+  resource_name: string
   description: string
+  resource_type: 'tool' | 'resource' | 'prompt' | 'prompt_template'
+  server_id: string
+  server_name: string
+  category?: string
+  tags?: string[]
 }
 
 export interface AvailablePermissions {

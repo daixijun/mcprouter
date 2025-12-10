@@ -16,9 +16,15 @@ pub enum AggregatorStatus {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_json::Value> {
+pub async fn get_dashboard_stats(_app_handle: tauri::AppHandle) -> Result<serde_json::Value> {
     // Get actual service statistics
-    let services = SERVICE_MANAGER.list_mcp_servers(Some(&app_handle)).await?;
+    let service_manager = {
+        let guard = SERVICE_MANAGER.lock().unwrap();
+        guard.as_ref()
+            .ok_or_else(|| McpError::Internal("SERVICE_MANAGER not initialized".to_string()))?
+            .clone()
+    };
+    let services = service_manager.list_mcp_servers().await?;
     let enabled_services = services.iter().filter(|s| s.enabled).count();
 
     // Calculate healthy services count (connected services)
@@ -50,11 +56,14 @@ pub async fn get_dashboard_stats(app_handle: tauri::AppHandle) -> Result<serde_j
     };
 
     // Get the total number of configured services directly from the manager
-    let total_services = {
-        let mcp_servers = SERVICE_MANAGER.get_mcp_servers().await;
-        let servers = mcp_servers.read().await;
-        servers.len()
+    let service_manager = {
+        let guard = SERVICE_MANAGER.lock().unwrap();
+        guard.as_ref()
+            .ok_or_else(|| crate::error::McpError::Internal("SERVICE_MANAGER not initialized".to_string()))?
+            .clone()
     };
+    let mcp_servers = service_manager.get_mcp_servers().await?;
+    let total_services = mcp_servers.len();
 
     // Get the current server configuration
     let server_config = {

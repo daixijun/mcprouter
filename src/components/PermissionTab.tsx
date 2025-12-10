@@ -20,71 +20,28 @@ import {
   Typography,
 } from 'antd'
 import type { CheckboxGroupProps } from 'antd/es/checkbox'
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PermissionItem } from '../types'
 
 const { Search } = Input
 const { Text } = Typography
 
-// 实现与后端一致的通配符匹配函数
-// 参考：src-tauri/src/token_manager.rs 第101-112行的 matches_pattern 方法
-const matchesPattern = (pattern: string, item: string): boolean => {
-  if (pattern === "*") return true; // 全局通配符
-  if (pattern.endsWith("__*")) {
-    // 服务器通配符: "server__*" matches "server__tool" but not "server__"
-    const server = pattern.slice(0, -3);
-    const prefix = `${server}__`;
-    return item.startsWith(prefix) && item.length > prefix.length;
-  }
-  return pattern === item; // 精确匹配
-}
-
-// 获取当前组中已选中的权限值（支持通配符匹配）
+// 获取当前组中已选中的权限值
 const getCheckedValues = (
+  _permissionType: string,
   groupPermissions: string[],
   selectedPermissions: string[],
-  permissionType: string
+  _permissionItems: PermissionItem[],
 ): string[] => {
-  
-  // 性能优化：分离通配符和精确权限，优化查找效率
-  const wildcards = selectedPermissions.filter(p => p.includes("*"));
-  const exactPermissions = selectedPermissions.filter(p => !p.includes("*"));
-  const exactSet = new Set(exactPermissions);
-
-  
-  const checkedValues = groupPermissions.filter((permission) => {
-    // 首先检查精确匹配
-    if (exactSet.has(permission)) {
-            return true;
-    }
-
-    // 然后检查通配符匹配
-    const wildcardMatch = wildcards.some(pattern => {
-      const matches = matchesPattern(pattern, permission);
-            return matches;
-    });
-
-    
-    return wildcardMatch;
-  });
-
-  // 特殊处理：对于 prompt_templates，添加简单的验证
-  if (permissionType === 'prompt_templates') {
-    // 检查是否有数据格式问题
-    const hasInvalidFormat = checkedValues.some(perm => !perm.includes('__'));
-    if (hasInvalidFormat) {
-      console.warn(`⚠️ [PermissionTab] prompt_templates 发现格式异常的权限ID:`, checkedValues.filter(p => !p.includes('__')));
-    }
-  }
-
-  return checkedValues;
+  // 直接返回在选中权限列表中的权限
+  return groupPermissions.filter((permission) =>
+    selectedPermissions.includes(permission),
+  )
 }
-
 
 interface PermissionTabProps {
   type: 'tools' | 'resources' | 'prompts' | 'prompt_templates'
-  permissions: string[]
   selectedPermissions: string[]
   onChange: (permissions: string[]) => void
   disabled?: boolean
@@ -94,7 +51,6 @@ interface PermissionTabProps {
 
 const PermissionTab: React.FC<PermissionTabProps> = ({
   type,
-  permissions,
   selectedPermissions,
   onChange,
   disabled = false,
@@ -105,23 +61,12 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
   const [searchValue, setSearchValue] = useState(searchText)
   const [expandedServers, setExpandedServers] = useState<string[]>([])
 
-  // 添加组件级别的调试信息
-  
-  // 对于 prompt_templates 进行额外检查
-  if (type === 'prompt_templates') {
-    console.log(`🔍 [PermissionTab] prompt_templates 专项检查:`)
-    console.log(`  - permissionItems 数量: ${permissionItems.length}`)
-    console.log(`  - permissionItems:`, permissionItems.map(item => ({ id: item.id, description: item.description })))
+  // 默认展开所有服务器
+  useEffect(() => {
+    const serverNames = [...new Set(permissionItems.map(item => item.server_name))]
+    setExpandedServers(serverNames)
+  }, [permissionItems])
 
-    // 检查权限项目是否包含所有权限
-    const permissionIds = permissions
-    const itemIds = permissionItems.map(item => item.id)
-    const missingItems = permissionIds.filter(id => !itemIds.includes(id))
-
-    if (missingItems.length > 0) {
-      console.warn(`⚠️ [PermissionTab] 发现未匹配的权限项:`, missingItems)
-    }
-  }
 
   // 根据权限ID获取描述信息
   const getPermissionDescription = (permissionId: string): string => {
@@ -129,11 +74,10 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     return item?.description || ''
   }
 
-  // 获取权限显示名称 - 统一处理所有权限类型
-  const getDisplayName = (permission: string): string => {
-    // 所有权限类型统一使用相同的逻辑：通过 __ 分隔符解析显示名称
-    const parts = permission.split('__')
-    return parts.length > 1 ? parts[1] : permission
+  // 获取权限显示名称 - 使用 permissionItems 中的 resource_name
+  const getDisplayName = (permissionId: string): string => {
+    const item = permissionItems.find((item) => item.id === permissionId)
+    return item?.resource_name || permissionId
   }
 
   // 获取权限类型对应的图标
@@ -154,29 +98,34 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
 
   // 按服务名称分组权限
   const groupedPermissions = useMemo(() => {
-    const groups: Record<string, string[]> = {}
+    const groups: Record<
+      string,
+      { serverName: string; permissions: string[] }
+    > = {}
 
-    permissions.forEach((permission) => {
-      // 统一使用服务器分组逻辑，包括 prompt_templates
-      const [server, ...rest] = permission.split('__')
-      if (server && rest.length > 0) {
-        if (!groups[server]) {
-          groups[server] = []
+    
+    // 使用 permissionItems 进行分组
+    permissionItems.forEach((item) => {
+      const serverName = item.server_name
+      if (!groups[serverName]) {
+        groups[serverName] = {
+          serverName,
+          permissions: [],
         }
-        groups[server].push(permission)
       }
+      groups[serverName].permissions.push(item.id)
     })
 
-    return Object.entries(groups)
-      .map(([server, serverPermissions]) => ({
-        server,
-        permissions: serverPermissions,
-        selectedCount: serverPermissions.filter((p) =>
+    return Object.values(groups)
+      .map((group) => ({
+        server: group.serverName,
+        permissions: group.permissions,
+        selectedCount: group.permissions.filter((p) =>
           selectedPermissions.includes(p),
         ).length,
       }))
       .sort((a, b) => a.server.localeCompare(b.server))
-  }, [permissions, selectedPermissions, type])
+  }, [permissionItems, selectedPermissions, type])
 
   // 过滤后的分组权限
   const filteredGroups = useMemo(() => {
@@ -186,14 +135,17 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     return groupedPermissions
       .map((group) => ({
         ...group,
-        permissions: group.permissions.filter(
-          (permission) =>
-            permission.toLowerCase().includes(searchTerm) ||
-            group.server.toLowerCase().includes(searchTerm),
-        ),
+        permissions: group.permissions.filter((permission) => {
+          const item = permissionItems.find((item) => item.id === permission)
+          const resourceName = item?.resource_name || ''
+          return (
+            resourceName.toLowerCase().includes(searchTerm) ||
+            group.server.toLowerCase().includes(searchTerm)
+          )
+        }),
       }))
       .filter((group) => group.permissions.length > 0)
-  }, [groupedPermissions, searchValue])
+  }, [groupedPermissions, searchValue, permissionItems])
 
   // 全选/反选/清空操作
   const handleSelectAll = () => {
@@ -328,7 +280,8 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
               {type === 'resources' &&
                 t('tool.tab.resources_permissions_selected')}
               {type === 'prompts' && t('tool.tab.prompts_permissions_selected')}
-              {type === 'prompt_templates' && t('tool.tab.prompt_templates_permissions_selected')}{' '}
+              {type === 'prompt_templates' &&
+                t('tool.tab.prompt_templates_permissions_selected')}{' '}
               {allSelectedCount} / {totalCount}{' '}
               {t('tool.tab.permissions_suffix')}
             </Text>
@@ -387,9 +340,11 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                           ({group.selectedCount}/{group.permissions.length})
                         </Text>
                         {(() => {
-                          const serverDescription = permissionItems.find(
-                            (item) => item.id.startsWith(group.server + '__'),
-                          )?.description
+                          // 使用第一个权限项的描述作为服务器描述
+                          const firstItem = permissionItems.find(
+                            (item) => item.server_name === group.server,
+                          )
+                          const serverDescription = firstItem?.description
                           if (!serverDescription) return null
 
                           return (
@@ -425,7 +380,12 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                 }>
                 {isExpanded && (
                   <Checkbox.Group
-                    value={getCheckedValues(group.permissions, selectedPermissions, type)}
+                    value={getCheckedValues(
+                      type,
+                      group.permissions,
+                      selectedPermissions,
+                      permissionItems,
+                    )}
                     onChange={handlePermissionChange}
                     disabled={disabled}
                     style={{ width: '100%' }}>
@@ -440,9 +400,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                                 flexWrap: 'wrap',
                                 gap: '4px',
                               }}>
-                              <Text>
-                                {getDisplayName(permission, permissionItems.find(item => item.id === permission))}
-                              </Text>
+                              <Text>{getDisplayName(permission)}</Text>
                               {(() => {
                                 const description =
                                   getPermissionDescription(permission)

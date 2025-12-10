@@ -11,6 +11,14 @@ export enum PermissionResourceType {
   PROMPT_CATEGORY = 'prompt_category'
 }
 
+// Token权限类型（用于Token权限管理）
+export enum PermissionType {
+  TOOLS = 'tools',
+  RESOURCES = 'resources',
+  PROMPTS = 'prompts',
+  PROMPT_TEMPLATES = 'prompt_templates'
+}
+
 // 权限操作类型
 export enum PermissionAction {
   READ = 'read',
@@ -23,8 +31,11 @@ export enum PermissionAction {
 // 基础权限项
 export interface PermissionItem {
   id: string
-  name: string
+  resource_name: string
   description: string
+  resource_type: 'tool' | 'resource' | 'prompt' | 'prompt_template'
+  server_id: string
+  server_name: string
   category?: string
   tags?: string[]
   metadata?: Record<string, any>
@@ -214,4 +225,36 @@ export interface PermissionTemplate {
   usage_count: number
   created_at: number
   updated_at: number
+}
+
+// Token权限管理相关类型
+
+// 权限验证结果
+export interface PermissionValidationResult {
+  isValid: boolean
+  error?: string
+  normalizedValue?: string
+}
+
+// 统一的权限更新请求
+export interface EnhancedPermissionRequest {
+  token_id: string
+  permission_type: PermissionType
+  permission_value: string
+  action: 'add' | 'remove'
+}
+
+// 新的权限更新请求结构
+export interface NewPermissionRequest {
+  token_id: string
+  permission_type: PermissionType
+  resource_id: string
+  server_id: string
+  name: string
+  action: 'add' | 'remove'
+}
+
+// 权限更新响应
+export interface PermissionUpdateResponse {
+  token: any
 }

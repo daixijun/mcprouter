@@ -10,9 +10,9 @@ import {
   PermissionCheckResult,
   TokenPermissions,
   PermissionPolicy,
-  PermissionRule,
   PermissionCondition,
-  TokenWithPermissions
+  TokenWithPermissions,
+  PermissionType
 } from '../types/permissions'
 
 /**
@@ -238,7 +238,7 @@ export class PermissionValidator {
         // 检查细粒度权限
         const templateAccess = permissions.prompt_template_access
         if (templateAccess) {
-          const actionPermissions = templateAccess[request.action]
+          const actionPermissions = templateAccess[request.action as keyof typeof templateAccess]
           if (actionPermissions && !actionPermissions.includes(request.resource_id)) {
             return this.denyResult(request, `Action ${request.action} not allowed for template`)
           }
@@ -460,8 +460,28 @@ export function generatePermissionSummary(permissions: TokenPermissions): string
   }
 
   if (parts.length === 0) {
-    return 'Full access'
+    return 'No permissions'
   }
 
   return `Access to ${parts.join(', ')}`
+}
+
+// ============================================================================
+// Token权限管理基础工具函数
+// ============================================================================
+
+/**
+ * 权限类型验证
+ */
+export function validatePermissionType(type: string): PermissionType | null {
+  const validTypes = Object.values(PermissionType)
+  return validTypes.includes(type as PermissionType) ? type as PermissionType : null
+}
+
+/**
+ * 权限值标准化
+ * 将权限值转换为标准格式（小写、去除空格等）
+ */
+export function normalizePermissionValue(permissionValue: string): string {
+  return permissionValue.trim().toLowerCase()
 }

@@ -1,6 +1,18 @@
-// Tool Management Commands - Migrated to Config Files
+// Tool Management Commands
 
 use crate::error::Result;
+use crate::mcp_manager::McpServerManager;
+
+/// Get MCP server manager from global state
+fn get_mcp_manager() -> Result<std::sync::Arc<McpServerManager>> {
+    let service_manager = crate::SERVICE_MANAGER.lock().map_err(|e| {
+        crate::error::McpError::Internal(format!("Failed to lock SERVICE_MANAGER: {}", e))
+    })?;
+
+    service_manager.as_ref()
+        .ok_or_else(|| crate::error::McpError::Internal("SERVICE_MANAGER not initialized".to_string()))
+        .map(|arc| arc.clone())
+}
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn toggle_mcp_server_tool(
@@ -16,11 +28,14 @@ pub async fn toggle_mcp_server_tool(
         enabled
     );
 
-    // Deprecated: tool persistence removed; return informational message
-    tracing::info!("Tool state management is deprecated; tools are cached in memory from server");
+    let mcp_manager = get_mcp_manager()?;
+    mcp_manager.toggle_tool_enabled(&name, &tool_name, enabled).await?;
+
     Ok(format!(
-        "Tool '{}' on server '{}' not changed (memory-only listing)",
-        tool_name, name
+        "Tool '{}' on server '{}' {} successfully",
+        tool_name,
+        name,
+        if enabled { "enabled" } else { "disabled" }
     ))
 }
 
@@ -31,9 +46,11 @@ pub async fn enable_all_mcp_server_tools(
 ) -> Result<String> {
     tracing::info!("Enabling all tools for server: {}", name);
 
-    tracing::info!("Enable-all tools command deprecated; no changes applied");
+    let mcp_manager = get_mcp_manager()?;
+    mcp_manager.enable_all_tools(&name).await?;
+
     Ok(format!(
-        "Tools for server '{}' are managed in-memory only",
+        "All tools for server '{}' enabled successfully",
         name
     ))
 }
@@ -45,9 +62,11 @@ pub async fn disable_all_mcp_server_tools(
 ) -> Result<String> {
     tracing::info!("Disabling all tools for server: {}", name);
 
-    tracing::info!("Disable-all tools command deprecated; no changes applied");
+    let mcp_manager = get_mcp_manager()?;
+    mcp_manager.disable_all_tools(&name).await?;
+
     Ok(format!(
-        "Tools for server '{}' are managed in-memory only",
+        "All tools for server '{}' disabled successfully",
         name
     ))
 }

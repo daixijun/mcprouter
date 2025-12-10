@@ -1,6 +1,7 @@
 use rmcp::model::Tool as McpToolSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use strum::{Display, EnumString};
 
 // Use rmcp Tool model directly instead of custom struct
 pub type McpTool = McpToolSchema;
@@ -91,7 +92,6 @@ pub struct AppConfig {
     pub logging: Option<LoggingSettings>,
     #[serde(default)]
     pub settings: Option<Settings>,
-    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -490,7 +490,311 @@ impl Default for AppConfig {
                 npm_registry: None,
                 command_paths: Default::default(),
             }),
-            mcp_servers: Vec::new(),
         }
     }
+}
+
+// ============================================================================
+// 权限管理相关类型
+// ============================================================================
+
+/// Token权限类型（与前端保持一致）
+#[derive(Debug, Clone, Serialize, Deserialize, Display, EnumString, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionType {
+    #[strum(serialize = "tools")]
+    Tools,
+    #[strum(serialize = "resources")]
+    Resources,
+    #[strum(serialize = "prompts")]
+    Prompts,
+    #[strum(serialize = "prompt_templates")]
+    PromptTemplates,
+}
+
+/// 权限操作类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionAction {
+    Add,
+    Remove,
+}
+
+/// 统一的权限更新请求
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdatePermissionRequest {
+    pub token_id: String,
+    pub permission_type: PermissionType,
+    pub permission_value: String,
+    pub action: PermissionAction,
+}
+
+/// 权限更新请求结构
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTokenPermissionRequest {
+    pub token_id: String,
+    pub resource_type: PermissionType,
+    pub resource_id: String,
+    pub action: PermissionAction,
+}
+
+/// 权限更新响应
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PermissionUpdateResponse {
+    pub token: Token,
+}
+
+/// 简化的权限更新响应（仅返回成功状态）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SimplePermissionUpdateResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// 权限验证结果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PermissionValidationResult {
+    pub is_valid: bool,
+    pub error: Option<String>,
+    pub normalized_value: Option<String>,
+}
+
+// TokenPermissionsResponse has been removed - permissions are now included in list_tokens response
+
+/// 用于向后兼容的旧接口（逐步废弃）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LegacyPermissionUpdateRequest {
+    pub token_id: String,
+    pub permission_type: String, // 旧版本使用字符串
+    pub permission_value: String,
+}
+
+// ============================================================================
+// Token 相关类型（从 token_manager.rs 移动过来统一管理）
+// ============================================================================
+
+/// 默认值：Token 启用状态
+fn default_token_enabled() -> bool {
+    true
+}
+
+/// Token 数据结构（包含权限字段）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Token {
+    pub id: String,                  // 唯一标识符: "tok_" + 32 随机字符
+    pub value: String,               // Token 值: "mcp_" + 64 base64 编码随机字符
+    pub name: String,                // 用户友好的名称
+    pub description: Option<String>, // 可选描述
+    pub created_at: u64,             // 创建时间戳（Unix 时间戳）
+    pub expires_at: Option<u64>,     // 过期时间戳（None = 永不过期）
+    pub last_used_at: Option<u64>,   // 最后使用时间戳
+    pub usage_count: u64,            // 使用次数统计
+    #[serde(default = "default_token_enabled")]
+    pub enabled: bool, // 此 token 是否启用身份验证
+    // 细粒度访问控制的权限字段
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>, // 例如: ["filesystem/*", "database/query"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_resources: Option<Vec<String>>, // 例如: ["filesystem/logs/*"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompts: Option<Vec<String>>, // 例如: ["codegen/*"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompt_templates: Option<Vec<String>>, // 例如: ["prompt-gallery__template_name"]
+}
+
+impl Token {
+    /// Check if token has permission for a specific tool
+    pub fn has_tool_permission(&self, tool_name: &str) -> bool {
+        // If token is disabled, no permissions
+        if !self.enabled {
+            return false;
+        }
+
+        // If token is expired, no permissions
+        if self.is_expired() {
+            return false;
+        }
+
+        // If no specific tool permissions are set, deny all tools
+        let Some(allowed_tools) = &self.allowed_tools else {
+            return false;
+        };
+
+        // Check for exact match only
+        allowed_tools.iter().any(|allowed| {
+            allowed == tool_name
+        })
+    }
+
+    /// Check if token has permission for a specific resource
+    pub fn has_resource_permission(&self, resource_uri: &str) -> bool {
+        // If token is disabled, no permissions
+        if !self.enabled {
+            return false;
+        }
+
+        // If token is expired, no permissions
+        if self.is_expired() {
+            return false;
+        }
+
+        // If no specific resource permissions are set, deny all resources
+        let Some(allowed_resources) = &self.allowed_resources else {
+            return false;
+        };
+
+        // Check for exact match only
+        allowed_resources.iter().any(|allowed| {
+            allowed == resource_uri
+        })
+    }
+
+    /// Check if token has permission for a specific prompt
+    pub fn has_prompt_permission(&self, prompt_name: &str) -> bool {
+        // If token is disabled, no permissions
+        if !self.enabled {
+            return false;
+        }
+
+        // If token is expired, no permissions
+        if self.is_expired() {
+            return false;
+        }
+
+        // If no specific prompt permissions are set, deny all prompts
+        let Some(allowed_prompts) = &self.allowed_prompts else {
+            return false;
+        };
+
+        // Check for exact match only
+        allowed_prompts.iter().any(|allowed| {
+            allowed == prompt_name
+        })
+    }
+
+    /// Check if token has permission for a specific prompt template
+    pub fn has_prompt_template_permission(&self, template_name: &str) -> bool {
+        // If token is disabled, no permissions
+        if !self.enabled {
+            return false;
+        }
+
+        // If token is expired, no permissions
+        if self.is_expired() {
+            return false;
+        }
+
+        // If no specific prompt template permissions are set, deny all templates
+        let Some(allowed_prompt_templates) = &self.allowed_prompt_templates else {
+            return false;
+        };
+
+        // Check for exact match only
+        allowed_prompt_templates.iter().any(|allowed| {
+            allowed == template_name
+        })
+    }
+
+    /// Check if token is expired
+    pub fn is_expired(&self) -> bool {
+        if let Some(expires_at) = self.expires_at {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            now >= expires_at
+        } else {
+            false
+        }
+    }
+}
+
+/// Token 创建请求
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateTokenRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub expires_in: Option<u64>, // 秒数
+    // 权限字段
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_resources: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompts: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompt_templates: Option<Vec<String>>,
+}
+
+/// Token 创建响应
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateTokenResponse {
+    pub token: Token,
+}
+
+/// Token 更新请求
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTokenRequest {
+    pub id: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    // 权限字段 - 使用 Option<Vec<String>> 来区分 "不更新" 和 "设置为空"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_resources: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompts: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_prompt_templates: Option<Vec<String>>,
+}
+
+/// Token 更新响应
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTokenResponse {
+    pub token: Token,
+}
+
+/// Token 统计信息
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TokenStats {
+    pub total_count: u64,
+    pub active_count: u64,
+    pub expired_count: u64,
+    pub total_usage: u64,
+    pub last_used: Option<u64>,
+}
+
+/// 清理结果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CleanupResult {
+    pub removed_count: u64,
+    pub message: String,
+}
+
+/// 验证结果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidationResult {
+    pub valid: bool,
+    pub token_info: Option<Token>,
+    pub message: String,
+}
+
+/// 可用权限项
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PermissionItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+/// 可用权限集合
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AvailablePermissions {
+    pub tools: Vec<PermissionItem>,
+    pub resources: Vec<PermissionItem>,
+    pub prompts: Vec<PermissionItem>,
+    pub prompt_templates: Option<Vec<PermissionItem>>,
 }

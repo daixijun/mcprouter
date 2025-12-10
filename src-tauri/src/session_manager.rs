@@ -1,12 +1,255 @@
-use crate::token_manager::Token;
-use dashmap::DashMap;
+// SQLite-based Session Manager implementation
+
+use crate::error::{McpError, Result};
+use crate::storage::session_storage::{SessionData, SessionStorage};
+// use crate::storage::StorageError;  // 暂时注释掉，后续可能需要
+use crate::types::Token;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-/// Session信息，包含权限数据
+// Type alias for backward compatibility
+pub type SessionManager = SessionManagerSqlite;
+
+// Global session manager instance (safe for Rust 2024)
+static SESSION_MANAGER: std::sync::Mutex<Option<Arc<SessionManager>>> = std::sync::Mutex::new(None);
+static SESSION_MANAGER_INIT: std::sync::Once = std::sync::Once::new();
+
+/// Initialize the global session manager
+pub fn init_session_manager(manager: Arc<SessionManager>) {
+    SESSION_MANAGER_INIT.call_once(|| {
+        let mut guard = SESSION_MANAGER.lock().unwrap();
+        *guard = Some(manager);
+    });
+}
+
+/// Get the global session manager
+pub fn get_session_manager() -> Option<Arc<SessionManager>> {
+    let guard = SESSION_MANAGER.lock().unwrap();
+    guard.clone()
+}
+
+/// SQLite-based Session Manager
+pub struct SessionManagerSqlite {
+    storage: Arc<SessionStorage>,
+    cleanup_interval: Duration,
+    default_idle_timeout: Duration,
+}
+
+impl SessionManagerSqlite {
+    /// Create a new SessionManager with SQLite backend
+    pub async fn new(pool: sqlx::SqlitePool) -> Result<Self> {
+        // SessionStorage::new will handle table initialization via migrations
+        let storage = Arc::new(SessionStorage::new(pool));
+
+        Ok(Self {
+            storage,
+            cleanup_interval: Duration::from_secs(300), // 5 minutes
+            default_idle_timeout: Duration::from_secs(3600), // 1 hour
+        })
+    }
+
+    /// Create a new SessionManager with custom configuration
+    pub async fn new_with_config(
+        pool: sqlx::SqlitePool,
+        cleanup_interval: Duration,
+        idle_timeout: Duration,
+    ) -> Result<Self> {
+        // SessionStorage::new will handle table initialization via migrations
+        let storage = Arc::new(SessionStorage::new(pool));
+
+        Ok(Self {
+            storage,
+            cleanup_interval,
+            default_idle_timeout: idle_timeout,
+        })
+    }
+
+    /// Create a new session and return its ID
+    pub fn create_session(&self, token: Token) -> String {
+        let session_id = Uuid::new_v4().to_string();
+
+        // Convert token expiration time to session expiration time
+        let expires_at = token.expires_at.map(|timestamp| {
+            chrono::DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_else(chrono::Utc::now)
+        });
+
+        // Create session using the storage - block on async operation for now
+        // This prevents tokio task queue buildup
+        let storage_clone = self.storage.clone();
+        let session_id_clone = session_id.clone();
+        let token_id = token.id.clone();
+        let token_id_for_log = token_id.clone(); // Clone for logging
+
+        // Use block_in_place to avoid stack overflow
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                storage_clone
+                    .create_session(
+                        session_id_clone,
+                        &token_id,
+                        expires_at,
+                        None, // No additional metadata for now
+                    )
+                    .await
+            })
+        });
+
+        match result {
+            Ok(_) => {
+                tracing::debug!(
+                    "Created SQLite session {} for token {}",
+                    session_id,
+                    token_id_for_log
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to create session in database: {}", e);
+            }
+        }
+
+        session_id
+    }
+
+    /// Get session information by ID
+    pub fn get_session(&self, session_id: &str) -> Option<SessionData> {
+        // For synchronous access, we need to block on the async call
+        let storage = self.storage.clone();
+        let session_id = session_id.to_string();
+
+        // Use block_in_place to avoid stack overflow
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(async move { storage.get_session(&session_id).await })
+        });
+
+        match result {
+            Ok(session_data) => session_data,
+            Err(e) => {
+                tracing::error!("Failed to get session from database: {}", e);
+                None
+            }
+        }
+    }
+
+    /// Get session asynchronously (recommended method)
+    pub async fn get_session_async(&self, session_id: &str) -> Result<Option<SessionData>> {
+        self.storage
+            .get_session(session_id)
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session error: {}", e)))
+    }
+
+    /// Update session last accessed time
+    pub fn update_access(&self, session_id: &str) {
+        let storage = self.storage.clone();
+        let session_id = session_id.to_string();
+
+        // Use spawn with a lower priority to prevent stack overflow
+        tokio::task::spawn_local(async move {
+            if let Err(e) = storage.update_access_time(&session_id).await {
+                tracing::error!("Failed to update session access time: {}", e);
+            }
+        });
+    }
+
+    /// Update session metadata
+    pub fn update_metadata(&self, session_id: &str, metadata: serde_json::Value) {
+        let storage = self.storage.clone();
+        let session_id = session_id.to_string();
+
+        // Use spawn with a lower priority to prevent stack overflow
+        tokio::task::spawn_local(async move {
+            if let Err(e) = storage.update_metadata(&session_id, metadata).await {
+                tracing::error!("Failed to update session metadata: {}", e);
+            }
+        });
+    }
+
+    /// Delete a session
+    pub async fn delete_session(&self, session_id: &str) -> Result<()> {
+        self.storage
+            .delete_session(session_id)
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session delete error: {}", e)))
+    }
+
+    /// Clean up expired sessions
+    pub async fn cleanup_expired(&self) -> Result<usize> {
+        self.storage
+            .cleanup_expired_sessions()
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session cleanup error: {}", e)))
+    }
+
+    /// Clean up idle sessions
+    pub async fn cleanup_idle(&self, idle_timeout: Option<Duration>) -> Result<usize> {
+        let timeout = idle_timeout.unwrap_or(self.default_idle_timeout);
+        self.storage
+            .cleanup_idle_sessions(timeout)
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session cleanup idle error: {}", e)))
+    }
+
+    /// List all active sessions
+    pub async fn list_sessions(&self) -> Result<Vec<SessionData>> {
+        self.storage
+            .list_sessions()
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session list error: {}", e)))
+    }
+
+    /// Get sessions for a specific token
+    pub async fn get_sessions_by_token(&self, token_id: &str) -> Result<Vec<SessionData>> {
+        self.storage
+            .get_sessions_by_token(token_id)
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session token query error: {}", e)))
+    }
+
+    /// Get total session count
+    pub async fn get_session_count(&self) -> Result<i64> {
+        self.storage
+            .get_session_count()
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session count error: {}", e)))
+    }
+
+    /// Check if session exists and is valid
+    pub async fn is_session_valid(&self, session_id: &str) -> bool {
+        match self
+            .storage
+            .get_session(session_id)
+            .await
+            .map_err(|e| McpError::DatabaseError(format!("Session error: {}", e)))
+        {
+            Ok(Some(session)) => {
+                let now = chrono::Utc::now();
+                // Check if session is expired
+                if let Some(expires_at) = session.expires_at {
+                    now <= expires_at
+                } else {
+                    true // No expiration time means session doesn't expire
+                }
+            }
+            Ok(None) => false,
+            Err(_) => false,
+        }
+    }
+
+    /// Get cleanup interval
+    pub fn cleanup_interval(&self) -> Duration {
+        self.cleanup_interval
+    }
+
+    /// Get default idle timeout
+    pub fn default_idle_timeout(&self) -> Duration {
+        self.default_idle_timeout
+    }
+}
+
+/// Session information wrapper for compatibility with existing code
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SessionInfo {
     pub id: String,
     pub token: Token,
@@ -15,9 +258,7 @@ pub struct SessionInfo {
     pub expires_at: Option<Instant>,
 }
 
-#[allow(dead_code)]
 impl SessionInfo {
-    /// 创建新的session
     pub fn new(token: Token, expires_at: Option<Instant>) -> Self {
         let now = Instant::now();
         Self {
@@ -29,256 +270,51 @@ impl SessionInfo {
         }
     }
 
-    /// 检查session是否已过期
-    pub fn is_expired(&self) -> bool {
-        if let Some(expires_at) = self.expires_at {
-            Instant::now() > expires_at
-        } else {
-            // 使用token的过期时间
-            self.token.is_expired()
-        }
-    }
-
-    /// 更新最后访问时间
     pub fn update_access(&mut self) {
         self.last_accessed = Instant::now();
     }
 
-    /// 检查session是否在指定的空闲时间内被访问过
+    pub fn is_expired(&self) -> bool {
+        if let Some(expires_at) = self.expires_at {
+            Instant::now() > expires_at
+        } else {
+            self.token.is_expired()
+        }
+    }
+
     pub fn is_idle_longer_than(&self, idle_timeout: Duration) -> bool {
         self.last_accessed.elapsed() > idle_timeout
     }
 }
 
-/// Session管理器，负责管理连接级的权限缓存
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct SessionManager {
-    sessions: Arc<DashMap<String, SessionInfo>>,
-    cleanup_interval: Duration,
-    default_idle_timeout: Duration,
-}
-
-#[allow(dead_code)]
-impl SessionManager {
-    /// 创建新的SessionManager
-    pub fn new() -> Self {
+/// Convert SessionData to SessionInfo
+impl From<SessionData> for SessionInfo {
+    fn from(data: SessionData) -> Self {
+        // For now, we can't fully convert SessionData to SessionInfo
+        // because we need the full Token object
+        // This would require a TokenManager dependency
         Self {
-            sessions: Arc::new(DashMap::new()),
-            cleanup_interval: Duration::from_secs(300), // 5分钟清理一次
-            default_idle_timeout: Duration::from_secs(3600), // 1小时空闲超时
+            id: data.id,
+            token: Token {
+                id: data.token_id.clone(),
+                name: String::new(), // Would need to fetch from database
+                value: String::new(),
+                description: None,
+                created_at: data.created_at.timestamp() as u64,
+                expires_at: data.expires_at.map(|dt| dt.timestamp() as u64),
+                last_used_at: Some(data.last_accessed.timestamp() as u64),
+                usage_count: 0,
+                enabled: true,
+                allowed_tools: None,
+                allowed_resources: None,
+                allowed_prompts: None,
+                allowed_prompt_templates: None,
+            },
+            created_at: std::time::Instant::now(),
+            last_accessed: std::time::Instant::now(),
+            expires_at: data.expires_at.map(|dt| {
+                std::time::Instant::now() + (dt - chrono::Utc::now()).to_std().unwrap_or_default()
+            }),
         }
     }
-
-    /// 创建带有自定义配置的SessionManager
-    pub fn new_with_config(cleanup_interval: Duration, idle_timeout: Duration) -> Self {
-        Self {
-            sessions: Arc::new(DashMap::new()),
-            cleanup_interval,
-            default_idle_timeout: idle_timeout,
-        }
-    }
-
-    /// 创建新的session并返回session ID
-    pub fn create_session(&self, token: Token) -> String {
-        let expires_at = token.expires_at.map(|timestamp| {
-            Instant::now()
-                + Duration::from_secs(
-                    timestamp.saturating_sub(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                    ),
-                )
-        });
-
-        let session = SessionInfo::new(token, expires_at);
-        let session_id = session.id.clone();
-
-        tracing::info!(
-            "Creating session {} for token {}",
-            session_id,
-            session.token.id
-        );
-        self.sessions.insert(session_id.clone(), session);
-
-        // 启动后台清理任务
-        self.start_cleanup_task();
-
-        session_id
-    }
-
-    /// 获取session信息
-    pub fn get_session(&self, session_id: &str) -> Option<SessionInfo> {
-        if let Some(mut session) = self.sessions.get_mut(session_id) {
-            if session.is_expired() {
-                tracing::info!("Session {} expired, removing", session_id);
-                self.sessions.remove(session_id);
-                return None;
-            }
-
-            session.update_access();
-            Some(session.clone())
-        } else {
-            None
-        }
-    }
-
-    /// 验证session并检查工具权限
-    pub fn check_tool_permission(&self, session_id: &str, tool_name: &str) -> bool {
-        if let Some(session) = self.get_session(session_id) {
-            session.token.has_tool_permission(tool_name)
-        } else {
-            false
-        }
-    }
-
-    /// 验证session并检查资源权限
-    pub fn check_resource_permission(&self, session_id: &str, resource_uri: &str) -> bool {
-        if let Some(session) = self.get_session(session_id) {
-            session.token.has_resource_permission(resource_uri)
-        } else {
-            false
-        }
-    }
-
-    /// 验证session并检查提示词权限
-    pub fn check_prompt_permission(&self, session_id: &str, prompt_name: &str) -> bool {
-        if let Some(session) = self.get_session(session_id) {
-            session.token.has_prompt_permission(prompt_name)
-        } else {
-            false
-        }
-    }
-
-    /// 验证session并检查提示词模板权限
-    pub fn check_prompt_template_permission(&self, session_id: &str, template_name: &str) -> bool {
-        if let Some(session) = self.get_session(session_id) {
-            session.token.has_prompt_template_permission(template_name)
-        } else {
-            false
-        }
-    }
-
-    /// 移除session
-    pub fn remove_session(&self, session_id: &str) -> bool {
-        tracing::info!("Removing session {}", session_id);
-        self.sessions.remove(session_id).is_some()
-    }
-
-    /// 获取活跃session数量
-    pub fn active_sessions_count(&self) -> usize {
-        self.sessions.len()
-    }
-
-    /// 清理过期和空闲的sessions
-    pub fn cleanup_expired_sessions(&self) -> usize {
-        let mut removed_count = 0;
-        let sessions_to_remove: Vec<String> = self
-            .sessions
-            .iter()
-            .filter(|entry| {
-                let session = entry.value();
-                session.is_expired() || session.is_idle_longer_than(self.default_idle_timeout)
-            })
-            .map(|entry| entry.key().clone())
-            .collect();
-
-        for session_id in sessions_to_remove {
-            if self.sessions.remove(&session_id).is_some() {
-                removed_count += 1;
-            }
-        }
-
-        if removed_count > 0 {
-            tracing::info!("Cleaned up {} expired/idle sessions", removed_count);
-        }
-
-        removed_count
-    }
-
-    /// 启动后台清理任务
-    fn start_cleanup_task(&self) {
-        let sessions = Arc::clone(&self.sessions);
-        let cleanup_interval = self.cleanup_interval;
-        let idle_timeout = self.default_idle_timeout;
-
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(cleanup_interval);
-
-            loop {
-                interval.tick().await;
-
-                let sessions_to_remove: Vec<String> = sessions
-                    .iter()
-                    .filter(|entry| {
-                        let session = entry.value();
-                        session.is_expired() || session.is_idle_longer_than(idle_timeout)
-                    })
-                    .map(|entry| entry.key().clone())
-                    .collect();
-
-                for session_id in sessions_to_remove {
-                    sessions.remove(&session_id);
-                }
-            }
-        });
-    }
-
-    /// 获取所有活跃session的统计信息
-    pub fn get_session_stats(&self) -> SessionStats {
-        let mut stats = SessionStats::default();
-        let now = Instant::now();
-
-        for session in self.sessions.iter() {
-            let session = session.value();
-            stats.total_sessions += 1;
-
-            if session.is_expired() {
-                stats.expired_sessions += 1;
-            } else if session.is_idle_longer_than(self.default_idle_timeout) {
-                stats.idle_sessions += 1;
-            } else {
-                stats.active_sessions += 1;
-            }
-
-            let age = now.duration_since(session.created_at);
-            stats.average_session_age += age.as_secs();
-        }
-
-        if stats.total_sessions > 0 {
-            stats.average_session_age /= stats.total_sessions as u64;
-        }
-
-        stats
-    }
-}
-
-/// Session统计信息
-#[derive(Debug, Default)]
-#[allow(dead_code)]
-pub struct SessionStats {
-    pub total_sessions: usize,
-    pub active_sessions: usize,
-    pub expired_sessions: usize,
-    pub idle_sessions: usize,
-    pub average_session_age: u64,
-}
-
-impl Default for SessionManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// 全局SessionManager实例
-#[allow(dead_code)]
-static SESSION_MANAGER: std::sync::LazyLock<SessionManager> =
-    std::sync::LazyLock::new(SessionManager::new);
-
-/// 获取全局SessionManager实例
-#[allow(dead_code)]
-pub fn get_session_manager() -> &'static SessionManager {
-    &SESSION_MANAGER
 }

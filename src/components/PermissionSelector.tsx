@@ -106,7 +106,6 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       children: (
         <PermissionTab
           type='tools'
-          permissions={permissionStats.tools.items.map((item) => item.id)}
           selectedPermissions={permissionStats.tools.selectedItems}
           onChange={(permissions) =>
             handlePermissionChange('tools', permissions)
@@ -138,7 +137,6 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       children: (
         <PermissionTab
           type='resources'
-          permissions={permissionStats.resources.items.map((item) => item.id)}
           selectedPermissions={permissionStats.resources.selectedItems}
           onChange={(permissions) =>
             handlePermissionChange('resources', permissions)
@@ -169,7 +167,6 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       children: (
         <PermissionTab
           type='prompts'
-          permissions={permissionStats.prompts.items.map((item) => item.id)}
           selectedPermissions={permissionStats.prompts.selectedItems}
           onChange={(permissions) =>
             handlePermissionChange('prompts', permissions)
@@ -200,7 +197,6 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({
       children: (
         <PermissionTab
           type='prompt_templates'
-          permissions={permissionStats.prompt_templates.items.map((item) => item.id)}
           selectedPermissions={permissionStats.prompt_templates.selectedItems}
           onChange={(permissions) =>
             handlePermissionChange('prompt_templates', permissions)

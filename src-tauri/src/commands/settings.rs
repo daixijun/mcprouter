@@ -1,11 +1,8 @@
 // System Settings Commands
 
-use crate::aggregator::McpAggregator;
 use crate::config as config_mod;
 use crate::error::{McpError, Result};
-use crate::{
-    build_main_tray, types, AGGREGATOR, MCP_CLIENT_MANAGER, SERVICE_MANAGER, TOKEN_MANAGER,
-};
+use crate::{build_main_tray, types, AGGREGATOR, MCP_CLIENT_MANAGER, SERVICE_MANAGER, TOKEN_MANAGER};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -131,8 +128,12 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             .unwrap_or_else(|_| "Failed to serialize".to_string())
     );
 
+    // Load current config
+    let mut config = config_mod::AppConfig::load()
+        .map_err(|e| McpError::ConfigError(format!("Failed to load config: {}", e)))?;
+
     // Snapshot old config before update
-    let prev_config = SERVICE_MANAGER.get_config().await;
+    let prev_config = config.clone();
     let tray_old = prev_config
         .settings
         .as_ref()
@@ -140,205 +141,175 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         .and_then(|t| t.enabled)
         .unwrap_or(true);
 
-    // Update tray handling in save_settings to create/hide tray dynamically
-    // Apply updates under write-lock to avoid overwriting concurrent changes (e.g., theme)
-    SERVICE_MANAGER
-        .update_config(|config| {
-            // Handle settings from the payload
-            let settings_obj = match settings.get("settings") {
-                Some(Value::Object(o)) => o.clone(),
-                _ => settings
-                    .as_object()
-                    .unwrap_or(&serde_json::Map::new())
-                    .clone(),
-            };
+    // Parse the JSON payload
+    let settings_obj = match settings.as_object() {
+        Some(obj) => obj,
+        None => {
+            return Err(McpError::ConfigError("Invalid settings payload: not an object".to_string()));
+        }
+    };
 
-            // Ensure settings exists
-            if config.settings.is_none() {
-                config.settings = Some(crate::Settings {
-                    theme: Some("auto".to_string()),
-                    language: Some("zh-CN".to_string()),
-                    autostart: Some(false),
-                    system_tray: Some(crate::SystemTraySettings {
-                        enabled: Some(true),
-                        close_to_tray: Some(false),
-                        start_to_tray: Some(false),
-                    }),
-                    uv_index_url: None,
-                    npm_registry: None,
-                    command_paths: Default::default(),
+    // Update configuration
+    {
+        // Ensure settings exists
+        if config.settings.is_none() {
+            config.settings = Some(types::Settings {
+                theme: Some("auto".to_string()),
+                language: Some("en-US".to_string()),
+                autostart: Some(false),
+                system_tray: Some(types::SystemTraySettings {
+                    enabled: Some(true),
+                    close_to_tray: Some(false),
+                    start_to_tray: Some(false),
+                }),
+                uv_index_url: None,
+                npm_registry: None,
+                command_paths: std::collections::HashMap::new(),
+            });
+        }
+        let settings_mut = config.settings.as_mut().unwrap();
+
+        // Theme
+        if let Some(Value::String(theme)) = settings_obj.get("theme") {
+            settings_mut.theme = Some(theme.clone());
+        }
+
+        // Language
+        if let Some(Value::String(language)) = settings_obj.get("language") {
+            settings_mut.language = Some(language.clone());
+        }
+
+        // Autostart (flag only; actual OS integration via separate command)
+        if let Some(Value::Bool(b)) = settings_obj.get("autostart") {
+            settings_mut.autostart = Some(*b);
+        }
+
+        // System tray subobject
+        if let Some(Value::Object(tray_obj)) = settings_obj.get("system_tray") {
+            if settings_mut.system_tray.is_none() {
+                settings_mut.system_tray = Some(types::SystemTraySettings {
+                    enabled: Some(true),
+                    close_to_tray: Some(false),
+                    start_to_tray: Some(false),
                 });
             }
-            let settings_mut = config.settings.as_mut().unwrap();
+            let tray_mut = settings_mut.system_tray.as_mut().unwrap();
 
-            // Theme
-            if let Some(Value::String(theme)) = settings_obj.get("theme") {
-                settings_mut.theme = Some(theme.clone());
-            }
+            // Handle enabled status first
+            if let Some(Value::Bool(enabled)) = tray_obj.get("enabled") {
+                tray_mut.enabled = Some(*enabled);
 
-            // Language
-            if let Some(Value::String(language)) = settings_obj.get("language") {
-                settings_mut.language = Some(language.clone());
-            }
-
-            // Autostart (flag only; actual OS integration via separate command)
-            if let Some(Value::Bool(b)) = settings_obj.get("autostart") {
-                settings_mut.autostart = Some(*b);
-            }
-
-            // System tray subobject
-            if let Some(Value::Object(tray_obj)) = settings_obj.get("system_tray") {
-                if settings_mut.system_tray.is_none() {
-                    settings_mut.system_tray = Some(crate::SystemTraySettings {
-                        enabled: Some(true),
-                        close_to_tray: Some(false),
-                        start_to_tray: Some(false),
-                    });
-                }
-                let tray_mut = settings_mut.system_tray.as_mut().unwrap();
-
-                // Handle enabled status first
-                if let Some(Value::Bool(enabled)) = tray_obj.get("enabled") {
-                    tray_mut.enabled = Some(*enabled);
-
-                    // If system tray is disabled, automatically disable "close to tray" feature
-                    if !*enabled {
-                        tray_mut.close_to_tray = Some(false);
-                        tracing::debug!(
-                            "System tray disabled, automatically disabling close-to-tray feature"
-                        );
-                    }
-                }
-
-                // Only allow setting "close to tray" when system tray is enabled
-                let tray_enabled = tray_mut.enabled.unwrap_or(true);
-                if tray_enabled {
-                    if let Some(Value::Bool(close_to_tray)) = tray_obj.get("close_to_tray") {
-                        tray_mut.close_to_tray = Some(*close_to_tray);
-                    }
-                }
-
-                if let Some(Value::Bool(start_to_tray)) = tray_obj.get("start_to_tray") {
-                    tray_mut.start_to_tray = Some(*start_to_tray);
+                // If system tray is disabled, automatically disable "close to tray" feature
+                if !*enabled {
+                    tray_mut.close_to_tray = Some(false);
+                    tracing::debug!(
+                        "System tray disabled, automatically disabling close-to-tray feature"
+                    );
                 }
             }
 
-            // Package mirror settings
-            if let Some(Value::String(uv_url)) = settings_obj.get("uv_index_url") {
-                settings_mut.uv_index_url = Some(uv_url.clone());
-            } else if let Some(Value::Null) = settings_obj.get("uv_index_url") {
-                settings_mut.uv_index_url = None;
-            }
-
-            if let Some(Value::String(npm_reg)) = settings_obj.get("npm_registry") {
-                settings_mut.npm_registry = Some(npm_reg.clone());
-            } else if let Some(Value::Null) = settings_obj.get("npm_registry") {
-                settings_mut.npm_registry = None;
-            }
-
-            // Command paths settings - this is the key fix for the issue!
-            if let Some(Value::Object(cmd_paths)) = settings_obj.get("command_paths") {
-                let mut new_command_paths = std::collections::HashMap::new();
-                for (key, value) in cmd_paths {
-                    if let Value::String(path) = value {
-                        new_command_paths.insert(key.clone(), path.clone());
-                    }
-                }
-                tracing::debug!("Updating command_paths: {:?}", new_command_paths);
-                settings_mut.command_paths = new_command_paths;
-            } else if let Some(cmd_paths) = settings
-                .get("settings")
-                .and_then(|s| s.as_object())
-                .and_then(|s| s.get("command_paths"))
-                .and_then(|c| c.as_object())
-            {
-                // Handle case where command_paths is in the nested settings object
-                let mut new_command_paths = std::collections::HashMap::new();
-                for (key, value) in cmd_paths {
-                    if let Value::String(path) = value {
-                        new_command_paths.insert(key.clone(), path.clone());
-                    }
-                }
-                tracing::debug!(
-                    "Updating command_paths from nested settings: {:?}",
-                    new_command_paths
-                );
-                settings_mut.command_paths = new_command_paths;
-            }
-
-            // Logging config (support top-level payload; level string and file_name string)
-            let logging_obj = match settings.get("logging") {
-                Some(Value::Object(o)) => Some(o.clone()),
-                _ => settings_obj
-                    .get("logging")
-                    .and_then(|l| l.as_object())
-                    .cloned(),
-            };
-
-            if let Some(logging_obj) = logging_obj {
-                // Ensure logging exists
-                if config.logging.is_none() {
-                    config.logging = Some(crate::LoggingSettings {
-                        level: "info".to_string(),
-                        file_name: Some("mcprouter.log".to_string()),
-                    });
-                }
-                let logging_mut = config.logging.as_mut().unwrap();
-
-                // level as string
-                if let Some(Value::String(level)) = logging_obj.get("level") {
-                    logging_mut.level = level.clone();
-                }
-
-                // file_name as string (optional)
-                if let Some(Value::String(file_name)) = logging_obj.get("file_name") {
-                    logging_mut.file_name = Some(file_name.clone());
-                } else if let Some(Value::Null) = logging_obj.get("file_name") {
-                    logging_mut.file_name = None;
+            // Only allow setting "close to tray" when system tray is enabled
+            let tray_enabled = tray_mut.enabled.unwrap_or(true);
+            if tray_enabled {
+                if let Some(Value::Bool(close_to_tray)) = tray_obj.get("close_to_tray") {
+                    tray_mut.close_to_tray = Some(*close_to_tray);
                 }
             }
 
-            // Server config (support if provided at top-level payload)
-            if let Some(Value::Object(server_obj)) = settings.get("server") {
-                tracing::debug!("Processing server config: {:?}", server_obj);
+            if let Some(Value::Bool(start_to_tray)) = tray_obj.get("start_to_tray") {
+                tray_mut.start_to_tray = Some(*start_to_tray);
+            }
+        }
 
-                if let Some(Value::String(host)) = server_obj.get("host") {
-                    config.server.host = host.clone();
-                    tracing::debug!("Updated host: {}", host);
-                }
-                if let Some(Value::Number(port)) = server_obj.get("port") {
-                    if let Some(p) = port.as_u64() {
-                        config.server.port = p as u16;
-                        tracing::debug!("Updated port: {}", p);
-                    }
-                }
-                if let Some(Value::Number(max_conn)) = server_obj.get("max_connections") {
-                    if let Some(mc) = max_conn.as_u64() {
-                        config.server.max_connections = mc as usize;
-                        tracing::debug!("Updated max_connections: {}", mc);
-                    }
-                }
-                if let Some(Value::Number(timeout)) = server_obj.get("timeout_seconds") {
-                    if let Some(ts) = timeout.as_u64() {
-                        config.server.timeout_seconds = ts;
-                        tracing::debug!("Updated timeout_seconds: {}", ts);
-                    }
-                }
-                if let Some(Value::Bool(auth)) = server_obj.get("auth") {
-                    config.server.auth = *auth;
-                    tracing::debug!("Updated auth: {}", auth);
-                } else {
-                    tracing::warn!("auth field not found in server config or not a boolean");
+        // Package mirror settings
+        if let Some(Value::String(uv_url)) = settings_obj.get("uv_index_url") {
+            settings_mut.uv_index_url = Some(uv_url.clone());
+        } else if let Some(Value::Null) = settings_obj.get("uv_index_url") {
+            settings_mut.uv_index_url = None;
+        }
+
+        if let Some(Value::String(npm_reg)) = settings_obj.get("npm_registry") {
+            settings_mut.npm_registry = Some(npm_reg.clone());
+        } else if let Some(Value::Null) = settings_obj.get("npm_registry") {
+            settings_mut.npm_registry = None;
+        }
+
+        // Command paths settings
+        if let Some(Value::Object(cmd_paths)) = settings_obj.get("command_paths") {
+            let mut new_command_paths = std::collections::HashMap::new();
+            for (key, value) in cmd_paths {
+                if let Value::String(path) = value {
+                    new_command_paths.insert(key.clone(), path.clone());
                 }
             }
+            tracing::debug!("Updating command_paths: {:?}", new_command_paths);
+            settings_mut.command_paths = new_command_paths;
+        }
 
-            // Security settings removed
-        })
-        .await?;
+        // Logging config
+        if let Some(Value::Object(logging_obj)) = settings.get("logging") {
+            // Ensure logging exists
+            if config.logging.is_none() {
+                config.logging = Some(types::LoggingSettings {
+                    level: "info".to_string(),
+                    file_name: Some("mcprouter.log".to_string()),
+                });
+            }
+            let logging_mut = config.logging.as_mut().unwrap();
+
+            // level as string
+            if let Some(Value::String(level)) = logging_obj.get("level") {
+                logging_mut.level = level.clone();
+            }
+
+            // file_name as string (optional)
+            if let Some(Value::String(file_name)) = logging_obj.get("file_name") {
+                logging_mut.file_name = Some(file_name.clone());
+            } else if let Some(Value::Null) = logging_obj.get("file_name") {
+                logging_mut.file_name = None;
+            }
+        }
+
+        // Server config
+        if let Some(Value::Object(server_obj)) = settings.get("server") {
+            tracing::debug!("Processing server config: {:?}", server_obj);
+
+            if let Some(Value::String(host)) = server_obj.get("host") {
+                config.server.host = host.clone();
+                tracing::debug!("Updated host: {}", host);
+            }
+            if let Some(Value::Number(port)) = server_obj.get("port") {
+                if let Some(p) = port.as_u64() {
+                    config.server.port = p as u16;
+                    tracing::debug!("Updated port: {}", p);
+                }
+            }
+            if let Some(Value::Number(max_conn)) = server_obj.get("max_connections") {
+                if let Some(mc) = max_conn.as_u64() {
+                    config.server.max_connections = mc as usize;
+                    tracing::debug!("Updated max_connections: {}", mc);
+                }
+            }
+            if let Some(Value::Number(timeout)) = server_obj.get("timeout_seconds") {
+                if let Some(ts) = timeout.as_u64() {
+                    config.server.timeout_seconds = ts;
+                    tracing::debug!("Updated timeout_seconds: {}", ts);
+                }
+            }
+            if let Some(Value::Bool(auth)) = server_obj.get("auth") {
+                config.server.auth = *auth;
+                tracing::debug!("Updated auth: {}", auth);
+            } else {
+                tracing::warn!("auth field not found in server config or not a boolean");
+            }
+        }
+    }
+
+    // Save configuration
+    config.save()
+        .map_err(|e| McpError::ConfigError(format!("Failed to save config: {}", e)))?;
 
     // Post-save: detect tray visibility change and server restarts
-    let config = SERVICE_MANAGER.get_config().await;
-
     let tray_new = config
         .settings
         .as_ref()
@@ -356,7 +327,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
     if server_config_changed {
         tracing::info!("Server configuration changed (restarting aggregator with new config)...");
 
-        // 停止现有的聚合器
+        // Stop existing aggregator
         let aggregator_clone = {
             let aggregator_guard = AGGREGATOR.lock().unwrap();
             (*aggregator_guard).clone()
@@ -367,14 +338,13 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             aggregator.trigger_shutdown().await;
         }
 
-        // 等待一段时间确保完全关闭
+        // Wait for shutdown
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        // 从最新配置创建新的聚合器
-        let new_config = SERVICE_MANAGER.get_config().await;
-        let server_config = Arc::new(new_config.server.clone());
+        // Create new aggregator from latest config
+        let server_config = Arc::new(config.server.clone());
 
-        // 获取 TokenManager
+        // Get TokenManager
         let token_manager = {
             let token_manager_guard = TOKEN_MANAGER.read().await;
             (*token_manager_guard)
@@ -383,25 +353,30 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 .clone()
         };
 
-        // 创建新的聚合器实例
+        // Get service manager
+        let service_manager = SERVICE_MANAGER.lock().unwrap().as_ref()
+            .ok_or_else(|| McpError::Internal("SERVICE_MANAGER not initialized".to_string()))?
+            .clone();
+
+        // Create new aggregator instance
         tracing::debug!(
             "Creating new aggregator with updated configuration (auth: {})",
             server_config.auth
         );
-        let new_aggregator = Arc::new(McpAggregator::new(
-            SERVICE_MANAGER.clone(),
+        let new_aggregator = Arc::new(crate::aggregator::McpAggregator::new(
+            service_manager,
             MCP_CLIENT_MANAGER.clone(),
             server_config,
             token_manager,
         ));
 
-        // 更新全局聚合器状态
+        // Update global aggregator state
         {
             let mut aggregator_guard = AGGREGATOR.lock().unwrap();
             *aggregator_guard = Some(new_aggregator.clone());
         }
 
-        // 重新启动聚合器
+        // Restart aggregator
         tracing::info!("Starting new aggregator with new configuration...");
         if let Err(e) = new_aggregator.start().await {
             tracing::error!("Failed to start new aggregator: {}", e);
@@ -412,62 +387,38 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         } else {
             tracing::info!("Aggregator restarted successfully with new configuration");
         }
-        if tray_changed {
-            tracing::debug!(
-                "System tray configuration changed during server restart, enabled: {}",
-                tray_new
-            );
+    }
 
-            if tray_new {
-                if let Some(tray) = app.tray_by_id("main_tray") {
-                    let _ = tray.set_visible(true);
-                    tracing::debug!("Tray visibility updated: visible");
-                } else {
-                    // Rebuild tray if it was not created at startup
-                    if let Err(e) = build_main_tray(&app) {
-                        tracing::error!("Failed to rebuild system tray: {}", e);
-                    } else {
-                        tracing::debug!("System tray rebuilt and made visible");
-                    }
-                }
+    // Handle tray changes
+    if tray_changed {
+        tracing::debug!("System tray configuration changed, enabled: {}", tray_new);
+
+        if tray_new {
+            if let Some(tray) = app.tray_by_id("main_tray") {
+                let _ = tray.set_visible(true);
+                tracing::debug!("Tray visibility updated: visible");
             } else {
-                if let Some(tray) = app.tray_by_id("main_tray") {
-                    let _ = tray.set_visible(false);
+                // Rebuild tray if it was not created at startup
+                if let Err(e) = build_main_tray(&app) {
+                    tracing::error!("Failed to rebuild system tray: {}", e);
+                } else {
+                    tracing::debug!("System tray rebuilt and made visible");
                 }
-                tracing::debug!("Tray icon hidden after aggregator restart");
             }
-
-            // Config has been automatically saved to file via SERVICE_MANAGER.update_config
+        } else {
+            if let Some(tray) = app.tray_by_id("main_tray") {
+                let _ = tray.set_visible(false);
+            }
+            tracing::debug!("Tray icon hidden");
         }
+    }
+
+    if server_config_changed {
         Ok(format!(
             "Settings saved successfully. Aggregator restarted on {}:{}",
             config.server.host, config.server.port
         ))
     } else {
-        if tray_changed {
-            tracing::debug!("System tray configuration changed, enabled: {}", tray_new);
-
-            if tray_new {
-                if let Some(tray) = app.tray_by_id("main_tray") {
-                    let _ = tray.set_visible(true);
-                    tracing::debug!("Tray visibility updated: visible");
-                } else {
-                    // Rebuild tray if it was not created at startup
-                    if let Err(e) = build_main_tray(&app) {
-                        tracing::error!("Failed to rebuild system tray: {}", e);
-                    } else {
-                        tracing::debug!("System tray rebuilt and made visible");
-                    }
-                }
-            } else {
-                if let Some(tray) = app.tray_by_id("main_tray") {
-                    let _ = tray.set_visible(false);
-                }
-                tracing::debug!("Tray icon hidden");
-            }
-
-            // Config has been automatically saved to file via SERVICE_MANAGER.update_config
-        }
         Ok("Settings saved successfully".to_string())
     }
 }
@@ -531,29 +482,35 @@ pub async fn save_language_preference(app: tauri::AppHandle, language: String) -
         )));
     }
 
+    // Load current config
+    let mut config = config_mod::AppConfig::load()
+        .map_err(|e| McpError::ConfigError(format!("Failed to load config: {}", e)))?;
+
     // Update language preference
-    SERVICE_MANAGER
-        .update_config(|config| {
-            // Ensure settings exists
-            if config.settings.is_none() {
-                config.settings = Some(crate::Settings {
-                    theme: Some("auto".to_string()),
-                    language: Some(language.clone()),
-                    autostart: Some(false),
-                    system_tray: Some(crate::SystemTraySettings {
-                        enabled: Some(true),
-                        close_to_tray: Some(false),
-                        start_to_tray: Some(false),
-                    }),
-                    uv_index_url: None,
-                    npm_registry: None,
-                    command_paths: Default::default(),
-                });
-            } else {
-                config.settings.as_mut().unwrap().language = Some(language.clone());
-            }
-        })
-        .await?;
+    {
+        // Ensure settings exists
+        if config.settings.is_none() {
+            config.settings = Some(types::Settings {
+                theme: Some("auto".to_string()),
+                language: Some(language.clone()),
+                autostart: Some(false),
+                system_tray: Some(types::SystemTraySettings {
+                    enabled: Some(true),
+                    close_to_tray: Some(false),
+                    start_to_tray: Some(false),
+                }),
+                uv_index_url: None,
+                npm_registry: None,
+                command_paths: Default::default(),
+            });
+        } else {
+            config.settings.as_mut().unwrap().language = Some(language.clone());
+        }
+    }
+
+    // Save configuration
+    config.save()
+        .map_err(|e| McpError::ConfigError(format!("Failed to save config: {}", e)))?;
 
     // Update tray menu to reflect new language (safe method)
     if let Err(e) = crate::update_tray_menu(&app) {

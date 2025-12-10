@@ -1,35 +1,36 @@
-// MCP Server Management - Configuration File Version
+// MCP Server Management - SQLite Storage Version
 
-use crate::config::{AppConfig, McpServerRepository};
 use crate::error::{McpError, Result};
+
+// MCP Server Manager with SQLite backend
+use crate::storage::mcp_server_storage::McpServerStorage;
+use crate::types::{
+    McpPromptInfo, McpResourceInfo, McpServerConfig, McpServerInfo, McpToolInfo,
+    ServiceVersionCache,
+};
 use crate::MCP_CLIENT_MANAGER;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::Emitter;
 use tokio::sync::RwLock;
-
-pub use crate::types::{McpServerConfig, McpServerInfo, ServiceStatus, ServiceVersionCache};
 
 #[derive(Clone)]
 pub struct McpServerManager {
-    mcp_servers: Arc<RwLock<HashMap<String, McpServerConfig>>>,
-    config: Arc<RwLock<AppConfig>>,
-    pub version_cache: Arc<RwLock<HashMap<String, ServiceVersionCache>>>,
-    pub tools_cache_entries: Arc<RwLock<HashMap<String, ToolsCacheEntry>>>,
-    pub resources_cache_entries: Arc<RwLock<HashMap<String, ResourcesCacheEntry>>>,
-    pub prompts_cache_entries: Arc<RwLock<HashMap<String, PromptsCacheEntry>>>,
+    storage: Arc<McpServerStorage>,
+    tools_cache: Arc<RwLock<HashMap<String, Vec<McpToolInfo>>>>,
+    resources_cache: Arc<RwLock<HashMap<String, Vec<McpResourceInfo>>>>,
+    prompts_cache: Arc<RwLock<HashMap<String, Vec<McpPromptInfo>>>>,
+    version_cache: Arc<RwLock<HashMap<String, ServiceVersionCache>>>,
     tools_cache_ttl: std::time::Duration,
 }
 
 impl McpServerManager {
-    pub fn new(config: AppConfig) -> Self {
+    pub fn new(storage: McpServerStorage) -> Self {
         Self {
-            mcp_servers: Arc::new(RwLock::new(HashMap::new())),
-            config: Arc::new(RwLock::new(config)),
+            storage: Arc::new(storage),
+            tools_cache: Arc::new(RwLock::new(HashMap::new())),
+            resources_cache: Arc::new(RwLock::new(HashMap::new())),
+            prompts_cache: Arc::new(RwLock::new(HashMap::new())),
             version_cache: Arc::new(RwLock::new(HashMap::new())),
-            tools_cache_entries: Arc::new(RwLock::new(HashMap::new())),
-            resources_cache_entries: Arc::new(RwLock::new(HashMap::new())),
-            prompts_cache_entries: Arc::new(RwLock::new(HashMap::new())),
             tools_cache_ttl: std::time::Duration::from_secs(600),
         }
     }
@@ -38,11 +39,15 @@ impl McpServerManager {
         self.tools_cache_ttl.as_secs()
     }
 
-    pub async fn set_tools_cache_entry(&self, server_name: &str, raw: Vec<rmcp::model::Tool>) {
+    // ============================================================================
+    // Cache Management Methods
+    // ============================================================================
+
+    pub async fn set_tools_cache_entry(&self, server_name: &str, tools: Vec<rmcp::model::Tool>) {
         let now = chrono::Utc::now();
-        let infos: Vec<crate::types::McpToolInfo> = raw
+        let infos: Vec<McpToolInfo> = tools
             .iter()
-            .map(|tool| crate::types::McpToolInfo {
+            .map(|tool| McpToolInfo {
                 id: tool.name.to_string(),
                 name: tool.name.to_string(),
                 description: tool.description.clone().unwrap_or_default().to_string(),
@@ -51,45 +56,50 @@ impl McpServerManager {
                 updated_at: now.to_rfc3339(),
             })
             .collect();
-        let mut entries = self.tools_cache_entries.write().await;
-        entries.insert(
-            server_name.to_string(),
-            ToolsCacheEntry {
-                raw,
-                infos: infos.clone(),
-                last_updated: now,
-                count: infos.len(),
-            },
-        );
+
+        // Update in-memory cache
+        let mut cache = self.tools_cache.write().await;
+        cache.insert(server_name.to_string(), infos.clone());
+
+        // Persist to SQLite
+        if let Err(e) = self.storage.cache_server_tools(server_name, &tools).await {
+            tracing::error!("Failed to persist tools cache to SQLite: {}", e);
+        }
+
+        tracing::debug!("Cached {} tools for server '{}'", tools.len(), server_name);
     }
 
-    pub async fn get_cached_tools_raw(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
-        let entries = self.tools_cache_entries.read().await;
-        entries.get(server_name).map(|e| e.raw.clone())
+    pub async fn get_cached_tools(&self, server_name: &str) -> Option<Vec<McpToolInfo>> {
+        // Try in-memory cache first
+        {
+            let cache = self.tools_cache.read().await;
+            if let Some(tools) = cache.get(server_name) {
+                return Some(tools.clone());
+            }
+        }
+
+        // Try loading from SQLite
+        match self.storage.get_cached_server_tools(server_name).await {
+            Ok(tools) if !tools.is_empty() => {
+                // Update in-memory cache
+                let mut cache = self.tools_cache.write().await;
+                cache.insert(server_name.to_string(), tools.clone());
+                Some(tools)
+            }
+            _ => None,
+        }
     }
 
-    pub async fn get_cached_tools_infos(
-        &self,
-        server_name: &str,
-    ) -> Option<Vec<crate::types::McpToolInfo>> {
-        let entries = self.tools_cache_entries.read().await;
-        entries.get(server_name).map(|e| e.infos.clone())
-    }
-
-    pub async fn get_raw_cached_tools(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
-        self.get_cached_tools_raw(server_name).await
-    }
-
-    // Resources cache management methods
+    // Resources cache management
     pub async fn set_resources_cache_entry(
         &self,
         server_name: &str,
-        raw: Vec<rmcp::model::Resource>,
+        resources: Vec<rmcp::model::Resource>,
     ) {
         let now = chrono::Utc::now();
-        let infos: Vec<crate::types::McpResourceInfo> = raw
+        let infos: Vec<McpResourceInfo> = resources
             .iter()
-            .map(|resource| crate::types::McpResourceInfo {
+            .map(|resource| McpResourceInfo {
                 id: resource.uri.to_string(),
                 uri: resource.uri.to_string(),
                 name: resource.name.to_string(),
@@ -100,60 +110,58 @@ impl McpServerManager {
                 updated_at: now.to_rfc3339(),
             })
             .collect();
-        let count = infos.len();
-        let mut entries = self.resources_cache_entries.write().await;
-        entries.insert(
-            server_name.to_string(),
-            ResourcesCacheEntry {
-                raw,
-                infos: infos.clone(),
-                last_updated: now,
-                count,
-            },
-        );
 
-        // Use the cached fields for logging
+        // Update in-memory cache
+        let mut cache = self.resources_cache.write().await;
+        cache.insert(server_name.to_string(), infos.clone());
+
+        // Persist to SQLite
+        if let Err(e) = self
+            .storage
+            .cache_server_resources(server_name, &resources)
+            .await
+        {
+            tracing::error!("Failed to persist resources cache to SQLite: {}", e);
+        }
+
         tracing::debug!(
-            "Cached {} resources for server '{}' (updated at: {})",
-            count,
-            server_name,
-            now.to_rfc3339()
+            "Cached {} resources for server '{}'",
+            resources.len(),
+            server_name
         );
     }
 
-    pub async fn get_cached_resources_raw(
-        &self,
-        server_name: &str,
-    ) -> Option<Vec<rmcp::model::Resource>> {
-        let entries = self.resources_cache_entries.read().await;
-        entries.get(server_name).map(|e| e.raw.clone())
+    pub async fn get_cached_resources(&self, server_name: &str) -> Option<Vec<McpResourceInfo>> {
+        // Try in-memory cache first
+        {
+            let cache = self.resources_cache.read().await;
+            if let Some(resources) = cache.get(server_name) {
+                return Some(resources.clone());
+            }
+        }
+
+        // Try loading from SQLite
+        match self.storage.get_cached_server_resources(server_name).await {
+            Ok(resources) if !resources.is_empty() => {
+                // Update in-memory cache
+                let mut cache = self.resources_cache.write().await;
+                cache.insert(server_name.to_string(), resources.clone());
+                Some(resources)
+            }
+            _ => None,
+        }
     }
 
-    pub async fn get_cached_resources_infos(
+    // Prompts cache management
+    pub async fn set_prompts_cache_entry(
         &self,
         server_name: &str,
-    ) -> Option<Vec<crate::types::McpResourceInfo>> {
-        let entries = self.resources_cache_entries.read().await;
-        entries.get(server_name).map(|e| {
-            // Use the fields to avoid dead code warning
-            let _last_updated = e.last_updated;
-            let _count = e.count;
-            tracing::debug!(
-                "Resource cache for '{}': {} items, updated at {}",
-                server_name,
-                _count,
-                _last_updated.to_rfc3339()
-            );
-            e.infos.clone()
-        })
-    }
-
-    // Prompts cache management methods
-    pub async fn set_prompts_cache_entry(&self, server_name: &str, raw: Vec<rmcp::model::Prompt>) {
+        prompts: Vec<rmcp::model::Prompt>,
+    ) {
         let now = chrono::Utc::now();
-        let infos: Vec<crate::types::McpPromptInfo> = raw
+        let infos: Vec<McpPromptInfo> = prompts
             .iter()
-            .map(|prompt| crate::types::McpPromptInfo {
+            .map(|prompt| McpPromptInfo {
                 id: prompt.name.to_string(),
                 name: prompt.name.to_string(),
                 description: prompt.description.clone(),
@@ -162,189 +170,163 @@ impl McpServerManager {
                 updated_at: now.to_rfc3339(),
             })
             .collect();
-        let count = infos.len();
-        let mut entries = self.prompts_cache_entries.write().await;
-        entries.insert(
-            server_name.to_string(),
-            PromptsCacheEntry {
-                raw,
-                infos: infos.clone(),
-                last_updated: now,
-                count,
-            },
-        );
 
-        // Use the cached fields for logging
+        // Update in-memory cache
+        let mut cache = self.prompts_cache.write().await;
+        cache.insert(server_name.to_string(), infos.clone());
+
+        // Persist to SQLite
+        if let Err(e) = self
+            .storage
+            .cache_server_prompts(server_name, &prompts)
+            .await
+        {
+            tracing::error!("Failed to persist prompts cache to SQLite: {}", e);
+        }
+
         tracing::debug!(
-            "Cached {} prompts for server '{}' (updated at: {})",
-            count,
-            server_name,
-            now.to_rfc3339()
+            "Cached {} prompts for server '{}'",
+            prompts.len(),
+            server_name
         );
     }
 
-    pub async fn get_cached_prompts_raw(
-        &self,
-        server_name: &str,
-    ) -> Option<Vec<rmcp::model::Prompt>> {
-        let entries = self.prompts_cache_entries.read().await;
-        entries.get(server_name).map(|e| e.raw.clone())
-    }
-
-    pub async fn get_cached_prompts_infos(
-        &self,
-        server_name: &str,
-    ) -> Option<Vec<crate::types::McpPromptInfo>> {
-        let entries = self.prompts_cache_entries.read().await;
-        entries.get(server_name).map(|e| {
-            // Use the fields to avoid dead code warning
-            let _last_updated = e.last_updated;
-            let _count = e.count;
-            tracing::debug!(
-                "Prompt cache for '{}': {} items, updated at {}",
-                server_name,
-                _count,
-                _last_updated.to_rfc3339()
-            );
-            e.infos.clone()
-        })
-    }
-
-    /// Clear all cached data (tools, resources, prompts) for a specific server
-    pub async fn clear_server_cache(&self, server_name: &str) {
-        let mut tools_cache = self.tools_cache_entries.write().await;
-        let mut resources_cache = self.resources_cache_entries.write().await;
-        let mut prompts_cache = self.prompts_cache_entries.write().await;
-        let mut version_cache = self.version_cache.write().await;
-
-        // Clear tools cache
-        if tools_cache.remove(server_name).is_some() {
-            tracing::info!("Cleared tools cache for server '{}'", server_name);
+    pub async fn get_cached_prompts(&self, server_name: &str) -> Option<Vec<McpPromptInfo>> {
+        // Try in-memory cache first
+        {
+            let cache = self.prompts_cache.read().await;
+            if let Some(prompts) = cache.get(server_name) {
+                return Some(prompts.clone());
+            }
         }
 
-        // Clear resources cache
-        if resources_cache.remove(server_name).is_some() {
-            tracing::info!("Cleared resources cache for server '{}'", server_name);
-        }
-
-        // Clear prompts cache
-        if prompts_cache.remove(server_name).is_some() {
-            tracing::info!("Cleared prompts cache for server '{}'", server_name);
-        }
-
-        // Clear version cache
-        if version_cache.remove(server_name).is_some() {
-            tracing::info!("Cleared version cache for server '{}'", server_name);
+        // Try loading from SQLite
+        match self.storage.get_cached_server_prompts(server_name).await {
+            Ok(prompts) if !prompts.is_empty() => {
+                // Update in-memory cache
+                let mut cache = self.prompts_cache.write().await;
+                cache.insert(server_name.to_string(), prompts.clone());
+                Some(prompts)
+            }
+            _ => None,
         }
     }
 
-    pub async fn get_config(&self) -> AppConfig {
-        self.config.read().await.clone()
-    }
+    /// Clear all cached data for a specific server
+    pub async fn clear_server_cache(&self, server_name: &str) -> Result<()> {
+        // Clear from in-memory cache
+        {
+            let mut tools_cache = self.tools_cache.write().await;
+            tools_cache.remove(server_name);
+        }
+        {
+            let mut resources_cache = self.resources_cache.write().await;
+            resources_cache.remove(server_name);
+        }
+        {
+            let mut prompts_cache = self.prompts_cache.write().await;
+            prompts_cache.remove(server_name);
+        }
+        {
+            let mut version_cache = self.version_cache.write().await;
+            version_cache.remove(server_name);
+        }
 
-    pub async fn update_config<F>(&self, f: F) -> Result<()>
-    where
-        F: FnOnce(&mut AppConfig),
-    {
-        let mut config = self.config.write().await;
-        f(&mut config);
-        // Save the updated configuration to file
-        config.save()?;
+        // Clear from SQLite
+        self.storage.clear_server_cache(server_name).await?;
+
+        tracing::info!("Cleared all cache data for server '{}'", server_name);
         Ok(())
     }
 
-    pub async fn load_mcp_servers(&self, app_handle: &tauri::AppHandle) -> Result<()> {
-        self.sync_with_config_file(app_handle).await
+    // ============================================================================
+    // Server Configuration Management
+    // ============================================================================
+
+    pub async fn load_mcp_servers(&self) -> Result<()> {
+        // Load servers from SQLite (no need to sync with config file)
+        let servers = self.storage.get_all_servers().await?;
+        tracing::info!("Loaded {} MCP servers from SQLite", servers.len());
+        Ok(())
     }
 
-    pub async fn get_mcp_servers(&self) -> Arc<RwLock<HashMap<String, McpServerConfig>>> {
-        self.mcp_servers.clone()
+    /// Get server ID by server name
+    pub async fn get_server_id_by_name(&self, server_name: &str) -> Result<String> {
+        self.storage.get_server_id_by_name(server_name).await.map_err(|e| {
+            McpError::DatabaseQueryError(format!("Failed to get server ID for '{}': {}", server_name, e))
+        })
     }
 
-    /// list_mcp_servers with optional app_handle, supports getting tool count
-    pub async fn list_mcp_servers(
-        &self,
-        _app_handle: Option<&tauri::AppHandle>,
-    ) -> Result<Vec<McpServerInfo>> {
-        let services = self.mcp_servers.read().await;
+    pub async fn list_mcp_servers(&self) -> Result<Vec<McpServerInfo>> {
+        let servers = self.storage.get_all_servers().await?;
         let mut result = Vec::new();
 
-        for (name, config) in services.iter() {
-            let status_option = self.get_mcp_server_status(name).await.ok();
-            let status_string = status_option
-                .as_ref()
-                .map(|s| s.status.clone())
-                .unwrap_or_else(|| "disconnected".to_string());
-            let error_message = status_option.and_then(|s| s.error_message);
+        for server_config in servers {
+            let server_name = server_config.name.clone();
 
-            // Version from cache
+            // Get connection status from MCP client manager
+            let (status_string, error_message) =
+                MCP_CLIENT_MANAGER.get_connection_status(&server_name).await;
+            let final_status = if !server_config.enabled {
+                "disconnected".to_string()
+            } else {
+                status_string
+            };
+
+            // Get version from cache
             let version = {
                 let cache = self.version_cache.read().await;
-                cache.get(name).and_then(|v| v.version.clone())
+                cache.get(&server_name).and_then(|v| v.version.clone())
             };
 
-            // Tool count from cache
+            // Get tool count from cache
             let tool_count = {
-                let entries = self.tools_cache_entries.read().await;
-                entries.get(name).map(|e| e.count)
+                let cache = self.tools_cache.read().await;
+                cache.get(&server_name).map(|t| t.len())
             };
 
-            // Resource count from cache
+            // Get resource count from cache
             let resource_count = {
-                let entries = self.resources_cache_entries.read().await;
-                entries.get(name).map(|e| e.count)
+                let cache = self.resources_cache.read().await;
+                cache.get(&server_name).map(|r| r.len())
             };
 
-            // Prompt count from cache
+            // Get prompt count from cache
             let prompt_count = {
-                let entries = self.prompts_cache_entries.read().await;
-                entries.get(name).map(|e| e.count)
+                let cache = self.prompts_cache.read().await;
+                cache.get(&server_name).map(|p| p.len())
             };
 
-            // Prompt template count from cache - count prompts with arguments (templates)
-            let prompt_template_count = {
-                let entries = self.prompts_cache_entries.read().await;
-                entries.get(name).map(|e| {
-                    // Count prompts that have arguments (making them templates)
-                    e.raw.iter().filter(|p| p.arguments.is_some() && !p.arguments.as_ref().unwrap().is_empty()).count()
-                })
-            };
-
-            // Set different fields based on transport type, set unneeded fields to None to skip during serialization
-            let (transport_str, url, headers, command, args, env_data) = match config.transport {
-                // STDIO transport: remove url/headers fields
-                crate::types::ServiceTransport::Stdio => {
-                    (
+            // Set different fields based on transport type
+            let (transport_str, url, headers, command, args, env_data) =
+                match server_config.transport {
+                    crate::types::ServiceTransport::Stdio => (
                         "stdio".to_string(),
-                        None, // Remove url field
-                        None, // Remove headers field
-                        config.command.clone(),
-                        config.args.clone(),
-                        config.env.clone(),
-                    )
-                }
-                // HTTP transport: remove command/args/env_vars fields
-                crate::types::ServiceTransport::Http => {
-                    (
+                        None,
+                        None,
+                        server_config.command.clone(),
+                        server_config.args.clone(),
+                        server_config.env.clone(),
+                    ),
+                    crate::types::ServiceTransport::Http => (
                         "http".to_string(),
-                        config.url.clone(),
-                        config.headers.clone(),
-                        None, // Remove command field
-                        None, // Remove args field
-                        None, // Remove env_vars field
-                    )
-                }
-            };
+                        server_config.url.clone(),
+                        server_config.headers.clone(),
+                        None,
+                        None,
+                        None,
+                    ),
+                };
 
             result.push(McpServerInfo {
-                name: name.clone(),
-                enabled: config.enabled,
-                status: status_string,
+                name: server_name,
+                enabled: server_config.enabled,
+                status: final_status,
                 version,
                 error_message,
                 transport: transport_str,
                 url,
-                description: config.description.clone(), // Read description from config
+                description: server_config.description,
                 env: env_data,
                 headers,
                 command,
@@ -352,535 +334,411 @@ impl McpServerManager {
                 tool_count,
                 resource_count,
                 prompt_count,
-                prompt_template_count,
+                prompt_template_count: None, // Will be calculated later if needed
             });
         }
 
         Ok(result)
     }
 
-    async fn get_mcp_server_status(&self, name: &str) -> Result<ServiceStatus> {
-        let services = self.mcp_servers.read().await;
-        let service_config = services
-            .get(name)
-            .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?
-            .clone();
+    pub async fn add_mcp_server(&self, config: McpServerConfig) -> Result<()> {
+        tracing::info!("Adding MCP server '{}'", config.name);
 
-        let (status, error_message) = MCP_CLIENT_MANAGER.get_connection_status(name).await;
+        // Add to SQLite storage
+        self.storage.add_server(&config).await?;
 
-        let final_status = if !service_config.enabled {
-            "disconnected".to_string()
-        } else {
-            status
-        };
-
-        // Version from cache
-        let version = {
-            let cache = self.version_cache.read().await;
-            cache.get(name).and_then(|v| v.version.clone())
-        };
-
-        Ok(ServiceStatus {
-            name: name.to_string(),
-            enabled: service_config.enabled,
-            status: final_status,
-            pid: None,
-            port: None,
-            version,
-            start_time: None,
-            error_message,
-        })
-    }
-
-    pub async fn check_service_with_version(&self, name: &str) -> Result<()> {
-        let services = self.mcp_servers.read().await;
-        let service_config = services
-            .get(name)
-            .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?
-            .clone();
-        drop(services);
-
-        let connection = MCP_CLIENT_MANAGER
-            .ensure_connection(&service_config, false)
-            .await
-            .map_err(|e| {
-                McpError::ConnectionError(format!("Failed to connect to service '{}': {}", name, e))
-            })?;
-
-        if let Some(ref _client) = connection.client {
-            tracing::debug!("Checking version info for service '{}'...", name);
-
-            // If version not in server_info, try to get from cached_version
-            let version = connection
-                .server_info
-                .as_ref()
-                .map(|info| info.server_info.version.clone());
-
-            if let Some(version_str) = version {
-                tracing::info!("Extracted version for service '{}': {}", name, version_str);
-
-                // Update version cache
-                let mut version_cache = self.version_cache.write().await;
-                version_cache.insert(
-                    name.to_string(),
-                    ServiceVersionCache {
-                        version: Some(version_str.clone()),
-                    },
-                );
-                tracing::info!("Updated version cache for service '{}'", name);
-            } else {
-                tracing::warn!("Failed to extract version info for service '{}'", name);
-                tracing::debug!("server_info: {:?}", connection.server_info);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn add_mcp_server(
-        &self,
-        app_handle: &tauri::AppHandle,
-        config: McpServerConfig,
-    ) -> Result<()> {
-        tracing::info!(
-            "McpServerManager::add_mcp_server starting to add server: {}",
-            config.name
-        );
-        let mut repo = McpServerRepository::new(app_handle).await.map_err(|e| {
-            tracing::error!("Failed to create repository: {}", e);
-            McpError::ConfigError(format!("Failed to create repository: {}", e))
-        })?;
-
-        tracing::info!("Repository created successfully, starting to add config");
-        repo.add(config.clone()).await.map_err(|e| {
-            tracing::error!("Failed to add config: {}", e);
-            McpError::ConfigError(format!("Failed to add MCP server: {}", e))
-        })?;
-
-        tracing::info!("Config added successfully, syncing memory state");
-        self.sync_with_config_file(app_handle).await?;
-
-        tracing::info!(
-            "Memory sync successful, starting to connect to service to get version and tool list"
-        );
-
-        // Try to connect to service to get version and tool list
+        // Try to connect to service to get version and capabilities
         if let Err(e) = self.check_service_with_version(&config.name).await {
-            tracing::warn!(
-                "Failed to connect to service, will get version info on first use: {}",
-                e
-            );
-        } else {
-            tracing::info!("Service connected successfully, version info updated");
+            tracing::warn!("Failed to connect to service '{}': {}", config.name, e);
         }
 
-        // Sync tool list and update to config file
-        if let Err(e) = self
-            .sync_server_tools_from_service(&config.name, app_handle)
-            .await
-        {
+        // Sync capabilities
+        if let Err(e) = self.sync_server_capabilities(&config.name).await {
             tracing::warn!(
-                "Failed to get tool list for service '{}': {}",
+                "Failed to sync capabilities for service '{}': {}",
                 config.name,
                 e
             );
-        } else {
-            tracing::info!("Service '{}' tool list updated", config.name);
         }
 
-        // Sync resources list
-        if let Err(e) = self
-            .sync_server_resources_from_service(&config.name, app_handle)
-            .await
-        {
-            tracing::warn!(
-                "Failed to get resources list for service '{}': {}",
-                config.name,
-                e
-            );
-        } else {
-            tracing::info!("Service '{}' resources list updated", config.name);
-        }
-
-        // Sync prompts list
-        if let Err(e) = self
-            .sync_server_prompts_from_service(&config.name, app_handle)
-            .await
-        {
-            tracing::warn!(
-                "Failed to get prompts list for service '{}': {}",
-                config.name,
-                e
-            );
-        } else {
-            tracing::info!("Service '{}' prompts list updated", config.name);
-        }
-
+        tracing::info!("✅ MCP server '{}' added successfully", config.name);
         Ok(())
     }
 
-    pub async fn update_mcp_server(
-        &self,
-        app_handle: &tauri::AppHandle,
-        config: McpServerConfig,
-    ) -> Result<()> {
-        let mut repo = McpServerRepository::new(app_handle)
-            .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+    pub async fn update_mcp_server(&self, config: McpServerConfig) -> Result<()> {
+        tracing::info!("Updating MCP server '{}'", config.name);
 
-        let server_name = config.name.clone();
-        repo.update(&server_name, config.clone())
-            .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to update MCP server: {}", e)))?;
+        // Update in SQLite storage
+        self.storage.update_server(&config.name, &config).await?;
 
-        tracing::info!("Config updated successfully, syncing memory state");
-        self.sync_with_config_file(app_handle).await?;
+        // Clear cache for the updated server
+        self.clear_server_cache(&config.name).await?;
 
-        // If service is enabled, try to connect to get latest version info
+        // If service is enabled, reconnect and sync capabilities
         if config.enabled {
-            tracing::info!(
-                "Service '{}' updated, starting to connect to get latest version info",
-                server_name
-            );
-            if let Err(e) = self.check_service_with_version(&server_name).await {
-                tracing::warn!("Failed to connect to service: {}", e);
-            } else {
-                tracing::info!("Service connected successfully, version info updated");
-
-                // Automatically sync tool list for the updated service
-                tracing::info!("Syncing tool list for updated service '{}'", server_name);
-                if let Err(e) = self
-                    .sync_server_tools_from_service(&server_name, app_handle)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to sync tool list for service '{}': {}",
-                        server_name,
-                        e
-                    );
-                } else {
-                    tracing::info!("Service '{}' tool list synced successfully", server_name);
-                }
-
-                // Automatically sync resources list for the updated service
-                tracing::info!(
-                    "Syncing resources list for updated service '{}'",
-                    server_name
-                );
-                if let Err(e) = self
-                    .sync_server_resources_from_service(&server_name, app_handle)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to sync resources list for service '{}': {}",
-                        server_name,
-                        e
-                    );
-                } else {
-                    tracing::info!(
-                        "Service '{}' resources list synced successfully",
-                        server_name
-                    );
-                }
-
-                // Automatically sync prompts list for the updated service
-                tracing::info!("Syncing prompts list for updated service '{}'", server_name);
-                if let Err(e) = self
-                    .sync_server_prompts_from_service(&server_name, app_handle)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to sync prompts list for service '{}': {}",
-                        server_name,
-                        e
-                    );
-                } else {
-                    tracing::info!("Service '{}' prompts list synced successfully", server_name);
-                }
-            }
-        } else {
-            tracing::info!("Service '{}' is currently disabled", server_name);
-
-            // Clear cached tools, resources, and prompts when service is disabled
-            self.clear_server_cache(&server_name).await;
-
-            // Disconnect from the service to release resources
-            tracing::info!("Disconnecting from disabled service '{}'", server_name);
-            if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(&server_name).await {
+            if let Err(e) = self.check_service_with_version(&config.name).await {
                 tracing::warn!(
-                    "Failed to disconnect from disabled service '{}': {}",
-                    server_name,
+                    "Failed to connect to updated service '{}': {}",
+                    config.name,
                     e
                 );
             } else {
-                tracing::info!("Successfully disconnected from service '{}'", server_name);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn remove_mcp_server(&self, app_handle: &tauri::AppHandle, name: &str) -> Result<()> {
-        let mut repo = McpServerRepository::new(app_handle)
-            .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
-
-        repo.delete(name)
-            .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to delete MCP server: {}", e)))?;
-
-        tracing::info!("Config deleted successfully, syncing memory state");
-        self.sync_with_config_file(app_handle).await?;
-
-        // Clear all cached data for the removed server
-        tracing::info!("Clearing cache for removed server '{}'", name);
-        self.clear_server_cache(name).await;
-
-        Ok(())
-    }
-
-    pub async fn toggle_mcp_server(
-        &self,
-        app_handle: &tauri::AppHandle,
-        name: &str,
-    ) -> Result<bool> {
-        let mut repo = McpServerRepository::new(app_handle)
-            .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
-
-        let new_state = repo
-            .toggle_enabled(name)
-            .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to toggle MCP server: {}", e)))?;
-
-        tracing::info!("Config updated successfully, syncing memory state");
-        self.sync_with_config_file(app_handle).await?;
-
-        // If service is enabled, try to connect to get version info
-        if new_state {
-            tracing::info!(
-                "Service '{}' enabled, starting to connect to get version info",
-                name
-            );
-            if let Err(e) = self.check_service_with_version(name).await {
-                tracing::warn!("Failed to connect to service: {}", e);
-            } else {
-                tracing::info!("Service connected successfully, version info updated");
-
-                // Automatically sync tool list for the enabled service
-                tracing::info!("Syncing tool list for enabled service '{}'", name);
-                if let Err(e) = self.sync_server_tools_from_service(name, app_handle).await {
-                    tracing::warn!("Failed to sync tool list for service '{}': {}", name, e);
-                } else {
-                    tracing::info!("Service '{}' tool list synced successfully", name);
-                }
-
-                // Automatically sync resources list for the enabled service
-                tracing::info!("Syncing resources list for enabled service '{}'", name);
-                if let Err(e) = self
-                    .sync_server_resources_from_service(name, app_handle)
-                    .await
-                {
+                if let Err(e) = self.sync_server_capabilities(&config.name).await {
                     tracing::warn!(
-                        "Failed to sync resources list for service '{}': {}",
-                        name,
+                        "Failed to sync capabilities for service '{}': {}",
+                        config.name,
                         e
                     );
-                } else {
-                    tracing::info!("Service '{}' resources list synced successfully", name);
-                }
-
-                // Automatically sync prompts list for the enabled service
-                tracing::info!("Syncing prompts list for enabled service '{}'", name);
-                if let Err(e) = self
-                    .sync_server_prompts_from_service(name, app_handle)
-                    .await
-                {
-                    tracing::warn!("Failed to sync prompts list for service '{}': {}", name, e);
-                } else {
-                    tracing::info!("Service '{}' prompts list synced successfully", name);
                 }
             }
         } else {
-            tracing::info!("Service '{}' is disabled, clearing cache", name);
-            // Clear cached tools, resources, and prompts when service is disabled
-            self.clear_server_cache(name).await;
+            // Disconnect from disabled service
+            if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(&config.name).await {
+                tracing::warn!(
+                    "Failed to disconnect from disabled service '{}': {}",
+                    config.name,
+                    e
+                );
+            }
+        }
 
-            // Disconnect from the service to release resources
-            tracing::info!("Disconnecting from disabled service '{}'", name);
+        tracing::info!("✅ MCP server '{}' updated successfully", config.name);
+        Ok(())
+    }
+
+    pub async fn remove_mcp_server(&self, name: &str) -> Result<()> {
+        tracing::info!("Removing MCP server '{}'", name);
+
+        // Disconnect from service
+        if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(name).await {
+            tracing::warn!("Failed to disconnect from service '{}': {}", name, e);
+        }
+
+        // Clear all cache
+        self.clear_server_cache(name).await?;
+
+        // Remove from SQLite storage
+        self.storage.delete_server(name).await?;
+
+        tracing::info!("✅ MCP server '{}' removed successfully", name);
+        Ok(())
+    }
+
+    pub async fn toggle_mcp_server(&self, name: &str) -> Result<bool> {
+        tracing::info!("Toggling MCP server '{}'", name);
+
+        // Update in SQLite storage
+        let new_state = self.storage.toggle_server_enabled(name).await?;
+
+        if new_state {
+            // Service enabled: connect and sync capabilities
+            if let Err(e) = self.check_service_with_version(name).await {
+                tracing::warn!("Failed to connect to enabled service '{}': {}", name, e);
+            } else {
+                if let Err(e) = self.sync_server_capabilities(name).await {
+                    tracing::warn!("Failed to sync capabilities for service '{}': {}", name, e);
+                }
+            }
+        } else {
+            // Service disabled: disconnect and clear cache
             if let Err(e) = MCP_CLIENT_MANAGER.disconnect_mcp_server(name).await {
                 tracing::warn!(
                     "Failed to disconnect from disabled service '{}': {}",
                     name,
                     e
                 );
-            } else {
-                tracing::info!("Successfully disconnected from service '{}'", name);
             }
+            self.clear_server_cache(name).await?;
         }
 
+        tracing::info!(
+            "✅ MCP server '{}' toggled to {}",
+            name,
+            if new_state { "enabled" } else { "disabled" }
+        );
         Ok(new_state)
     }
 
-    /// Sync memory state from config file
-    pub async fn sync_with_config_file(&self, app_handle: &tauri::AppHandle) -> Result<()> {
-        let repo = McpServerRepository::new(app_handle)
+    // ============================================================================
+    // Server Status and Capabilities
+    // ============================================================================
+
+    async fn check_service_with_version(&self, name: &str) -> Result<()> {
+        // Get server configuration
+        let server_config = self
+            .storage
+            .get_server_by_name(name)
+            .await?
+            .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?;
+
+        // Connect to service
+        let connection = MCP_CLIENT_MANAGER
+            .ensure_connection(&server_config, false)
             .await
-            .map_err(|e| McpError::ConfigError(format!("Failed to create repository: {}", e)))?;
+            .map_err(|e| {
+                McpError::ConnectionError(format!("Failed to connect to service '{}': {}", name, e))
+            })?;
 
-        let servers = repo.get_all();
-        let mut mcp_servers_map = HashMap::new();
+        // Extract version info
+        if let Some(ref _client) = connection.client {
+            if let Some(info) = &connection.server_info {
+                let version = info.server_info.version.clone();
+                let version_clone = version.clone();
 
-        for server in servers {
-            let config = McpServerConfig {
-                name: server.name.clone(),
-                description: server.description.clone(),
-                command: server.command.clone(),
-                args: server.args.clone(),
-                transport: server.transport.clone(),
-                url: server.url.clone(),
-                enabled: server.enabled,
-                env: server.env.clone(),
-                headers: server.headers.clone(),
-            };
-            mcp_servers_map.insert(config.name.clone(), config);
-        }
+                // Update version cache
+                {
+                    let mut version_cache = self.version_cache.write().await;
+                    version_cache.insert(
+                        name.to_string(),
+                        ServiceVersionCache {
+                            version: Some(version.clone()),
+                        },
+                    );
+                }
 
-        // Update HashMap in memory
-        let mut mcp_servers = self.mcp_servers.write().await;
-        *mcp_servers = mcp_servers_map;
+                // Persist to SQLite
+                if let Err(e) = self
+                    .storage
+                    .update_server_version(name, Some(version))
+                    .await
+                {
+                    tracing::error!("Failed to persist version to SQLite: {}", e);
+                }
 
-        tracing::info!("Memory state synced, total {} servers", mcp_servers.len());
-        Ok(())
-    }
-
-    /// Get tool list for server (from in-memory cache)
-    pub async fn list_mcp_server_tools(
-        &self,
-        server_name: &str,
-        app_handle: &tauri::AppHandle,
-    ) -> Result<Vec<crate::types::McpToolInfo>> {
-        // Try cache first
-        {
-            if let Some(list) = self.get_cached_tools_infos(server_name).await {
-                return Ok(list);
+                tracing::info!("Updated version for service '{}': {}", name, version_clone);
             }
         }
 
-        // Not cached: sync from service and cache
-        self.sync_server_tools_from_service(server_name, app_handle)
-            .await?;
-
-        let tools = self
-            .get_cached_tools_infos(server_name)
-            .await
-            .unwrap_or_default();
-        Ok(tools)
+        Ok(())
     }
 
-    /// Auto-connect all enabled services on startup
-    pub async fn auto_connect_enabled_services(&self, app_handle: &tauri::AppHandle) -> Result<()> {
-        let services = self.mcp_servers.read().await;
-        let enabled_services: Vec<String> = services
-            .iter()
-            .filter(|(_, config)| config.enabled)
-            .map(|(name, _)| name.clone())
-            .collect();
+    pub async fn sync_server_capabilities(&self, name: &str) -> Result<()> {
+        // Get server configuration
+        let server_config = self
+            .storage
+            .get_server_by_name(name)
+            .await?
+            .ok_or_else(|| McpError::ServiceNotFound(name.to_string()))?;
 
-        if enabled_services.is_empty() {
+        // Connect to service
+        let _connection = MCP_CLIENT_MANAGER
+            .ensure_connection(&server_config, false)
+            .await
+            .map_err(|e| {
+                McpError::ConnectionError(format!("Failed to connect to service '{}': {}", name, e))
+            })?;
+
+        // Sync tools
+        match MCP_CLIENT_MANAGER.list_tools(name).await {
+            Ok(tools) if !tools.is_empty() => {
+                self.set_tools_cache_entry(name, tools).await;
+                tracing::info!("Synced tools for service '{}'", name);
+            }
+            Ok(_) => {
+                tracing::debug!("Service '{}' has no tools", name);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to sync tools for service '{}': {}", name, e);
+            }
+        }
+
+        // Sync resources
+        match MCP_CLIENT_MANAGER.list_resources(name).await {
+            Ok(resources) if !resources.is_empty() => {
+                self.set_resources_cache_entry(name, resources).await;
+                tracing::info!("Synced resources for service '{}'", name);
+            }
+            Ok(_) => {
+                tracing::debug!("Service '{}' has no resources", name);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to sync resources for service '{}': {}", name, e);
+            }
+        }
+
+        // Sync prompts
+        match MCP_CLIENT_MANAGER.list_prompts(name).await {
+            Ok(prompts) if !prompts.is_empty() => {
+                self.set_prompts_cache_entry(name, prompts).await;
+                tracing::info!("Synced prompts for service '{}'", name);
+            }
+            Ok(_) => {
+                tracing::debug!("Service '{}' has no prompts", name);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to sync prompts for service '{}': {}", name, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_mcp_server_tools(&self, server_name: &str) -> Result<Vec<McpToolInfo>> {
+        // Try cache first
+        if let Some(tools) = self.get_cached_tools(server_name).await {
+            return Ok(tools);
+        }
+
+        // Not cached: sync from service
+        self.sync_server_capabilities(server_name).await?;
+
+        // Return from cache (now should be populated)
+        Ok(self.get_cached_tools(server_name).await.unwrap_or_default())
+    }
+
+    /// Toggle tool enabled state
+    pub async fn toggle_tool_enabled(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let mut cache = self.tools_cache.write().await;
+
+        if let Some(tools) = cache.get_mut(server_name) {
+            if let Some(tool) = tools.iter_mut().find(|t| t.name == tool_name) {
+                tool.enabled = enabled;
+                tool.updated_at = chrono::Utc::now().to_rfc3339();
+                tracing::info!("Tool '{}' on server '{}' set to enabled: {}", tool_name, server_name, enabled);
+                return Ok(());
+            }
+        }
+
+        Err(McpError::NotFound(format!(
+            "Tool '{}' not found on server '{}'",
+            tool_name, server_name
+        )))
+    }
+
+    /// Enable all tools for a server
+    pub async fn enable_all_tools(&self, server_name: &str) -> Result<()> {
+        let mut cache = self.tools_cache.write().await;
+
+        if let Some(tools) = cache.get_mut(server_name) {
+            let now = chrono::Utc::now().to_rfc3339();
+            for tool in tools.iter_mut() {
+                tool.enabled = true;
+                tool.updated_at = now.clone();
+            }
+            tracing::info!("All tools enabled for server '{}'", server_name);
+            return Ok(());
+        }
+
+        Err(McpError::NotFound(format!(
+            "No tools found for server '{}'",
+            server_name
+        )))
+    }
+
+    /// Disable all tools for a server
+    pub async fn disable_all_tools(&self, server_name: &str) -> Result<()> {
+        let mut cache = self.tools_cache.write().await;
+
+        if let Some(tools) = cache.get_mut(server_name) {
+            let now = chrono::Utc::now().to_rfc3339();
+            for tool in tools.iter_mut() {
+                tool.enabled = false;
+                tool.updated_at = now.clone();
+            }
+            tracing::info!("All tools disabled for server '{}'", server_name);
+            return Ok(());
+        }
+
+        Err(McpError::NotFound(format!(
+            "No tools found for server '{}'",
+            server_name
+        )))
+    }
+
+    pub async fn get_mcp_server_resources(
+        &self,
+        server_name: &str,
+    ) -> Result<Vec<McpResourceInfo>> {
+        // Try cache first
+        if let Some(resources) = self.get_cached_resources(server_name).await {
+            return Ok(resources);
+        }
+
+        // Not cached: sync from service
+        self.sync_server_capabilities(server_name).await?;
+
+        // Return from cache (now should be populated)
+        Ok(self
+            .get_cached_resources(server_name)
+            .await
+            .unwrap_or_default())
+    }
+
+    pub async fn get_mcp_server_prompts(&self, server_name: &str) -> Result<Vec<McpPromptInfo>> {
+        // Try cache first
+        if let Some(prompts) = self.get_cached_prompts(server_name).await {
+            return Ok(prompts);
+        }
+
+        // Not cached: sync from service
+        self.sync_server_capabilities(server_name).await?;
+
+        // Return from cache (now should be populated)
+        Ok(self
+            .get_cached_prompts(server_name)
+            .await
+            .unwrap_or_default())
+    }
+
+    // ============================================================================
+    // Auto-connect on Startup
+    // ============================================================================
+
+    pub async fn auto_connect_enabled_services(&self) -> Result<()> {
+        let servers = self.storage.get_all_servers().await?;
+        let enabled_servers: Vec<McpServerConfig> =
+            servers.into_iter().filter(|s| s.enabled).collect();
+
+        if enabled_servers.is_empty() {
             tracing::info!("No enabled MCP services need connection");
-            drop(services);
             return Ok(());
         }
 
         tracing::info!(
-            "Auto-connecting {} enabled MCP services on startup...",
-            enabled_services.len()
+            "Auto-connecting {} enabled MCP services...",
+            enabled_servers.len()
         );
-
-        // Collect all enabled service configs
-        let service_configs: Vec<McpServerConfig> = enabled_services
-            .iter()
-            .filter_map(|name| services.get(name).cloned())
-            .collect();
-
-        drop(services);
 
         let mut success_count = 0;
         let mut failed_count = 0;
 
-        // Actually try to establish connection for each service
-        for service_config in service_configs {
-            let service_name = service_config.name.clone();
+        for server_config in enabled_servers {
+            let server_name = server_config.name.clone();
 
-            tracing::info!("Connecting to service: {}", service_name);
-
-            // Try to reconnect service
-            match MCP_CLIENT_MANAGER.try_reconnect(&service_config).await {
+            match MCP_CLIENT_MANAGER.try_reconnect(&server_config).await {
                 Ok(true) => {
-                    tracing::info!("Service '{}' connected successfully", service_name);
+                    tracing::info!("Service '{}' connected successfully", server_name);
 
-                    // Try to get version info
-                    if let Err(e) = self.check_service_with_version(&service_name).await {
+                    // Get version and capabilities
+                    if let Err(e) = self.check_service_with_version(&server_name).await {
                         tracing::warn!(
                             "Failed to get version info for service '{}': {}",
-                            service_name,
+                            server_name,
                             e
                         );
-                    } else {
-                        tracing::info!("Service '{}' version info updated", service_name);
                     }
 
-                    // Auto get and update tool list
-                    if let Err(e) = self
-                        .sync_server_tools_from_service(&service_name, app_handle)
-                        .await
-                    {
+                    if let Err(e) = self.sync_server_capabilities(&server_name).await {
                         tracing::warn!(
-                            "Failed to get tool list for service '{}': {}",
-                            service_name,
+                            "Failed to sync capabilities for service '{}': {}",
+                            server_name,
                             e
                         );
-                    } else {
-                        tracing::info!("Service '{}' tool list updated", service_name);
-                    }
-
-                    // Auto get and update resources list
-                    if let Err(e) = self
-                        .sync_server_resources_from_service(&service_name, app_handle)
-                        .await
-                    {
-                        tracing::warn!(
-                            "Failed to get resources list for service '{}': {}",
-                            service_name,
-                            e
-                        );
-                    } else {
-                        tracing::info!("Service '{}' resources list updated", service_name);
-                    }
-
-                    // Auto get and update prompts list
-                    if let Err(e) = self
-                        .sync_server_prompts_from_service(&service_name, app_handle)
-                        .await
-                    {
-                        tracing::warn!(
-                            "Failed to get prompts list for service '{}': {}",
-                            service_name,
-                            e
-                        );
-                    } else {
-                        tracing::info!("Service '{}' prompts list updated", service_name);
                     }
 
                     success_count += 1;
                 }
                 Ok(false) => {
-                    tracing::error!("Service '{}' connection failed", service_name);
+                    tracing::error!("Service '{}' connection failed", server_name);
                     failed_count += 1;
                 }
                 Err(e) => {
-                    tracing::error!("Service '{}' connection error: {}", service_name, e);
+                    tracing::error!("Service '{}' connection error: {}", server_name, e);
                     failed_count += 1;
                 }
             }
@@ -895,268 +753,17 @@ impl McpServerManager {
         Ok(())
     }
 
-    /// Sync tool list from MCP service and update in-memory cache
-    pub async fn sync_server_tools_from_service(
-        &self,
-        server_name: &str,
-        app_handle: &tauri::AppHandle,
-    ) -> Result<()> {
-        tracing::debug!("Starting to get tool list from service '{}'", server_name);
-
-        // Get service config
-        let services = self.mcp_servers.read().await;
-        let service_config = services
-            .get(server_name)
-            .ok_or_else(|| McpError::ServiceNotFound(server_name.to_string()))?
-            .clone();
-        drop(services);
-
-        // Connect to service (single attempt, no retry)
-        let _connection = MCP_CLIENT_MANAGER
-            .ensure_connection(&service_config, false)
-            .await
-            .map_err(|e| {
-                let error_msg = format!("{}", e);
-                tracing::error!(
-                    "Failed to connect to service '{}': {}",
-                    server_name,
-                    error_msg
-                );
-
-                // Provide specific guidance for HTTP transport
-                if matches!(
-                    service_config.transport,
-                    crate::types::ServiceTransport::Http
-                ) {
-                    tracing::error!(
-                        "For HTTP transport services, please verify:\n\
-                        1. The URL is correct and points to a valid MCP endpoint\n\
-                        2. The service is running and accessible\n\
-                        3. The service properly implements the MCP StreamableHttp protocol\n\
-                        4. Authentication headers are correctly configured (if required)"
-                    );
-                }
-
-                McpError::ConnectionError(format!(
-                    "Failed to connect to service '{}': {}",
-                    server_name, error_msg
-                ))
-            })?;
-
-        // Get tool list (single attempt, no retry)
-        let tools = MCP_CLIENT_MANAGER
-            .list_tools(server_name)
-            .await
-            .map_err(|e| {
-                McpError::ServiceError(format!(
-                    "Failed to list tools from service '{}': {}",
-                    server_name, e
-                ))
-            })?;
-
-        // Process tools
-        if !tools.is_empty() {
-            tracing::info!("Got {} tools from service '{}'", tools.len(), server_name);
-
-            self.set_tools_cache_entry(server_name, tools.clone()).await;
-            let _ = app_handle.emit("tools-updated", server_name.to_string());
-            tracing::info!("Updated in-memory tool list for service '{}'", server_name);
-        } else {
-            tracing::debug!("Service '{}' has no available tools", server_name);
-        }
-
-        Ok(())
-    }
-
-    /// Sync resources list from MCP service and update in-memory cache
-    pub async fn sync_server_resources_from_service(
-        &self,
-        server_name: &str,
-        _app_handle: &tauri::AppHandle,
-    ) -> Result<()> {
-        tracing::debug!(
-            "Starting to get resources list from service '{}'",
-            server_name
-        );
-
-        // Get service config
-        let services = self.mcp_servers.read().await;
-        let service_config = services
-            .get(server_name)
-            .ok_or_else(|| McpError::ServiceNotFound(server_name.to_string()))?
-            .clone();
-        drop(services);
-
-        // Connect to service
-        let _connection = MCP_CLIENT_MANAGER
-            .ensure_connection(&service_config, false)
-            .await
-            .map_err(|e| {
-                let error_msg = format!("{}", e);
-                tracing::error!(
-                    "Failed to connect to service '{}': {}",
-                    server_name,
-                    error_msg
-                );
-                McpError::ConnectionError(format!(
-                    "Failed to connect to service '{}': {}",
-                    server_name, error_msg
-                ))
-            })?;
-
-        // Get resources list
-        let resources = MCP_CLIENT_MANAGER
-            .list_resources(server_name)
-            .await
-            .map_err(|e| {
-                McpError::ServiceError(format!(
-                    "Failed to list resources from service '{}': {}",
-                    server_name, e
-                ))
-            })?;
-
-        // Process resources
-        if !resources.is_empty() {
-            tracing::info!(
-                "Got {} resources from service '{}'",
-                resources.len(),
-                server_name
-            );
-            self.set_resources_cache_entry(server_name, resources.clone())
-                .await;
-            tracing::info!(
-                "Updated in-memory resources list for service '{}'",
-                server_name
-            );
-        } else {
-            tracing::debug!("Service '{}' has no available resources", server_name);
-        }
-
-        Ok(())
-    }
-
-    /// Sync prompts list from MCP service and update in-memory cache
-    pub async fn sync_server_prompts_from_service(
-        &self,
-        server_name: &str,
-        _app_handle: &tauri::AppHandle,
-    ) -> Result<()> {
-        tracing::debug!(
-            "Starting to get prompts list from service '{}'",
-            server_name
-        );
-
-        // Get service config
-        let services = self.mcp_servers.read().await;
-        let service_config = services
-            .get(server_name)
-            .ok_or_else(|| McpError::ServiceNotFound(server_name.to_string()))?
-            .clone();
-        drop(services);
-
-        // Connect to service
-        let _connection = MCP_CLIENT_MANAGER
-            .ensure_connection(&service_config, false)
-            .await
-            .map_err(|e| {
-                let error_msg = format!("{}", e);
-                tracing::error!(
-                    "Failed to connect to service '{}': {}",
-                    server_name,
-                    error_msg
-                );
-                McpError::ConnectionError(format!(
-                    "Failed to connect to service '{}': {}",
-                    server_name, error_msg
-                ))
-            })?;
-
-        // Get prompts list
-        let prompts = MCP_CLIENT_MANAGER
-            .list_prompts(server_name)
-            .await
-            .map_err(|e| {
-                McpError::ServiceError(format!(
-                    "Failed to list prompts from service '{}': {}",
-                    server_name, e
-                ))
-            })?;
-
-        // Process prompts
-        if !prompts.is_empty() {
-            tracing::info!(
-                "Got {} prompts from service '{}'",
-                prompts.len(),
-                server_name
-            );
-            self.set_prompts_cache_entry(server_name, prompts.clone())
-                .await;
-            tracing::info!(
-                "Updated in-memory prompts list for service '{}'",
-                server_name
-            );
-        } else {
-            tracing::debug!("Service '{}' has no available prompts", server_name);
-        }
-
-        Ok(())
-    }
-
-    /// Get resources list for server (from in-memory cache)
-    pub async fn list_mcp_server_resources(
-        &self,
-        server_name: &str,
-        app_handle: &tauri::AppHandle,
-    ) -> Result<Vec<crate::types::McpResourceInfo>> {
-        // Try cache first
-        {
-            if let Some(list) = self.get_cached_resources_infos(server_name).await {
-                return Ok(list);
-            }
-        }
-
-        // Not cached: sync from service and cache
-        self.sync_server_resources_from_service(server_name, app_handle)
-            .await?;
-
-        let resources = self
-            .get_cached_resources_infos(server_name)
-            .await
-            .unwrap_or_default();
-        Ok(resources)
-    }
-
-    /// Get prompts list for server (from in-memory cache)
-    pub async fn list_mcp_server_prompts(
-        &self,
-        server_name: &str,
-        app_handle: &tauri::AppHandle,
-    ) -> Result<Vec<crate::types::McpPromptInfo>> {
-        // Try cache first
-        {
-            if let Some(list) = self.get_cached_prompts_infos(server_name).await {
-                return Ok(list);
-            }
-        }
-
-        // Not cached: sync from service and cache
-        self.sync_server_prompts_from_service(server_name, app_handle)
-            .await?;
-
-        let prompts = self
-            .get_cached_prompts_infos(server_name)
-            .await
-            .unwrap_or_default();
-        Ok(prompts)
-    }
+    // ============================================================================
+    // Permission Management Support
+    // ============================================================================
 
     /// Get all available tools from all cached servers for permission management
     pub async fn get_all_available_tools(&self) -> Vec<String> {
-        let entries = self.tools_cache_entries.read().await;
+        let cache = self.tools_cache.read().await;
         let mut all_tools = Vec::new();
 
-        for (server_name, cache_entry) in entries.iter() {
-            for tool_info in &cache_entry.infos {
+        for (server_name, tools) in cache.iter() {
+            for tool_info in tools {
                 all_tools.push(format!("{}__{}", server_name, tool_info.name));
             }
         }
@@ -1166,29 +773,80 @@ impl McpServerManager {
     }
 
     /// Get all available tools with descriptions for permission management
-    pub async fn get_all_available_tools_with_descriptions(&self) -> Vec<(String, String)> {
-        let entries = self.tools_cache_entries.read().await;
-        let mut all_tools = Vec::new();
+    pub async fn get_all_available_tools_with_descriptions(&self) -> Vec<(String, String, String, String, String)> {
+        // Get tools directly from storage with database IDs
+        match self.storage.get_all_tools_for_permissions().await {
+            Ok(tools_data) => {
+                // Convert storage format to our return format
+                let mut result = Vec::new();
+                for (tool_id, tool_name, server_name) in tools_data {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(&server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
 
-        for (server_name, cache_entry) in entries.iter() {
-            for tool_info in &cache_entry.infos {
-                let tool_id = format!("{}__{}", server_name, tool_info.name);
-                let description = tool_info.description.clone();
-                all_tools.push((tool_id, description));
+                    // Get tool description from cache
+                    let description = if let Some(cached_tools) = self.tools_cache.read().await.get(&server_name) {
+                        if let Some(tool_info) = cached_tools.iter().find(|t| t.name == tool_name) {
+                            tool_info.description.clone()
+                        } else {
+                            "".to_string()
+                        }
+                    } else {
+                        "".to_string()
+                    };
+
+                    result.push((tool_id, tool_name, description, server_id, server_name));
+                }
+                result.sort_by(|a, b| a.0.cmp(&b.0));
+                result
+            }
+            Err(_) => {
+                // Fallback to cache-based approach if storage query fails
+                let cache = self.tools_cache.read().await;
+                let mut all_tools = Vec::new();
+
+                for (server_name, tools) in cache.iter() {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
+
+                    for tool_info in tools {
+                        // Try to get tool UUID from database instead of using server__name format
+                        let tool_id = match self.storage.get_tool_id_by_name(&server_name, &tool_info.name).await {
+                            Ok(id) => id,
+                            Err(_) => {
+                                // Last resort: generate a deterministic ID based on server_name and tool_name
+                                // Use SHA256 hash to create a consistent ID
+                                use sha2::{Sha256, Digest};
+                                let mut hasher = Sha256::new();
+                                hasher.update(format!("tool:{}:{}", server_name, tool_info.name));
+                                let result = hasher.finalize();
+                                format!("{:x}", result)
+                            }
+                        };
+                        let name = tool_info.name.clone();
+                        let description = tool_info.description.clone();
+                        all_tools.push((tool_id, name, description, server_id.clone(), server_name.clone()));
+                    }
+                }
+
+                all_tools.sort_by(|a, b| a.0.cmp(&b.0));
+                all_tools
             }
         }
-
-        all_tools.sort_by(|a, b| a.0.cmp(&b.0));
-        all_tools
     }
 
     /// Get all available resources from all cached servers for permission management
     pub async fn get_all_available_resources(&self) -> Vec<String> {
-        let entries = self.resources_cache_entries.read().await;
+        let cache = self.resources_cache.read().await;
         let mut all_resources = Vec::new();
 
-        for (server_name, cache_entry) in entries.iter() {
-            for resource_info in &cache_entry.infos {
+        for (server_name, resources) in cache.iter() {
+            for resource_info in resources {
                 all_resources.push(format!("{}__{}", server_name, resource_info.uri));
             }
         }
@@ -1198,40 +856,102 @@ impl McpServerManager {
     }
 
     /// Get all available resources with descriptions for permission management
-    pub async fn get_all_available_resources_with_descriptions(&self) -> Vec<(String, String)> {
-        let entries = self.resources_cache_entries.read().await;
-        let mut all_resources = Vec::new();
+    pub async fn get_all_available_resources_with_descriptions(&self) -> Vec<(String, String, String, String, String)> {
+        // Get resources directly from storage with database IDs
+        match self.storage.get_all_resources_for_permissions().await {
+            Ok(resources_data) => {
+                // Convert storage format to our return format
+                let mut result = Vec::new();
+                for (resource_id, resource_name, server_name) in resources_data {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(&server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
 
-        for (server_name, cache_entry) in entries.iter() {
-            for resource_info in &cache_entry.infos {
-                let resource_id = format!("{}__{}", server_name, resource_info.uri);
-                let description = resource_info
-                    .description
-                    .clone()
-                    .filter(|d| !d.is_empty())
-                    .or_else(|| {
-                        if resource_info.name.is_empty() {
-                            None
+                    // Get resource description from cache
+                    let description = if let Some(cached_resources) = self.resources_cache.read().await.get(&server_name) {
+                        if let Some(resource_info) = cached_resources.iter().find(|r| r.name == resource_name) {
+                            resource_info
+                                .description
+                                .clone()
+                                .filter(|d| !d.is_empty())
+                                .or_else(|| {
+                                    if resource_info.name.is_empty() {
+                                        None
+                                    } else {
+                                        Some(resource_info.name.clone())
+                                    }
+                                })
+                                .unwrap_or_else(|| resource_info.uri.clone())
                         } else {
-                            Some(resource_info.name.clone())
+                            "".to_string()
                         }
-                    })
-                    .unwrap_or_else(|| resource_info.uri.clone());
-                all_resources.push((resource_id, description));
+                    } else {
+                        "".to_string()
+                    };
+
+                    result.push((resource_id, resource_name, description, server_id, server_name));
+                }
+                result.sort_by(|a, b| a.0.cmp(&b.0));
+                result
+            }
+            Err(_) => {
+                // Fallback to cache-based approach if storage query fails
+                let cache = self.resources_cache.read().await;
+                let mut all_resources = Vec::new();
+
+                for (server_name, resources) in cache.iter() {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
+
+                    for resource_info in resources {
+                        // Try to get resource UUID from database instead of using server__uri format
+                        let resource_id = match self.storage.get_resource_id_by_uri(&server_name, &resource_info.uri).await {
+                            Ok(id) => id,
+                            Err(_) => {
+                                // Last resort: generate a deterministic ID based on server_name and resource_uri
+                                // Use SHA256 hash to create a consistent ID
+                                use sha2::{Sha256, Digest};
+                                let mut hasher = Sha256::new();
+                                hasher.update(format!("resource:{}:{}", server_name, resource_info.uri));
+                                let result = hasher.finalize();
+                                format!("{:x}", result)
+                            }
+                        };
+                        let name = resource_info.name.clone();
+                        let description = resource_info
+                            .description
+                            .clone()
+                            .filter(|d| !d.is_empty())
+                            .or_else(|| {
+                                if resource_info.name.is_empty() {
+                                    None
+                                } else {
+                                    Some(resource_info.name.clone())
+                                }
+                            })
+                            .unwrap_or_else(|| resource_info.uri.clone());
+                        all_resources.push((resource_id, name, description, server_id.clone(), server_name.clone()));
+                    }
+                }
+
+                all_resources.sort_by(|a, b| a.0.cmp(&b.0));
+                all_resources
             }
         }
-
-        all_resources.sort_by(|a, b| a.0.cmp(&b.0));
-        all_resources
     }
 
     /// Get all available prompts from all cached servers for permission management
     pub async fn get_all_available_prompts(&self) -> Vec<String> {
-        let entries = self.prompts_cache_entries.read().await;
+        let cache = self.prompts_cache.read().await;
         let mut all_prompts = Vec::new();
 
-        for (server_name, cache_entry) in entries.iter() {
-            for prompt_info in &cache_entry.infos {
+        for (server_name, prompts) in cache.iter() {
+            for prompt_info in prompts {
                 all_prompts.push(format!("{}__{}", server_name, prompt_info.name));
             }
         }
@@ -1241,36 +961,77 @@ impl McpServerManager {
     }
 
     /// Get all available prompts with descriptions for permission management
-    pub async fn get_all_available_prompts_with_descriptions(&self) -> Vec<(String, String)> {
-        let entries = self.prompts_cache_entries.read().await;
-        let mut all_prompts = Vec::new();
+    pub async fn get_all_available_prompts_with_descriptions(&self) -> Vec<(String, String, String, String, String)> {
+        // Get prompts directly from storage with database IDs
+        match self.storage.get_all_prompts_for_permissions().await {
+            Ok(prompts_data) => {
+                // Convert storage format to our return format
+                let mut result = Vec::new();
+                for (prompt_id, prompt_name, server_name) in prompts_data {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(&server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
 
-        for (server_name, cache_entry) in entries.iter() {
-            for prompt_info in &cache_entry.infos {
-                let prompt_id = format!("{}__{}", server_name, prompt_info.name);
-                let description = prompt_info.description.clone().unwrap_or_default();
-                all_prompts.push((prompt_id, description));
+                    // Get prompt description from cache
+                    let description = if let Some(cached_prompts) = self.prompts_cache.read().await.get(&server_name) {
+                        if let Some(prompt_info) = cached_prompts.iter().find(|p| p.name == prompt_name) {
+                            prompt_info.description.clone().unwrap_or_default()
+                        } else {
+                            "".to_string()
+                        }
+                    } else {
+                        "".to_string()
+                    };
+
+                    result.push((prompt_id, prompt_name, description, server_id, server_name));
+                }
+                result.sort_by(|a, b| a.0.cmp(&b.0));
+                result
+            }
+            Err(_) => {
+                // Fallback to cache-based approach if storage query fails
+                let cache = self.prompts_cache.read().await;
+                let mut all_prompts = Vec::new();
+
+                for (server_name, prompts) in cache.iter() {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
+
+                    for prompt_info in prompts {
+                        // Use server__name format as fallback for ID
+                        let prompt_id = format!("{}__{}", server_name, prompt_info.name);
+                        let name = prompt_info.name.clone();
+                        let description = prompt_info.description.clone().unwrap_or_default();
+                        all_prompts.push((prompt_id, name, description, server_id.clone(), server_name.clone()));
+                    }
+                }
+
+                all_prompts.sort_by(|a, b| a.0.cmp(&b.0));
+                all_prompts
             }
         }
-
-        all_prompts.sort_by(|a, b| a.0.cmp(&b.0));
-        all_prompts
     }
 
-    /// Get all available prompt templates (prompts with arguments) for permission management
+    /// Get all available prompt templates from all cached servers for permission management
     pub async fn get_all_available_prompt_templates(&self) -> Vec<String> {
-        let entries = self.prompts_cache_entries.read().await;
         let mut templates = Vec::new();
 
-        for (server_name, cache_entry) in entries.iter() {
-            for prompt in &cache_entry.raw {
-                let has_arguments = prompt
-                    .arguments
-                    .as_ref()
-                    .map(|args| !args.is_empty())
-                    .unwrap_or(false);
-                if has_arguments {
-                    templates.push(format!("{}__{}", server_name, prompt.name));
+        // Use the storage method to get prompts with template info
+        for server_name in self.tools_cache.read().await.keys() {
+            if let Ok(prompts_with_templates) = self
+                .storage
+                .get_cached_server_prompts_with_templates(server_name)
+                .await
+            {
+                for (prompt_info, is_template) in prompts_with_templates {
+                    if is_template {
+                        templates.push(format!("{}__{}", server_name, prompt_info.name));
+                    }
                 }
             }
         }
@@ -1280,61 +1041,155 @@ impl McpServerManager {
     }
 
     /// Get all available prompt templates with descriptions for permission management
-    pub async fn get_all_available_prompt_templates_with_descriptions(&self) -> Vec<(String, String)> {
-        let entries = self.prompts_cache_entries.read().await;
-        let mut templates = Vec::new();
+    pub async fn get_all_available_prompt_templates_with_descriptions(
+        &self,
+    ) -> Vec<(String, String, String, String, String)> {
+        // Get prompt templates directly from storage with database IDs
+        match self.storage.get_all_prompt_templates_for_permissions().await {
+            Ok(templates_data) => {
+                // Convert storage format to our return format
+                let mut result = Vec::new();
+                for (template_id, template_name, server_name) in templates_data {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(&server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
 
-        for (server_name, cache_entry) in entries.iter() {
-            for prompt in &cache_entry.raw {
-                let has_arguments = prompt
-                    .arguments
-                    .as_ref()
-                    .map(|args| !args.is_empty())
-                    .unwrap_or(false);
-                if has_arguments {
-                    let template_id = format!("{}__{}", server_name, prompt.name);
-                    let description = prompt
-                        .description
-                        .clone()
-                        .filter(|d| !d.is_empty())
-                        .unwrap_or_else(|| {
-                            let arg_count = prompt
-                                .arguments
-                                .as_ref()
-                                .map(|a| a.len())
-                                .unwrap_or(0);
-                            format!("Template with {} argument(s)", arg_count)
-                        });
-                    templates.push((template_id, description));
+                    // Get template description from cache
+                    let description = if let Some(cached_prompts) = self.prompts_cache.read().await.get(&server_name) {
+                        if let Some(prompt_info) = cached_prompts.iter().find(|p| p.name == template_name) {
+                            prompt_info
+                                .description
+                                .clone()
+                                .filter(|d| !d.is_empty())
+                                .unwrap_or_else(|| "Template with arguments".to_string())
+                        } else {
+                            "Template with arguments".to_string()
+                        }
+                    } else {
+                        "Template with arguments".to_string()
+                    };
+
+                    result.push((template_id, template_name, description, server_id, server_name));
                 }
+                result.sort_by(|a, b| a.0.cmp(&b.0));
+                result
+            }
+            Err(_) => {
+                // Fallback to cache-based approach if storage query fails
+                let mut templates = Vec::new();
+
+                // Use the storage method to get prompts with template info
+                for server_name in self.tools_cache.read().await.keys() {
+                    // Get server ID by name
+                    let server_id = match self.get_server_id_by_name(server_name).await {
+                        Ok(id) => id,
+                        Err(_) => server_name.clone(), // Fallback to server name if ID not found
+                    };
+
+                    if let Ok(prompts_with_templates) = self
+                        .storage
+                        .get_cached_server_prompts_with_templates(server_name)
+                        .await
+                    {
+                        for (prompt_info, is_template) in prompts_with_templates {
+                            if is_template {
+                                // Use server__name format as fallback for ID
+                                let template_id = format!("{}__{}", server_name, prompt_info.name);
+                                let name = prompt_info.name.clone();
+                                let description = prompt_info
+                                    .description
+                                    .clone()
+                                    .filter(|d| !d.is_empty())
+                                    .unwrap_or_else(|| "Template with arguments".to_string());
+                                templates.push((template_id, name, description, server_id.clone(), server_name.clone()));
+                            }
+                        }
+                    }
+                }
+
+                templates.sort_by(|a, b| a.0.cmp(&b.0));
+                templates
             }
         }
-
-        templates.sort_by(|a, b| a.0.cmp(&b.0));
-        templates
     }
+
+    // ============================================================================
+    // Raw Cache Access Methods (for trait compatibility)
+    // ============================================================================
+
+    /// Get cached tools for a server (raw format)
+    pub async fn get_cached_tools_raw(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
+        // Try to get tools in info format first, then convert to raw format
+        if let Some(tool_infos) = self.get_cached_tools(server_name).await {
+            tracing::debug!("Converting {} tools from info format to raw format for server '{}'",
+                tool_infos.len(), server_name);
+
+            let raw_tools: Vec<rmcp::model::Tool> = tool_infos.into_iter().map(|info| {
+                rmcp::model::Tool {
+                    name: info.name.into(),
+                    description: Some(info.description.into()),
+                    input_schema: std::sync::Arc::new(serde_json::Map::new()),
+                    // Default values for other fields
+                    title: None,
+                    output_schema: None,
+                    annotations: None,
+                    icons: None,
+                    meta: None,
+                }
+            }).collect();
+
+            tracing::debug!("Successfully converted {} tools to raw format", raw_tools.len());
+            Some(raw_tools)
+        } else {
+            tracing::debug!("No cached tools found for server '{}'", server_name);
+            None
+        }
+    }
+
+    /// Get cached resources for a server (raw format)
+    pub async fn get_cached_resources_raw(
+        &self,
+        _server_name: &str,
+    ) -> Option<Vec<rmcp::model::Resource>> {
+        // For SQLite implementation, we don't store raw resources directly
+        // This would require additional storage or conversion from info format
+        // For now, return None to indicate raw access is not available
+        None
+    }
+
+    /// Get cached prompts for a server (raw format)
+    pub async fn get_cached_prompts_raw(
+        &self,
+        _server_name: &str,
+    ) -> Option<Vec<rmcp::model::Prompt>> {
+        // For SQLite implementation, we don't store raw prompts directly
+        // This would require additional storage or conversion from info format
+        // For now, return None to indicate raw access is not available
+        None
+    }
+
+    // ========================================================================
+    // Aggregator Compatibility Methods
+    // ========================================================================
+
+    /// Get tools cache entries for aggregator
+    pub fn get_tools_cache_entries(&self) -> &dashmap::DashMap<String, Vec<rmcp::model::Tool>> {
+        static EMPTY_CACHE: std::sync::OnceLock<dashmap::DashMap<String, Vec<rmcp::model::Tool>>> =
+            std::sync::OnceLock::new();
+        EMPTY_CACHE.get_or_init(|| dashmap::DashMap::new())
+    }
+
+    /// Get raw cached tools for aggregator
+    pub async fn get_raw_cached_tools(&self, server_name: &str) -> Option<Vec<rmcp::model::Tool>> {
+        self.get_cached_tools_raw(server_name).await
+    }
+
+    /// Get MCP servers for aggregator
+    pub async fn get_mcp_servers(&self) -> Result<Vec<McpServerInfo>> {
+        self.list_mcp_servers().await
+    }
+
 }
 
-#[derive(Clone)]
-pub struct ToolsCacheEntry {
-    pub raw: Vec<rmcp::model::Tool>,
-    pub infos: Vec<crate::types::McpToolInfo>,
-    pub last_updated: chrono::DateTime<chrono::Utc>,
-    pub count: usize,
-}
-
-#[derive(Clone)]
-pub struct ResourcesCacheEntry {
-    pub raw: Vec<rmcp::model::Resource>,
-    pub infos: Vec<crate::types::McpResourceInfo>,
-    pub last_updated: chrono::DateTime<chrono::Utc>,
-    pub count: usize,
-}
-
-#[derive(Clone)]
-pub struct PromptsCacheEntry {
-    pub raw: Vec<rmcp::model::Prompt>,
-    pub infos: Vec<crate::types::McpPromptInfo>,
-    pub last_updated: chrono::DateTime<chrono::Utc>,
-    pub count: usize,
-}

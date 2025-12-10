@@ -21,7 +21,7 @@ import {
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppContext } from '../contexts/AppContext'
-import type { DashboardStats, Token } from '../types'
+import type { DashboardStats, TokenForDashboard } from '../types'
 
 const { Text } = Typography
 
@@ -45,7 +45,7 @@ const Dashboard: React.FC = () => {
   const [currentUptime, setCurrentUptime] = useState<string>('-')
 
   // Token 状态管理
-  const [tokens, setTokens] = useState<Token[]>([])
+  const [tokens, setTokens] = useState<TokenForDashboard[]>([])
   const [selectedTokenId, setSelectedTokenId] = useState<string | undefined>()
   const [isTokensLoading, setIsTokensLoading] = useState(false)
   const [tokenDropdownOpen, setTokenDropdownOpen] = useState(false)
@@ -80,12 +80,12 @@ const Dashboard: React.FC = () => {
   const loadTokens = async () => {
     try {
       setIsTokensLoading(true)
-      const tokenList = await invoke<Token[]>('get_tokens_for_dashboard')
+      const tokenList = await invoke<TokenForDashboard[]>('get_tokens_for_dashboard')
       setTokens(tokenList)
 
       // 如果有可用的 token，选择第一个有效的
       const availableTokens = tokenList.filter(
-        (token) => token.enabled && !token.is_expired,
+        (token) => !token.is_expired,
       )
       if (availableTokens.length > 0 && !selectedTokenId) {
         setSelectedTokenId(availableTokens[0].id)
@@ -135,7 +135,7 @@ const Dashboard: React.FC = () => {
   const selectedToken = getSelectedToken()
 
   // Token 状态辅助函数
-  const formatTokenExpiration = (token: Token) => {
+  const formatTokenExpiration = (token: TokenForDashboard) => {
     if (!token.expires_at) return t('dashboard.token.status.never_expires')
     const now = Date.now()
     const expiry = token.expires_at * 1000 // Convert from seconds to milliseconds
@@ -150,8 +150,7 @@ const Dashboard: React.FC = () => {
     return t('dashboard.token.status.expires_soon')
   }
 
-  const getTokenStatusColor = (token: Token) => {
-    if (!token.enabled) return '#8c8c8c' // gray
+  const getTokenStatusColor = (token: TokenForDashboard) => {
     if (token.is_expired) return '#ff4d4f' // red
     const now = Date.now()
     const expiry = token.expires_at ? token.expires_at * 1000 : 0
@@ -167,7 +166,7 @@ const Dashboard: React.FC = () => {
         url: stats.aggregator?.endpoint || '',
         ...(selectedToken && {
           headers: {
-            Authorization: `Bearer ${selectedToken.value}`,
+            Authorization: `Bearer ${selectedToken.token}`,
           },
         }),
       },
@@ -185,7 +184,7 @@ const Dashboard: React.FC = () => {
   ) => {
     const endpoint = stats.aggregator?.endpoint || ''
     const authHeaders = selectedToken
-      ? { Authorization: `Bearer ${selectedToken.value}` }
+      ? { Authorization: `Bearer ${selectedToken.token}` }
       : {}
 
     switch (client) {
@@ -375,7 +374,7 @@ const Dashboard: React.FC = () => {
                   <Select.Option
                     value={token.id}
                     key={token.id}
-                    disabled={!token.enabled || token.is_expired}>
+                    disabled={token.is_expired}>
                     <div
                       style={{
                         display: 'flex',
