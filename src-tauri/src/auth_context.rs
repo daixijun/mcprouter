@@ -32,7 +32,20 @@ impl AuthContext {
     /// 尝试从session中获取权限信息，如果session_id有效且未过期
     pub fn from_request_context(context: RequestContext<RoleServer>) -> Self {
         let request_time = Instant::now();
+        tracing::debug!("=== AuthContext Debug ===");
+        tracing::debug!("Creating AuthContext from RequestContext");
+
         let session_info = Self::extract_session_from_context(&context);
+
+        if let Some(ref session) = session_info {
+            tracing::info!("AuthContext created successfully - Session ID: {}, Token ID: {}, Has tools: {}, Has resources: {}",
+                session.id,
+                session.token.id,
+                session.token.allowed_tools.is_some(),
+                session.token.allowed_resources.is_some());
+        } else {
+            tracing::warn!("AuthContext created without session information - this will likely cause authentication failures");
+        }
 
         Self {
             original_context: context,
@@ -43,8 +56,8 @@ impl AuthContext {
 
     /// 从RequestContext中提取session信息
     ///
-    /// 通过RequestContext extensions获取session_id，
-    /// 然后从SessionManager中获取完整的session信息
+    /// 直接从RequestContext extensions获取SessionInfo，
+    /// 现在我们不再使用SessionManager，而是直接存储Token信息
     fn extract_session_from_context(
         context: &RequestContext<RoleServer>,
     ) -> Option<Arc<SessionInfo>> {
@@ -54,42 +67,12 @@ impl AuthContext {
             return Some(session_info_ext.0.clone());
         }
 
-        // 如果没有完整session信息，尝试获取session_id然后查询SessionManager
-        if let Some(session_id_ext) = context.extensions.get::<SessionIdExtension>() {
-            let session_id = &session_id_ext.0;
-            tracing::debug!("Found SessionIdExtension in RequestContext: {}", session_id);
-
-            // TODO: 修复 SessionData 到 SessionInfo 的转换
-            // 暂时返回 None 以避免编译错误
-            // if let Some(session_manager) = get_session_manager() {
-            //     if let Some(session) = session_manager.get_session(session_id) {
-            //         return Some(Arc::new(session.into()));
-            //     }
-            // }
-        }
-
         // 当MCP请求通过Streamable HTTP服务时，原始HTTP的Parts会被注入到extensions中
         // 我们需要从parts.extensions里再尝试一次取出session信息
         if let Some(http_parts) = context.extensions.get::<HttpRequestParts>() {
             if let Some(session_info_ext) = http_parts.extensions.get::<SessionInfoExtension>() {
                 tracing::debug!("Found SessionInfoExtension inside HTTP request parts extensions");
                 return Some(session_info_ext.0.clone());
-            }
-
-            if let Some(session_id_ext) = http_parts.extensions.get::<SessionIdExtension>() {
-                let session_id = &session_id_ext.0;
-                tracing::debug!(
-                    "Found SessionIdExtension inside HTTP request parts: {}",
-                    session_id
-                );
-
-                // TODO: 修复 SessionData 到 SessionInfo 的转换
-                // 暂时返回 None 以避免编译错误
-                // if let Some(session_manager) = get_session_manager() {
-                //     if let Some(session) = session_manager.get_session(session_id) {
-                //         return Some(Arc::new(session.into()));
-                //     }
-                // }
             }
         }
 

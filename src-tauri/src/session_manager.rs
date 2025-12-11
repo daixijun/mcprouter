@@ -132,6 +132,48 @@ impl SessionManagerSqlite {
         }
     }
 
+    /// Get complete SessionInfo including full Token data
+    /// This method should be used when creating sessions for authentication
+    pub fn get_session_info_with_token(&self, session_id: &str, token_manager: &crate::token_manager::TokenManager) -> Option<SessionInfo> {
+        let session_data = self.get_session(session_id)?;
+
+        // Get full token information from TokenManager
+        let token = match tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                token_manager.get_token_by_id(&session_data.token_id)
+            )
+        }) {
+            Ok(token) => {
+                tracing::debug!("Successfully retrieved token for session {} - ID: {}, Enabled: {}, Tools: {}, Resources: {}, Prompts: {}",
+                    session_id,
+                    token.id,
+                    token.enabled,
+                    token.allowed_tools.as_ref().map_or(0, |t| t.len()),
+                    token.allowed_resources.as_ref().map_or(0, |r| r.len()),
+                    token.allowed_prompts.as_ref().map_or(0, |p| p.len())
+                );
+                token
+            },
+            Err(e) => {
+                tracing::error!("Failed to get token information for session {}: {}", session_id, e);
+                return None;
+            }
+        };
+
+        // Convert expires_at to Instant
+        let expires_at = session_data.expires_at.map(|dt| {
+            std::time::Instant::now() + (dt - chrono::Utc::now()).to_std().unwrap_or_default()
+        });
+
+        Some(SessionInfo {
+            id: session_data.id,
+            token,
+            created_at: std::time::Instant::now(), // We don't store this precisely, so use now
+            last_accessed: std::time::Instant::now(),
+            expires_at,
+        })
+    }
+
     /// Get session asynchronously (recommended method)
     pub async fn get_session_async(&self, session_id: &str) -> Result<Option<SessionData>> {
         self.storage
