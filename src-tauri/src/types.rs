@@ -780,14 +780,14 @@ pub struct ValidationResult {
     pub message: String,
 }
 
-/// 可用权限项
-#[derive(Debug, Serialize, Deserialize)]
+/// 可用权限项 - 简化版本，使用 resource_path
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionItem {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub category: Option<String>,
-    pub tags: Option<Vec<String>>,
+    pub id: String,                    // 保留 UUID 用于数据库主键
+    pub resource_path: String,         // 格式：server__resource_name
+    pub resource_type: String,         // 'tool' | 'resource' | 'prompt'
+    pub description: Option<String>,    // 权限描述
+    pub server_name: String,           // 服务器名称
 }
 
 /// 可用权限集合
