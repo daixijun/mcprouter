@@ -28,17 +28,11 @@ export enum PermissionAction {
   MANAGE = 'manage'
 }
 
-// 基础权限项
+// 基础权限项 - 简化版本，使用 resource_path
 export interface PermissionItem {
-  id: string
-  resource_name: string
-  description: string
-  resource_type: 'tool' | 'resource' | 'prompt' | 'prompt_template'
-  server_id: string
-  server_name: string
-  category?: string
-  tags?: string[]
-  metadata?: Record<string, any>
+  id: string                    // 保留 UUID 用于数据库主键
+  resource_path: string         // 格式：server__resource_name
+  resource_type: string         // 'tool' | 'resource' | 'prompt'
 }
 
 // Prompt Template 特殊权限项
@@ -62,13 +56,13 @@ export interface PromptCategoryPermissionItem extends PermissionItem {
   is_system: boolean
 }
 
-// 可用权限集合
+// 可用权限集合 - 简化版本
 export interface AvailablePermissions {
   tools: PermissionItem[]
   resources: PermissionItem[]
   prompts: PermissionItem[]
-  prompt_templates: PromptTemplatePermissionItem[]
-  prompt_categories: PromptCategoryPermissionItem[]
+  prompt_templates?: PermissionItem[] // 可选，暂不支持
+  prompt_categories?: PromptCategoryPermissionItem[] // 可选，暂不支持
 }
 
 // Token 权限配置

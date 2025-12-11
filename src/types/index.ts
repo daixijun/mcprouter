@@ -287,14 +287,11 @@ export interface UpdateTokenResponse {
 }
 
 export interface PermissionItem {
-  id: string
-  resource_name: string
-  description: string
-  resource_type: 'tool' | 'resource' | 'prompt' | 'prompt_template'
-  server_id: string
-  server_name: string
-  category?: string
-  tags?: string[]
+  id: string                    // 保留 UUID 用于数据库主键
+  resource_path: string         // 格式：server__resource_name
+  resource_type: string         // 'tool' | 'resource' | 'prompt'
+  description?: string          // 权限描述
+  server_name: string           // 服务器名称
 }
 
 export interface AvailablePermissions {

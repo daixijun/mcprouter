@@ -63,21 +63,30 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
 
   // 默认展开所有服务器
   useEffect(() => {
-    const serverNames = [...new Set(permissionItems.map(item => item.server_name))]
+    // 从 resource_path 解析服务器名
+    const serverNames = [...new Set(permissionItems.map(item =>
+      item.resource_path.split("__")[0]
+    ))]
     setExpandedServers(serverNames)
   }, [permissionItems])
 
-
-  // 根据权限ID获取描述信息
-  const getPermissionDescription = (permissionId: string): string => {
-    const item = permissionItems.find((item) => item.id === permissionId)
-    return item?.description || ''
+  // 根据权限项获取描述信息
+  const getPermissionDescription = (item: PermissionItem): string => {
+    return item.description || item.resource_path // 优先使用描述，回退到 resource_path
   }
 
-  // 获取权限显示名称 - 使用 permissionItems 中的 resource_name
-  const getDisplayName = (permissionId: string): string => {
-    const item = permissionItems.find((item) => item.id === permissionId)
-    return item?.resource_name || permissionId
+  // 获取权限显示名称 - 从 resource_path 解析出资源名
+  const getDisplayName = (resourcePath: string): string => {
+    const parts = resourcePath.split("__")
+    if (parts.length >= 2) {
+      return parts.slice(1).join("__") // 返回资源名部分
+    }
+    return resourcePath
+  }
+
+  // 从 permission item 获取服务器名
+  const getServerName = (item: PermissionItem): string => {
+    return item.server_name
   }
 
   // 获取权限类型对应的图标
@@ -96,24 +105,23 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
     }
   }
 
-  // 按服务名称分组权限
+  // 按服务名称分组权限 - 使用新的 resource_path 格式
   const groupedPermissions = useMemo(() => {
     const groups: Record<
       string,
       { serverName: string; permissions: string[] }
     > = {}
 
-    
-    // 使用 permissionItems 进行分组
+    // 使用 permissionItems 进行分组，直接使用 server_name 字段
     permissionItems.forEach((item) => {
-      const serverName = item.server_name
+      const serverName = getServerName(item)
       if (!groups[serverName]) {
         groups[serverName] = {
           serverName,
           permissions: [],
         }
       }
-      groups[serverName].permissions.push(item.id)
+      groups[serverName].permissions.push(item.resource_path)
     })
 
     return Object.values(groups)
@@ -136,8 +144,7 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
       .map((group) => ({
         ...group,
         permissions: group.permissions.filter((permission) => {
-          const item = permissionItems.find((item) => item.id === permission)
-          const resourceName = item?.resource_name || ''
+          const resourceName = getDisplayName(permission)
           return (
             resourceName.toLowerCase().includes(searchTerm) ||
             group.server.toLowerCase().includes(searchTerm)
@@ -339,32 +346,6 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                         <Text type='secondary'>
                           ({group.selectedCount}/{group.permissions.length})
                         </Text>
-                        {(() => {
-                          // 使用第一个权限项的描述作为服务器描述
-                          const firstItem = permissionItems.find(
-                            (item) => item.server_name === group.server,
-                          )
-                          const serverDescription = firstItem?.description
-                          if (!serverDescription) return null
-
-                          return (
-                            <Tooltip title={serverDescription} placement='top'>
-                              <Text
-                                type='secondary'
-                                ellipsis
-                                style={{
-                                  fontSize: '12px',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  flex: 1,
-                                  minWidth: 0,
-                                }}>
-                                - {serverDescription}
-                              </Text>
-                            </Tooltip>
-                          )
-                        })()}
                       </div>
                     </Checkbox>
                   </Space>
@@ -396,35 +377,27 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                             <div
                               style={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                flexWrap: 'wrap',
-                                gap: '4px',
+                                flexDirection: 'column',
+                                gap: '2px',
                               }}>
-                              <Text>{getDisplayName(permission)}</Text>
+                              <Text strong>{getDisplayName(permission)}</Text>
                               {(() => {
-                                const description =
-                                  getPermissionDescription(permission)
-                                if (!description) return null
+                                const item = permissionItems.find((item) => item.resource_path === permission)
+                                if (!item) return null
+
+                                const description = getPermissionDescription(item)
+                                if (!description || description === item.resource_path) return null
 
                                 return (
-                                  <Tooltip
-                                    title={description}
-                                    placement='right'>
-                                    <Text
-                                      type='secondary'
-                                      ellipsis
-                                      style={{
-                                        fontSize: '11px',
-                                        fontStyle: 'italic',
-                                        overflow: 'hidden',
-                                        // textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        flex: 1,
-                                        minWidth: 0,
-                                      }}>
-                                      - {description}
-                                    </Text>
-                                  </Tooltip>
+                                  <Text
+                                    type='secondary'
+                                    style={{
+                                      fontSize: '11px',
+                                      lineHeight: '1.2',
+                                      wordBreak: 'break-word',
+                                    }}>
+                                    {description}
+                                  </Text>
                                 )
                               })()}
                             </div>

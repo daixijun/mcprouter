@@ -375,6 +375,14 @@ const TokenManagement: React.FC = () => {
       })
 
       console.log('权限更新成功:', response)
+      console.log('保存的权限数据格式验证:', {
+        allowed_tools_count: permissions.allowed_tools?.length || 0,
+        allowed_resources_count: permissions.allowed_resources?.length || 0,
+        allowed_prompts_count: permissions.allowed_prompts?.length || 0,
+        sample_tool: permissions.allowed_tools?.[0],
+        sample_resource: permissions.allowed_resources?.[0],
+        sample_prompt: permissions.allowed_prompts?.[0]
+      })
     } catch (error: any) {
       console.error('Failed to update permissions:', error)
       // 错误处理：回滚本地状态
