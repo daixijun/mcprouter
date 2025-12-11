@@ -142,42 +142,15 @@ impl TokenStorage {
                    t.enabled, t.last_used_at, t.usage_count, t.expires_at,
                    GROUP_CONCAT(CASE
                         WHEN p.resource_type = 'tool' AND p.allowed = 1
-                        THEN (SELECT mt.id FROM mcp_server_tools mt
-                              JOIN mcp_servers ms ON mt.server_id = ms.id
-                              WHERE ms.enabled = 1 AND (
-                                -- 稳定标识符格式: server_name__tool_name
-                                ms.name || '__' || mt.name = p.resource_id OR
-                                -- 兼容UUID格式（如果存在）
-                                mt.id = p.resource_id OR
-                                -- 兼容纯工具名称格式（如果存在）
-                                mt.name = p.resource_id
-                              ))
+                        THEN p.resource_path
                    END) as allowed_tools,
                    GROUP_CONCAT(CASE
                         WHEN p.resource_type = 'resource' AND p.allowed = 1
-                        THEN (SELECT mr.id FROM mcp_server_resources mr
-                              JOIN mcp_servers ms ON mr.server_id = ms.id
-                              WHERE ms.enabled = 1 AND (
-                                -- 稳定标识符格式: server_name__resource_uri
-                                ms.name || '__' || mr.uri = p.resource_id OR
-                                -- 兼容UUID格式（如果存在）
-                                mr.id = p.resource_id OR
-                                -- 兼容纯资源名称格式（如果存在）
-                                mr.name = p.resource_id
-                              ))
+                        THEN p.resource_path
                    END) as allowed_resources,
                    GROUP_CONCAT(CASE
                         WHEN p.resource_type = 'prompt' AND p.allowed = 1
-                        THEN (SELECT mp.id FROM mcp_server_prompts mp
-                              JOIN mcp_servers ms ON mp.server_id = ms.id
-                              WHERE ms.enabled = 1 AND (
-                                -- 稳定标识符格式: server_name__prompt_name
-                                ms.name || '__' || mp.name = p.resource_id OR
-                                -- 兼容UUID格式（如果存在）
-                                mp.id = p.resource_id OR
-                                -- 兼容纯提示词名称格式（如果存在）
-                                mp.name = p.resource_id
-                              ))
+                        THEN p.resource_path
                    END) as allowed_prompts,
                    '' as allowed_prompt_templates
             FROM tokens t
@@ -206,7 +179,7 @@ impl TokenStorage {
                 }
             }
 
-            
+
             let token_info = TokenInfo {
                 id: token_id.clone(),
                 name: row.get("name"),
@@ -355,72 +328,56 @@ impl TokenStorage {
         Ok(())
     }
 
-    /// Add a permission to a token
-    pub async fn add_permission(&self, token_id: &str, resource_type: &str, resource_id: &str) -> Result<()> {
+    /// Add a permission to a token - 直接使用稳定标识符，无需转换
+    pub async fn add_permission(&self, token_id: &str, resource_type: &str, resource_path: &str) -> Result<()> {
         let permission_id = Uuid::now_v7().to_string();
         let now = Utc::now();
 
-        // Normalize resource_id to stable identifier format
-        let stable_resource_id = self.normalize_resource_id(resource_type, resource_id).await?;
-
         query(
             r#"
-            INSERT INTO permissions (id, token_id, resource_type, resource_id, allowed, created_at, updated_at)
+            INSERT INTO permissions (id, token_id, resource_type, resource_path, allowed, created_at, updated_at)
             VALUES (?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(token_id, resource_type, resource_path)
+            DO UPDATE SET allowed = 1, updated_at = ?
             "#,
         )
         .bind(&permission_id)
         .bind(token_id)
         .bind(resource_type)
-        .bind(&stable_resource_id)
+        .bind(resource_path)
+        .bind(now)
         .bind(now)
         .bind(now)
         .execute(&self.pool)
         .await
-        .map_err(|e| {
-            if e.to_string().contains("UNIQUE constraint failed") {
-                StorageError::AlreadyExists(format!("Permission already exists for {} {}", resource_type, stable_resource_id))
-            } else {
-                StorageError::Database(format!("Failed to add permission: {}", e))
-            }
-        })?;
+        .map_err(|e| StorageError::Database(format!("Failed to add permission: {}", e)))?;
 
         Ok(())
     }
 
-    /// Remove a permission from a token
-    pub async fn remove_permission(&self, token_id: &str, resource_type: &str, resource_id: &str) -> Result<()> {
-        // Normalize resource_id to stable identifier format
-        let stable_resource_id = self.normalize_resource_id(resource_type, resource_id).await?;
-
-        let result = query(
-            "DELETE FROM permissions WHERE token_id = ? AND resource_type = ? AND resource_id = ?"
+    /// Remove a permission from a token - 直接使用稳定标识符，无需转换
+    pub async fn remove_permission(&self, token_id: &str, resource_type: &str, resource_path: &str) -> Result<()> {
+        query(
+            "DELETE FROM permissions WHERE token_id = ? AND resource_type = ? AND resource_path = ?"
         )
         .bind(token_id)
         .bind(resource_type)
-        .bind(&stable_resource_id)
+        .bind(resource_path)
         .execute(&self.pool)
         .await
         .map_err(|e| StorageError::Database(format!("Failed to remove permission: {}", e)))?;
 
-        if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(format!(
-                "Permission not found for {} {}",
-                resource_type, stable_resource_id
-            )));
-        }
-
         Ok(())
     }
 
-    /// Get permissions for a specific token and resource type
+    /// Get permissions for a specific token and resource type - 直接返回稳定标识符列表
     async fn get_token_permissions(&self, token_id: &str, resource_type: &str) -> Result<Vec<String>> {
         let rows = query(
             r#"
-            SELECT resource_id
+            SELECT resource_path
             FROM permissions
             WHERE token_id = ? AND resource_type = ? AND allowed = 1
-            ORDER BY created_at ASC
+            ORDER BY resource_path ASC
             "#,
         )
         .bind(token_id)
@@ -430,18 +387,18 @@ impl TokenStorage {
         .map_err(|e| StorageError::Database(format!("Failed to get token permissions: {}", e)))?;
 
         Ok(rows.into_iter()
-            .map(|row| row.get::<String, _>("resource_id"))
+            .map(|row| row.get::<String, _>("resource_path"))
             .collect())
     }
 
     /// Check if a specific permission exists for a token
-    pub async fn has_permission(&self, token_id: &str, resource_type: &str, resource_id: &str) -> Result<bool> {
+    pub async fn has_permission(&self, token_id: &str, resource_type: &str, resource_path: &str) -> Result<bool> {
         let row = query(
-            "SELECT COUNT(*) as count FROM permissions WHERE token_id = ? AND resource_type = ? AND resource_id = ? AND allowed = 1"
+            "SELECT COUNT(*) as count FROM permissions WHERE token_id = ? AND resource_type = ? AND resource_path = ? AND allowed = 1"
         )
         .bind(token_id)
         .bind(resource_type)
-        .bind(resource_id)
+        .bind(resource_path)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| StorageError::Database(format!("Failed to check permission: {}", e)))?;
@@ -455,92 +412,7 @@ impl TokenStorage {
         }
     }
 
-    /// Convert UUID to stable identifier format (server_name__resource_name)
-    async fn convert_uuid_to_stable_id(&self, resource_type: &str, uuid: &str) -> Result<String> {
-        match resource_type {
-            "tool" => {
-                let row = query(
-                    r#"
-                    SELECT s.name || '__' || t.name as stable_id
-                    FROM mcp_server_tools t
-                    JOIN mcp_servers s ON t.server_id = s.id
-                    WHERE t.id = ?
-                    "#,
-                )
-                .bind(uuid)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| StorageError::Database(format!("Failed to convert tool UUID to stable ID: {}", e)))?;
-
-                match row {
-                    Some(row) => Ok(row.get::<String, _>("stable_id")),
-                    None => Err(StorageError::NotFound(format!("Tool with UUID {} not found", uuid))),
-                }
-            }
-            "resource" => {
-                let row = query(
-                    r#"
-                    SELECT s.name || '__' || r.uri as stable_id
-                    FROM mcp_server_resources r
-                    JOIN mcp_servers s ON r.server_id = s.id
-                    WHERE r.id = ?
-                    "#,
-                )
-                .bind(uuid)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| StorageError::Database(format!("Failed to convert resource UUID to stable ID: {}", e)))?;
-
-                match row {
-                    Some(row) => Ok(row.get::<String, _>("stable_id")),
-                    None => Err(StorageError::NotFound(format!("Resource with UUID {} not found", uuid))),
-                }
-            }
-            "prompt" => {
-                let row = query(
-                    r#"
-                    SELECT s.name || '__' || p.name as stable_id
-                    FROM mcp_server_prompts p
-                    JOIN mcp_servers s ON p.server_id = s.id
-                    WHERE p.id = ?
-                    "#,
-                )
-                .bind(uuid)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| StorageError::Database(format!("Failed to convert prompt UUID to stable ID: {}", e)))?;
-
-                match row {
-                    Some(row) => Ok(row.get::<String, _>("stable_id")),
-                    None => Err(StorageError::NotFound(format!("Prompt with UUID {} not found", uuid))),
-                }
-            }
-            _ => Err(StorageError::InvalidData(format!("Unsupported resource type: {}", resource_type))),
-        }
-    }
-
-    /// Check if a string is a UUID (basic format check)
-    fn is_uuid(&self, s: &str) -> bool {
-        s.len() == 36 && s.chars().filter(|&c| c == '-').count() == 4
-    }
-
-    /// Normalize resource_id to stable identifier format
-    async fn normalize_resource_id(&self, resource_type: &str, resource_id: &str) -> Result<String> {
-        // If it's already in stable format (contains "__"), return as is
-        if resource_id.contains("__") {
-            return Ok(resource_id.to_string());
-        }
-
-        // If it's a UUID, convert to stable format
-        if self.is_uuid(resource_id) {
-            return self.convert_uuid_to_stable_id(resource_type, resource_id).await;
-        }
-
-        // Otherwise, assume it's already a stable identifier or legacy format
-        Ok(resource_id.to_string())
-    }
-
-    /// Batch update permissions for a token
+    /// Batch update permissions for a token - 简化版本，直接使用 resource_path
     pub async fn update_permissions(&self, token_id: &str, permissions: Vec<(String, String, bool)>) -> Result<()> {
         let mut tx = self.pool.begin().await
             .map_err(|e| StorageError::Database(format!("Failed to begin transaction: {}", e)))?;
@@ -553,21 +425,21 @@ impl TokenStorage {
             .map_err(|e| StorageError::Database(format!("Failed to clear existing permissions: {}", e)))?;
 
         // Add new permissions
-        for (resource_type, resource_id, allowed) in permissions {
+        for (resource_type, resource_path, allowed) in permissions {
             if allowed {
                 let permission_id = Uuid::now_v7().to_string();
                 let now = Utc::now();
 
                 query(
                     r#"
-                    INSERT INTO permissions (id, token_id, resource_type, resource_id, allowed, created_at, updated_at)
+                    INSERT INTO permissions (id, token_id, resource_type, resource_path, allowed, created_at, updated_at)
                     VALUES (?, ?, ?, ?, 1, ?, ?)
                     "#,
                 )
                 .bind(&permission_id)
                 .bind(token_id)
                 .bind(&resource_type)
-                .bind(&resource_id)
+                .bind(&resource_path)
                 .bind(now)
                 .bind(now)
                 .execute(&mut *tx)

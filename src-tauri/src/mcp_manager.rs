@@ -6,7 +6,7 @@ use crate::error::{McpError, Result};
 use crate::storage::mcp_server_storage::McpServerStorage;
 use crate::types::{
     McpPromptInfo, McpResourceInfo, McpServerConfig, McpServerInfo, McpToolInfo,
-    ServiceVersionCache,
+    ServiceVersionCache, PermissionItem,
 };
 use crate::MCP_CLIENT_MANAGER;
 use std::collections::HashMap;
@@ -1127,10 +1127,15 @@ impl McpServerManager {
                 tool_infos.len(), server_name);
 
             let raw_tools: Vec<rmcp::model::Tool> = tool_infos.into_iter().map(|info| {
+                // 创建符合 JSON Schema 规范的 input_schema
+                let mut input_schema = serde_json::Map::new();
+                input_schema.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+                input_schema.insert("properties".to_string(), serde_json::Value::Object(serde_json::Map::new()));
+
                 rmcp::model::Tool {
                     name: info.name.into(),
                     description: Some(info.description.into()),
-                    input_schema: std::sync::Arc::new(serde_json::Map::new()),
+                    input_schema: std::sync::Arc::new(input_schema),
                     // Default values for other fields
                     title: None,
                     output_schema: None,
@@ -1189,6 +1194,119 @@ impl McpServerManager {
     /// Get MCP servers for aggregator
     pub async fn get_mcp_servers(&self) -> Result<Vec<McpServerInfo>> {
         self.list_mcp_servers().await
+    }
+
+    // ========================================================================
+    // New Permission Management Methods
+    // ========================================================================
+
+    /// 获取可用权限 - 返回简化的 PermissionItem
+    pub async fn get_available_permissions(&self) -> Result<Vec<PermissionItem>> {
+        let mut permissions = Vec::new();
+
+        // 获取工具权限 - 使用包含描述信息的完整方法
+        let tools = self.storage.get_all_tools_for_permissions_full().await
+            .map_err(|e| McpError::DatabaseQueryError(format!("Failed to fetch tools: {}", e)))?;
+
+        for (tool_id, tool_name, description, server_name) in tools {
+            permissions.push(PermissionItem {
+                id: tool_id,
+                resource_path: format!("{}__{}", server_name, tool_name),
+                resource_type: "tool".to_string(),
+                description,
+                server_name,
+            });
+        }
+
+        // 获取资源权限 - 使用包含描述信息的完整方法
+        let resources = self.storage.get_all_resources_for_permissions_full().await
+            .map_err(|e| McpError::DatabaseQueryError(format!("Failed to fetch resources: {}", e)))?;
+
+        for (resource_id, resource_name, description, server_name) in resources {
+            permissions.push(PermissionItem {
+                id: resource_id,
+                resource_path: format!("{}__{}", server_name, resource_name),
+                resource_type: "resource".to_string(),
+                description,
+                server_name,
+            });
+        }
+
+        // 获取提示词权限 - 使用包含描述信息的完整方法
+        let prompts = self.storage.get_all_prompts_for_permissions_full().await
+            .map_err(|e| McpError::DatabaseQueryError(format!("Failed to fetch prompts: {}", e)))?;
+
+        for (prompt_id, prompt_name, description, server_name) in prompts {
+            permissions.push(PermissionItem {
+                id: prompt_id,
+                resource_path: format!("{}__{}", server_name, prompt_name),
+                resource_type: "prompt".to_string(),
+                description,
+                server_name,
+            });
+        }
+
+        Ok(permissions)
+    }
+
+    /// 统一的资源路径生成函数
+    pub fn generate_resource_path(&self, server_name: &str, resource_name: &str, _resource_type: &str) -> String {
+        format!("{}__{}", server_name, resource_name)
+    }
+
+    /// 按类型获取可用权限
+    pub async fn get_available_permissions_by_type(&self, resource_type: &str) -> Result<Vec<PermissionItem>> {
+        match resource_type {
+            "tool" => {
+                let tools = self.storage.get_all_tools_for_permissions_full().await
+                    .map_err(|e| McpError::DatabaseQueryError(format!("Failed to fetch tools: {}", e)))?;
+
+                let permissions: Vec<PermissionItem> = tools.into_iter().map(|(tool_id, tool_name, description, server_name)| PermissionItem {
+                    id: tool_id,
+                    resource_path: format!("{}__{}", server_name, tool_name),
+                    resource_type: "tool".to_string(),
+                    description,
+                    server_name,
+                }).collect();
+
+                Ok(permissions)
+            }
+            "resource" => {
+                let resources = self.storage.get_all_resources_for_permissions_full().await
+                    .map_err(|e| McpError::DatabaseQueryError(format!("Failed to fetch resources: {}", e)))?;
+
+                let permissions: Vec<PermissionItem> = resources.into_iter().map(|(resource_id, resource_name, description, server_name)| PermissionItem {
+                    id: resource_id,
+                    resource_path: format!("{}__{}", server_name, resource_name),
+                    resource_type: "resource".to_string(),
+                    description,
+                    server_name,
+                }).collect();
+
+                Ok(permissions)
+            }
+            "prompt" => {
+                let prompts = self.storage.get_all_prompts_for_permissions_full().await
+                    .map_err(|e| McpError::DatabaseQueryError(format!("Failed to fetch prompts: {}", e)))?;
+
+                let permissions: Vec<PermissionItem> = prompts.into_iter().map(|(prompt_id, prompt_name, description, server_name)| PermissionItem {
+                    id: prompt_id,
+                    resource_path: format!("{}__{}", server_name, prompt_name),
+                    resource_type: "prompt".to_string(),
+                    description,
+                    server_name,
+                }).collect();
+
+                Ok(permissions)
+            }
+            _ => Err(McpError::InvalidInput(format!("Unsupported resource type: {}", resource_type))),
+        }
+    }
+
+    /// 获取所有工具用于聚合接口（包含 input_schema）
+    pub async fn get_all_tools_for_aggregation(&self) -> Result<Vec<(String, String, Option<String>, Option<String>, String)>> {
+        self.storage.get_all_tools_for_aggregation().await
+            .map_err(|e| McpError::DatabaseQueryError(e.to_string()))
     }
 
 }

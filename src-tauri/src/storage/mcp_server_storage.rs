@@ -1505,4 +1505,133 @@ impl McpServerStorage {
 
         Ok(issues)
     }
+
+    // ============================================================================
+    // Enhanced Permission Management Methods with Full Information
+    // ============================================================================
+
+    /// Get all tools for permission management with full information
+    pub async fn get_all_tools_for_permissions_full(&self) -> Result<Vec<(String, String, Option<String>, String)>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT t.id, t.name, t.description, s.name as server_name
+            FROM mcp_server_tools t
+            JOIN mcp_servers s ON t.server_id = s.id
+            WHERE t.enabled = 1 AND s.enabled = 1
+            ORDER BY s.name, t.name
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            StorageError::Database(format!("Failed to fetch tools for permissions: {}", e))
+        })?;
+
+        let mut tools = Vec::new();
+        for row in rows {
+            tools.push((
+                row.get("id"),
+                row.get("name"),
+                row.get("description"),
+                row.get("server_name")
+            ));
+        }
+
+        Ok(tools)
+    }
+
+    /// Get all tools for MCP aggregation with input schema
+    pub async fn get_all_tools_for_aggregation(&self) -> Result<Vec<(String, String, Option<String>, Option<String>, String)>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT t.id, t.name, t.description, t.input_schema, s.name as server_name
+            FROM mcp_server_tools t
+            JOIN mcp_servers s ON t.server_id = s.id
+            WHERE t.enabled = 1 AND s.enabled = 1
+            ORDER BY s.name, t.name
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            StorageError::Database(format!("Failed to fetch tools for aggregation: {}", e))
+        })?;
+
+        let mut tools = Vec::new();
+        for row in rows {
+            let input_schema: String = row.get("input_schema");
+            let input_schema_opt = if input_schema.is_empty() { None } else { Some(input_schema) };
+            let server_name: String = row.get("server_name");
+
+            tools.push((
+                row.get("id"),
+                row.get("name"),
+                row.get("description"),
+                input_schema_opt,
+                server_name.clone(), // 克隆以避免移动
+            ));
+        }
+
+        Ok(tools)
+    }
+
+    /// Get all resources for permission management with full information
+    pub async fn get_all_resources_for_permissions_full(&self) -> Result<Vec<(String, String, Option<String>, String)>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT r.id, r.uri, r.description, s.name as server_name
+            FROM mcp_server_resources r
+            JOIN mcp_servers s ON r.server_id = s.id
+            WHERE r.enabled = 1 AND s.enabled = 1
+            ORDER BY s.name, r.uri
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            StorageError::Database(format!("Failed to fetch resources for permissions: {}", e))
+        })?;
+
+        let mut resources = Vec::new();
+        for row in rows {
+            resources.push((
+                row.get("id"),
+                row.get("uri"),
+                row.get("description"),
+                row.get("server_name")
+            ));
+        }
+
+        Ok(resources)
+    }
+
+    /// Get all prompts for permission management with full information
+    pub async fn get_all_prompts_for_permissions_full(&self) -> Result<Vec<(String, String, Option<String>, String)>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT p.id, p.name, p.description, s.name as server_name
+            FROM mcp_server_prompts p
+            JOIN mcp_servers s ON p.server_id = s.id
+            WHERE p.enabled = 1 AND s.enabled = 1
+            ORDER BY s.name, p.name
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            StorageError::Database(format!("Failed to fetch prompts for permissions: {}", e))
+        })?;
+
+        let mut prompts = Vec::new();
+        for row in rows {
+            prompts.push((
+                row.get("id"),
+                row.get("name"),
+                row.get("description"),
+                row.get("server_name")
+            ));
+        }
+
+        Ok(prompts)
+    }
 }
