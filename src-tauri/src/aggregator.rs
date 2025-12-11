@@ -1,8 +1,6 @@
 use crate::auth_context::{AuthContext, SessionIdExtension, SessionInfoExtension};
-use crate::error::McpError;
 use crate::mcp_client::McpClientManager;
 use crate::mcp_manager::McpServerManager;
-use crate::session_manager::get_session_manager;
 use crate::token_manager::TokenManager;
 use crate::types::ServerConfig;
 use axum::{
@@ -235,39 +233,34 @@ async fn dynamic_bearer_auth_middleware(
                 }
             });
 
-            // Try to get full token information and create session
+            // Try to get full token information and store it directly
             tracing::debug!("Retrieving full token information for token_id: {}", token_id);
             if let Ok(token) = token_manager.get_token_by_id(&token_id).await {
-                tracing::debug!("Token information retrieved, creating session...");
-                // Create session for this authenticated request
-                let session_manager = get_session_manager().unwrap();
-                let session_id = session_manager.create_session(token.clone());
+                tracing::debug!("Token information retrieved, storing in request extensions...");
 
-                tracing::debug!("Session created with ID: {}", session_id);
+                // Create a session-like info object directly from the token
+                let session_info = crate::session_manager::SessionInfo {
+                    id: token_id.clone(), // Use token_id as session_id
+                    token: token.clone(),
+                    created_at: std::time::Instant::now(),
+                    last_accessed: std::time::Instant::now(),
+                    expires_at: None, // We can add token expiration logic later if needed
+                };
 
-                // Get the complete session info
-                if let Some(session_info) = session_manager.get_session(&session_id) {
-                    tracing::debug!("Session info retrieved, storing in request extensions");
-                    // Store session info in request extensions for MCP layer to access
-                    req.extensions_mut()
-                        .insert(SessionInfoExtension(Arc::new(session_info.into())));
-                    req.extensions_mut()
-                        .insert(SessionIdExtension(session_id.clone()));
+                tracing::debug!("Session info created, storing in request extensions");
+                // Store session info directly in request extensions for MCP layer to access
+                req.extensions_mut()
+                    .insert(SessionInfoExtension(Arc::new(session_info)));
+                req.extensions_mut()
+                    .insert(SessionIdExtension(token_id.clone()));
 
-                    tracing::info!(
-                        "Authentication successful for token: {}, session: {}",
-                        token_id,
-                        session_id
-                    );
-                } else {
-                    tracing::warn!(
-                        "Authentication successful for token: {} (session info retrieval failed)",
-                        token_id
-                    );
-                }
+                tracing::info!(
+                    "Authentication successful for token: {} (stored in request extensions)",
+                    token_id
+                );
             } else {
                 tracing::warn!(
-                    "Authentication successful for token: {} (session creation skipped - token not found)",
+                    "Authentication successful for token: {} (token not found in database)",
                     token_id
                 );
             }
@@ -604,113 +597,250 @@ impl McpAggregator {
         })
     }
 
-    /// Get tools directly from memory (with optional sync from config file)
-    async fn get_tools_from_memory(&self) -> Result<Vec<McpTool>, McpError> {
-        let mut aggregated_tools: Vec<McpTool> = Vec::new();
-        let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
-        let servers = servers_lock?;
-        tracing::debug!("Found {} MCP servers in memory", servers.len());
-        for server_info in servers.iter() {
-            tracing::info!(
-                "Server '{}' - enabled: {}, transport: {:?}, tools: {}",
-                server_info.name,
-                server_info.enabled,
-                server_info.transport,
-                {
-                    let tc = self.mcp_server_manager.get_tools_cache_entries();
-                    tc.get(&server_info.name).map(|v| v.len()).unwrap_or(0)
-                }
-            );
-        }
-        for server_info in servers.iter() {
-            if !server_info.enabled {
-                continue;
-            }
-            if let Some(cached) = self
-                .mcp_server_manager
-                .get_raw_cached_tools(&server_info.name)
-                .await
-            {
-                let mut prefixed = Vec::new();
-                for mut tool in cached {
-                    let original_name = tool.name.clone();
-                    tool.name = format!("{}__{}", server_info.name, original_name).into();
-                    if tool.description.is_none() {
-                        tool.description = Some("No description".into());
+    /// 获取工具 - 从数据库查询并生成 resource_path
+    pub async fn list_tools(&self) -> Result<Vec<McpTool>, RmcpErrorData> {
+        tracing::info!("🔍 Starting list_tools - loading tools from database");
+
+        // 通过 McpServerManager 的公共方法获取完整的工具信息，包含 input_schema
+        let tools_data = self.mcp_server_manager.get_all_tools_for_aggregation().await
+            .map_err(|e| {
+                tracing::error!("❌ Failed to fetch tools from manager: {}", e);
+                RmcpErrorData::internal_error(format!("Failed to fetch tools: {}", e), None)
+            })?;
+
+        tracing::info!("📊 Retrieved {} tools from database", tools_data.len());
+
+        let mut mcp_tools = Vec::new();
+
+        for (_tool_id, tool_name, description, input_schema_json, server_name) in tools_data {
+            // 记录原始数据
+            tracing::debug!("🔧 Processing tool: {} from server: {}", tool_name, server_name);
+            tracing::debug!("📝 Raw input_schema from DB: {}",
+                input_schema_json.as_ref().map_or("NULL".to_string(), |s| s.clone()));
+
+            let server_name_str = server_name.clone(); // server_name 已经是 String 类型
+
+            // 生成 resource_path
+            let resource_path = format!("{}__{}", server_name_str, tool_name);
+
+            // 处理 input_schema，使用数据库中存储的真实数据或创建默认的空 schema
+            let input_schema: std::sync::Arc<serde_json::Map<String, serde_json::Value>> = if let Some(ref schema_str) = input_schema_json {
+                // 尝试解析 JSON Schema
+                match serde_json::from_str::<serde_json::Value>(schema_str) {
+                    Ok(schema) => {
+                        tracing::debug!("✅ Successfully parsed JSON Schema for tool: {}", tool_name);
+                        tracing::debug!("📋 Schema content: {}", schema);
+
+                        if let serde_json::Value::Object(mut map) = schema {
+                            // 确保至少有 type 字段
+                            if !map.contains_key("type") {
+                                map.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+                                tracing::debug!("➕ Added default 'type: object' field to schema");
+                            }
+                            std::sync::Arc::new(map)
+                        } else {
+                            tracing::warn!("⚠️ Schema for tool {} is not an object, using default", tool_name);
+                            Self::create_default_schema()
+                        }
                     }
-                    prefixed.push(tool);
+                    Err(e) => {
+                        tracing::error!("❌ Failed to parse JSON Schema for tool {}: {}", tool_name, e);
+                        tracing::error!("🔍 Original schema string: {}", schema_str);
+                        Self::create_default_schema()
+                    }
                 }
-                aggregated_tools.extend(prefixed);
-            }
+            } else {
+                tracing::debug!("⚠️ Tool {} has NULL input_schema, using default", tool_name);
+                Self::create_default_schema()
+            };
+
+            mcp_tools.push(McpTool {
+                name: resource_path.clone().into(), // 克隆 resource_path 并转换为 Cow
+                description: Some(description.unwrap_or_else(|| "Tool from server".to_string()).into()),
+                input_schema,
+                // Default values for other fields
+                title: None,
+                output_schema: None,
+                annotations: None,
+                icons: None,
+                meta: None,
+            });
+
+            tracing::debug!("✅ Processed tool: {} -> {}", tool_name, resource_path);
         }
-        Ok(aggregated_tools)
+
+        tracing::info!("🎉 Successfully processed {} McpTool objects", mcp_tools.len());
+        Ok(mcp_tools)
     }
 
-    /// Get resources directly from memory (with optional sync from config file)
-    async fn get_resources_from_memory(&self) -> Result<Vec<rmcp::model::Resource>, McpError> {
-        let mut aggregated_resources: Vec<rmcp::model::Resource> = Vec::new();
-        let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
-        let servers = servers_lock?;
-        tracing::info!(
-            "Found {} MCP servers in memory for resources",
-            servers.len()
-        );
-
-        for server_info in servers.iter() {
-            if !server_info.enabled {
-                continue;
-            }
-
-            // Get from cache directly
-            if let Some(cached) = self
-                .mcp_server_manager
-                .get_cached_resources_raw(&server_info.name)
-                .await
-            {
-                let mut prefixed = Vec::new();
-                for resource in cached {
-                    let original_uri = resource.uri.clone();
-                    let prefixed_uri = format!("{}__{}", server_info.name, original_uri);
-                    let mut prefixed_resource = resource.clone();
-                    prefixed_resource.uri = prefixed_uri;
-                    prefixed.push(prefixed_resource);
-                }
-                aggregated_resources.extend(prefixed);
-            }
-        }
-        Ok(aggregated_resources)
+    // 辅助函数：创建默认 schema
+    fn create_default_schema() -> std::sync::Arc<serde_json::Map<String, serde_json::Value>> {
+        let mut default_schema = serde_json::Map::new();
+        default_schema.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+        default_schema.insert("properties".to_string(), serde_json::Value::Object(serde_json::Map::new()));
+        std::sync::Arc::new(default_schema)
     }
 
-    /// Get prompts directly from memory (with optional sync from config file)
-    async fn get_prompts_from_memory(&self) -> Result<Vec<rmcp::model::Prompt>, McpError> {
-        let mut aggregated_prompts: Vec<rmcp::model::Prompt> = Vec::new();
-        let servers_lock = self.mcp_server_manager.get_mcp_servers().await;
-        let servers = servers_lock?;
-        tracing::debug!("Found {} MCP servers in memory for prompts", servers.len());
+    /// 获取资源 - 从数据库查询并生成 resource_path
+    pub async fn list_resources(&self) -> Result<Vec<rmcp::model::Resource>, RmcpErrorData> {
+        // 使用 McpServerManager 的新方法获取权限项
+        let permissions = self.mcp_server_manager.get_available_permissions_by_type("resource").await
+            .map_err(|e| RmcpErrorData::internal_error(format!("Failed to fetch resources: {}", e), None))?;
 
-        for server_info in servers.iter() {
-            if !server_info.enabled {
-                continue;
-            }
+        let mut mcp_resources = Vec::new();
 
-            // Get from cache directly
-            if let Some(cached) = self
-                .mcp_server_manager
-                .get_cached_prompts_raw(&server_info.name)
-                .await
-            {
-                let mut prefixed = Vec::new();
-                for mut prompt in cached {
-                    let original_name = prompt.name.clone();
-                    prompt.name = format!("{}__{}", server_info.name, original_name);
-                    prefixed.push(prompt);
-                }
-                aggregated_prompts.extend(prefixed);
+        for permission in permissions {
+            // 从 resource_path 解析服务器名和资源名
+            let parts: Vec<&str> = permission.resource_path.split("__").collect();
+            if parts.len() >= 2 {
+                let _server_name = parts[0];
+                let resource_uri = parts[1..].join("__");
+
+                mcp_resources.push(rmcp::model::Resource {
+                    raw: rmcp::model::RawResource {
+                        uri: permission.resource_path.clone(), // 使用 resource_path 作为 uri
+                        name: resource_uri.clone(),
+                        description: Some("Resource from server".to_string()),
+                        mime_type: Some("application/octet-stream".to_string()),
+                        icons: None,
+                        meta: None,
+                        size: None,
+                        title: None,
+                    },
+                    annotations: None,
+                });
             }
         }
-        Ok(aggregated_prompts)
+
+        Ok(mcp_resources)
     }
 
+    /// 获取提示词 - 从数据库查询并生成 resource_path
+    pub async fn list_prompts(&self) -> Result<Vec<rmcp::model::Prompt>, RmcpErrorData> {
+        // 使用 McpServerManager 的新方法获取权限项
+        let permissions = self.mcp_server_manager.get_available_permissions_by_type("prompt").await
+            .map_err(|e| RmcpErrorData::internal_error(format!("Failed to fetch prompts: {}", e), None))?;
+
+        let mut mcp_prompts = Vec::new();
+
+        for permission in permissions {
+            // 从 resource_path 解析服务器名和提示词名
+            let parts: Vec<&str> = permission.resource_path.split("__").collect();
+            if parts.len() >= 2 {
+                let _server_name = parts[0];
+                let _prompt_name = parts[1..].join("__");
+
+                mcp_prompts.push(rmcp::model::Prompt {
+                    name: permission.resource_path.clone(), // 使用 resource_path 作为 name
+                    description: Some("Prompt from server".to_string()),
+                    arguments: Some(vec![]), // 空的参数列表
+                    title: None,
+                    icons: None,
+                    meta: None,
+                });
+            }
+        }
+
+        Ok(mcp_prompts)
+    }
+
+    /// list_tools 方法现在直接使用权限验证
+    pub async fn list_tools_with_auth(
+        &self,
+        auth_context: &AuthContext,
+    ) -> Result<ListToolsResult, RmcpErrorData> {
+        tracing::info!("🔐 list_tools_with_auth called with auth_context");
+
+        let tools = self.list_tools().await?;
+        tracing::info!("📋 Retrieved {} tools from database", tools.len());
+
+        // 记录权限检查前的工具列表
+        for tool in &tools {
+            tracing::debug!("🔍 Tool before permission filter: {} (schema size: {})",
+                tool.name,
+                tool.input_schema.len());
+        }
+
+        // 记录工具数量用于日志
+        let original_count = tools.len();
+
+        // 直接使用权限过滤（精确匹配 resource_path）
+        let filtered_tools: Vec<McpTool> = tools
+            .into_iter()
+            .filter(|tool| {
+                let has_permission = auth_context.has_tool_permission(&tool.name);
+                if !has_permission {
+                    tracing::debug!("🚫 Tool {} filtered out due to permissions", tool.name);
+                }
+                has_permission
+            })
+            .collect();
+
+        tracing::info!("✅ Permission filtering: {} -> {} tools", original_count, filtered_tools.len());
+
+        // 记录最终返回的工具列表
+        for tool in &filtered_tools {
+            tracing::debug!("🎯 Tool after permission filter: {} (schema: {})",
+                tool.name,
+                serde_json::to_string(&*tool.input_schema).unwrap_or_else(|_| "INVALID".to_string()));
+        }
+
+        Ok(ListToolsResult {
+            meta: None,
+            tools: filtered_tools,
+            next_cursor: None,
+        })
+    }
+
+    /// list_resources 方法
+    pub async fn list_resources_with_auth(
+        &self,
+        auth_context: &AuthContext,
+    ) -> Result<ListResourcesResult, RmcpErrorData> {
+        let resources = self.list_resources().await?;
+
+        let filtered_resources: Vec<rmcp::model::Resource> = resources
+            .iter()
+            .filter(|resource| {
+                auth_context.has_resource_permission(&resource.uri)
+            })
+            .cloned()
+            .collect();
+
+        tracing::info!("Permission filtering: {} -> {} resources", resources.len(), filtered_resources.len());
+
+        Ok(ListResourcesResult {
+            meta: None,
+            resources: filtered_resources,
+            next_cursor: None,
+        })
+    }
+
+    /// list_prompts 方法
+    pub async fn list_prompts_with_auth(
+        &self,
+        auth_context: &AuthContext,
+    ) -> Result<ListPromptsResult, RmcpErrorData> {
+        let prompts = self.list_prompts().await?;
+
+        let filtered_prompts: Vec<rmcp::model::Prompt> = prompts
+            .iter()
+            .filter(|prompt| {
+                auth_context.has_prompt_permission(&prompt.name)
+            })
+            .cloned()
+            .collect();
+
+        tracing::info!("Permission filtering: {} -> {} prompts", prompts.len(), filtered_prompts.len());
+
+        Ok(ListPromptsResult {
+            meta: None,
+            prompts: filtered_prompts,
+            next_cursor: None,
+        })
+    }
+
+  
     /// Parse tool name with server prefix
     fn parse_tool_name(&self, tool_name: &str) -> Option<(String, String)> {
         if let Some((server_name, original_name)) = tool_name.split_once("__") {
@@ -888,7 +1018,7 @@ impl McpAggregator {
         };
 
         // Get all tools and filter by permissions
-        match self.get_tools_from_memory().await {
+        match self.list_tools().await {
             Ok(mut tools) => {
                 tools = self.filter_tools_by_permission(tools, &token);
 
@@ -980,7 +1110,7 @@ impl McpAggregator {
         };
 
         // Get all resources and filter by permissions
-        match self.get_resources_from_memory().await {
+        match self.list_resources().await {
             Ok(mut resources) => {
                 resources = self.filter_resources_by_permission(resources, &token);
 
@@ -1072,7 +1202,7 @@ impl McpAggregator {
         };
 
         // Get all prompts and filter by permissions
-        match self.get_prompts_from_memory().await {
+        match self.list_prompts().await {
             Ok(mut prompts) => {
                 prompts = self.filter_prompts_by_permission(prompts, &token);
 
@@ -1149,7 +1279,7 @@ impl McpAggregator {
             }
         }
         let page_size = 100usize;
-        match self.get_tools_from_memory().await {
+        match self.list_tools().await {
             Ok(tools) => {
                 let total = tools.len();
                 let end = std::cmp::min(offset + page_size, total);
@@ -1203,7 +1333,7 @@ impl McpAggregator {
             }
         }
         let page_size = 100usize;
-        match self.get_resources_from_memory().await {
+        match self.list_resources().await {
             Ok(resources) => {
                 let total = resources.len();
                 let end = std::cmp::min(offset + page_size, total);
@@ -1257,7 +1387,7 @@ impl McpAggregator {
             }
         }
         let page_size = 100usize;
-        match self.get_prompts_from_memory().await {
+        match self.list_prompts().await {
             Ok(prompts) => {
                 let total = prompts.len();
                 let end = std::cmp::min(offset + page_size, total);
@@ -1356,7 +1486,9 @@ impl ServerHandler for McpAggregator {
         tracing::debug!("Creating AuthContext from RequestContext");
         let auth_context = AuthContext::from_request_context(_context);
 
-        tracing::info!("AuthContext created - has_valid_session: {}", auth_context.has_valid_session());
+        tracing::info!("AuthContext created - has_valid_session: {}, is_session_expired: {}",
+            auth_context.has_valid_session(),
+            auth_context.is_session_expired());
 
         // Log session details if available
         if let Some(session_id) = auth_context.session_id() {
@@ -1388,10 +1520,10 @@ impl ServerHandler for McpAggregator {
         }
 
         // Get all tools and filter by session permissions
-        tracing::info!("Getting tools from memory...");
-        match self.get_tools_from_memory().await {
+        tracing::info!("Getting tools from database...");
+        match self.list_tools().await {
             Ok(mut tools) => {
-                tracing::info!("Successfully retrieved {} tools from memory", tools.len());
+                tracing::info!("Successfully retrieved {} tools from database", tools.len());
 
                 // Log first few tool names for debugging
                 if tools.len() > 0 {
@@ -1628,7 +1760,7 @@ impl ServerHandler for McpAggregator {
         }
 
         let page_size = 100usize;
-        match self.get_prompts_from_memory().await {
+        match self.list_prompts().await {
             Ok(prompts) => {
                 // Save original count for logging
                 let original_count = prompts.len();
@@ -1876,7 +2008,7 @@ impl ServerHandler for McpAggregator {
         }
 
         let page_size = 100usize;
-        match self.get_resources_from_memory().await {
+        match self.list_resources().await {
             Ok(resources) => {
                 // Save original count for logging
                 let original_count = resources.len();
