@@ -28,6 +28,13 @@ use mcp_client::McpClientManager;
 // Re-export types for public use
 pub use types::*;
 
+/// Single instance event payload
+#[derive(Clone, serde::Serialize)]
+struct SingleInstancePayload {
+    args: Vec<String>,
+    cwd: String,
+}
+
 /// Wait for SERVICE_MANAGER to be initialized (with timeout)
 pub async fn wait_for_service_manager() -> Result<Arc<McpServerManager>, crate::error::McpError> {
     let mut attempts = 0;
@@ -439,6 +446,31 @@ pub async fn run() {
     ));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            // 记录第二个实例启动尝试
+            tracing::info!(
+                "Attempted to start second instance. Args: {:?}, CWD: {}",
+                argv,
+                cwd
+            );
+
+            // 向已运行实例发送事件，携带启动参数
+            let payload = SingleInstancePayload {
+                args: argv,
+                cwd,
+            };
+
+            if let Err(e) = app.emit("single-instance", payload) {
+                tracing::error!("Failed to emit single-instance event: {}", e);
+            }
+
+            // 激活并聚焦到主窗口
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+                let _ = window.show();
+                let _ = window.unminimize();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(log_builder.build())
