@@ -161,7 +161,7 @@ const Settings: React.FC = memo(() => {
 
     try {
       const { ConfigService } = await import('../services/config-service')
-      const result = await ConfigService.saveSystemSettings(settings)
+      await ConfigService.saveSystemSettings(settings)
 
       // 不再重新加载设置，避免页面刷新
       // 状态已经通过 handleSystemTraySettingChange 的即时更新保持同步
