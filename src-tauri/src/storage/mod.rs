@@ -28,4 +28,4 @@ pub mod manager;
 pub mod orm_storage;
 
 // Re-export commonly used types
-pub use manager::UnifiedStorageManager;
+pub use manager::StorageManager;

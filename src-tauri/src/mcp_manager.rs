@@ -3,6 +3,7 @@
 use crate::error::Result;
 use crate::storage::orm_storage::Storage;
 use crate::types::{McpServerConfig, McpServerInfo};
+use sea_orm::Set;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -16,9 +17,9 @@ impl McpServerManager {
         Self { orm_storage }
     }
 
-    /// Create with unified storage manager
+    /// Create with storage manager
     pub async fn with_storage_manager(
-        storage_manager: Arc<crate::storage::UnifiedStorageManager>,
+        storage_manager: Arc<crate::storage::StorageManager>,
     ) -> Result<Self> {
         Ok(Self {
             orm_storage: storage_manager.orm_storage(),
@@ -27,9 +28,7 @@ impl McpServerManager {
 
     /// Add a new MCP server
     pub async fn add_server(&self, config: &McpServerConfig) -> Result<()> {
-        self.orm_storage.add_mcp_server(config).await.map_err(|e| {
-            crate::error::McpError::DatabaseError(format!("Failed to add server: {}", e))
-        })?;
+        self.orm_storage.add_mcp_server(config).await?;
         Ok(())
     }
 
@@ -950,6 +949,11 @@ impl McpServerManager {
                         Ok(_) => {
                             tracing::info!("Successfully connected to server: {}", server.name);
                             connected_count += 1;
+
+                            // After successful connection, sync tools/resources/prompts
+                            if let Err(e) = self.sync_server_manifests(&server.name).await {
+                                tracing::error!("Failed to sync manifests for server '{}': {}", server.name, e);
+                            }
                         }
                         Err(e) => {
                             tracing::error!("Failed to connect to server '{}': {}", server.name, e);
@@ -969,6 +973,126 @@ impl McpServerManager {
             connected_count,
             total_servers
         );
+        Ok(())
+    }
+
+    /// Sync tools, resources, and prompts from a connected MCP server to the database
+    pub async fn sync_server_manifests(&self, server_name: &str) -> Result<()> {
+        tracing::info!("Syncing manifests for server: {}", server_name);
+
+        // Get server info from database to find server_id
+        let raw_server = self.get_raw_server_by_name(server_name).await?
+            .ok_or_else(|| crate::error::McpError::NotFound(format!("Server '{}' not found", server_name)))?;
+
+        // Get tools from MCP client and save to database
+        match crate::MCP_CLIENT_MANAGER.list_tools(server_name).await {
+            Ok(tools) => {
+                tracing::info!("Retrieved {} tools from server '{}'", tools.len(), server_name);
+
+                // Convert tools to database models
+                let tool_models: Vec<crate::entities::mcp_tool::ActiveModel> = tools.into_iter()
+                    .map(|tool| {
+                        crate::entities::mcp_tool::ActiveModel {
+                            id: Set(uuid::Uuid::now_v7().to_string()),
+                            server_id: Set(raw_server.id.clone()),
+                            name: Set(tool.name.to_string()),
+                            description: Set(tool.description.map(|d| d.to_string())),
+                            input_schema: Set(serde_json::to_string(&tool.input_schema).ok()),
+                            output_schema: Set(serde_json::to_string(&tool.output_schema).ok()),
+                            annotations: Set(serde_json::to_value(&tool.annotations).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
+                            meta: Set(serde_json::to_value(&tool.meta).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
+                            enabled: Set(true),
+                            created_at: Set(chrono::Utc::now().into()),
+                            updated_at: Set(chrono::Utc::now().into()),
+                            ..Default::default()
+                        }
+                    })
+                    .collect();
+
+                let tool_count = tool_models.len();
+                if let Err(e) = self.orm_storage.upsert_server_tools(&raw_server.id, tool_models).await {
+                    tracing::error!("Failed to save tools for server '{}': {}", server_name, e);
+                } else {
+                    tracing::info!("Successfully saved {} tools for server '{}'", tool_count, server_name);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to retrieve tools from server '{}': {}", server_name, e);
+            }
+        }
+
+        // Get resources from MCP client and save to database
+        match crate::MCP_CLIENT_MANAGER.list_resources(server_name).await {
+            Ok(resources) => {
+                tracing::info!("Retrieved {} resources from server '{}'", resources.len(), server_name);
+
+                // Convert resources to database models
+                let resource_models: Vec<crate::entities::mcp_resource::ActiveModel> = resources.into_iter()
+                    .map(|resource| {
+                        crate::entities::mcp_resource::ActiveModel {
+                            id: Set(uuid::Uuid::now_v7().to_string()),
+                            server_id: Set(raw_server.id.clone()),
+                            name: Set(Some(resource.name.to_string())),
+                            description: Set(resource.description.clone()),
+                            uri: Set(resource.uri.clone()),
+                            mime_type: Set(resource.mime_type.clone()),
+                            meta: Set(serde_json::to_value(&resource.meta).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
+                            enabled: Set(true),
+                            created_at: Set(chrono::Utc::now().into()),
+                            updated_at: Set(chrono::Utc::now().into()),
+                            ..Default::default()
+                        }
+                    })
+                    .collect();
+
+                let resource_count = resource_models.len();
+                if let Err(e) = self.orm_storage.upsert_server_resources(&raw_server.id, resource_models).await {
+                    tracing::error!("Failed to save resources for server '{}': {}", server_name, e);
+                } else {
+                    tracing::info!("Successfully saved {} resources for server '{}'", resource_count, server_name);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to retrieve resources from server '{}': {}", server_name, e);
+            }
+        }
+
+        // Get prompts from MCP client and save to database
+        match crate::MCP_CLIENT_MANAGER.list_prompts(server_name).await {
+            Ok(prompts) => {
+                tracing::info!("Retrieved {} prompts from server '{}'", prompts.len(), server_name);
+
+                // Convert prompts to database models
+                let prompt_models: Vec<crate::entities::mcp_prompt::ActiveModel> = prompts.into_iter()
+                    .map(|prompt| {
+                        crate::entities::mcp_prompt::ActiveModel {
+                            id: Set(uuid::Uuid::now_v7().to_string()),
+                            server_id: Set(raw_server.id.clone()),
+                            name: Set(prompt.name.to_string()),
+                            description: Set(prompt.description),
+                            arguments: Set(serde_json::to_string(&prompt.arguments).ok()),
+                            meta: Set(serde_json::to_value(&prompt.meta).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
+                            enabled: Set(true),
+                            created_at: Set(chrono::Utc::now().into()),
+                            updated_at: Set(chrono::Utc::now().into()),
+                            ..Default::default()
+                        }
+                    })
+                    .collect();
+
+                let prompt_count = prompt_models.len();
+                if let Err(e) = self.orm_storage.upsert_server_prompts(&raw_server.id, prompt_models).await {
+                    tracing::error!("Failed to save prompts for server '{}': {}", server_name, e);
+                } else {
+                    tracing::info!("Successfully saved {} prompts for server '{}'", prompt_count, server_name);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to retrieve prompts from server '{}': {}", server_name, e);
+            }
+        }
+
+        tracing::info!("Completed manifest sync for server: {}", server_name);
         Ok(())
     }
 }

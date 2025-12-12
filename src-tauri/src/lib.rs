@@ -20,7 +20,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
 use crate::mcp_manager::McpServerManager;
-use crate::storage::UnifiedStorageManager;
+use crate::storage::StorageManager;
 use commands::token_management::TokenManagerState;
 use commands::*;
 use mcp_client::McpClientManager;
@@ -110,8 +110,8 @@ static TOKEN_MANAGER: std::sync::LazyLock<TokenManagerState> =
     std::sync::LazyLock::new(|| Arc::new(tokio::sync::RwLock::new(None)));
 
 #[allow(dead_code)]
-static UNIFIED_STORAGE_MANAGER: std::sync::LazyLock<
-    std::sync::Mutex<Option<Arc<UnifiedStorageManager>>>,
+static STORAGE_MANAGER: std::sync::LazyLock<
+    std::sync::Mutex<Option<Arc<StorageManager>>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
 
 // Track application startup time
@@ -523,7 +523,7 @@ pub async fn run() {
 
             // Spawn async initialization
             tokio::spawn(async move {
-                match crate::storage::UnifiedStorageManager::new(storage_config, sql_log_for_init, log_level_for_init).await {
+                match crate::storage::StorageManager::new(storage_config, sql_log_for_init, log_level_for_init).await {
                     Ok(storage_manager) => {
                         tracing::info!("SeaORM database initialized successfully");
 
@@ -671,7 +671,7 @@ pub async fn run() {
 
 /// Initialize managers (split from main run function to prevent stack overflow)
 async fn initialize_managers(
-    storage_manager: crate::storage::UnifiedStorageManager,
+    storage_manager: crate::storage::StorageManager,
     mcp_client_manager: Arc<McpClientManager>,
     server_config: Arc<ServerConfig>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

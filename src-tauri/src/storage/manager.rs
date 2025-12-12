@@ -37,17 +37,17 @@ impl StorageConfig {
     }
 }
 
-/// Unified storage manager using SeaORM backend
+/// Storage manager using SeaORM backend
 #[derive(Clone)]
-pub struct UnifiedStorageManager {
+pub struct StorageManager {
     /// ORM storage instance
     orm_storage: Arc<Storage>,
     /// Storage configuration
     config: StorageConfig,
 }
 
-impl UnifiedStorageManager {
-    /// Create new unified storage manager with SeaORM backend
+impl StorageManager {
+    /// Create new storage manager with SeaORM backend
     pub async fn new(config: StorageConfig, sql_log: bool, log_level: log::LevelFilter) -> Result<Self> {
         let database_url = config.database_url();
 
