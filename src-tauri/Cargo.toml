@@ -29,7 +29,6 @@ serde_json = "1"
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 tokio-tungstenite = "0.24"
-futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 uuid = { version = "1.0", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -37,15 +36,12 @@ strum = { version = "0.26", features = ["derive"] }
 strum_macros = "0.26"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tracing-log = "0.2"
 anyhow = "1.0"
 thiserror = "1.0"
 dirs = "5.0"
-regex = "1.10"
 if-addrs = "0.11"
 rustc_version = "0.4"
 which = "8.0"
-futures = "0.3"
 http = "1.0"
 # MCP SDK - 使用官方 rmcp
 rmcp = { git = "https://github.com/daixijun/mcp-rust-sdk", branch = "feat/streamable-http-client", features = [
@@ -59,46 +55,28 @@ rmcp = { git = "https://github.com/daixijun/mcp-rust-sdk", branch = "feat/stream
     "transport-streamable-http-server-session",
     "reqwest",
 ] }
-rmcp-macros = "0.11.0"
 async-trait = "0.1"
 
-process-wrap = "8.2"
 axum = "0.8.6"
-hyper = "1.7.0"
-tower = "0.5.2"
-tower-http = "0.6.6"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-os = "2"
 tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-cli = "2"
 tauri-plugin-single-instance = "2"
 log = "0.4.28"
 scopeguard = "1.2.0"
 tauri-plugin-shell = "2.3.1"
 base64 = "0.22.1"
 tracing-appender = "0.2.3"
-rand = "0.8"
-rand_core = "0.6"
-sha2 = "0.10"
-dashmap = "6.1"
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.1"
 tabled = "0.15"
-# SQLx - 保留直到完全迁移完成
-sqlx = { version = "0.8", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "uuid",
-    "chrono",
-    "migrate",
-] }
 
-# SeaORM - 新增 ORM 框架（使用与 sqlx 0.8 兼容的版本）
-sea-orm = { version = "1.0", features = [
+# SeaORM - 最新稳定版本
+sea-orm = { version = "1.1", features = [
     "sqlx-sqlite",
     "runtime-tokio-rustls",
     "macros",
@@ -106,15 +84,8 @@ sea-orm = { version = "1.0", features = [
     "with-uuid",
     "with-json",
 ] }
-sea-orm-migration = "1.0"
+sea-orm-migration = "1.1"
 sea-query = "0.31"
 
 [dev-dependencies]
 tempfile = "3.8"
-sqlx = { version = "0.8", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "uuid",
-    "chrono",
-    "migrate",
-] }
