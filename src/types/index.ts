@@ -216,6 +216,7 @@ export interface SystemSettings {
   logging: {
     level: 'trace' | 'debug' | 'info' | 'warn' | 'error'
     file_name?: string
+    sql_log: boolean
   }
   settings?: {
     theme?: string | null

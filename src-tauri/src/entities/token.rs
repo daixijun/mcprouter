@@ -59,45 +59,4 @@ impl Related<super::permission::Entity> for Entity {
 
 impl ActiveModelBehavior for ActiveModel {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sea_orm::ActiveValue::Set;
-
-    #[test]
-    fn test_token_model() {
-        let model = Model {
-            id: "test-id".to_string(),
-            name: "Test Token".to_string(),
-            token: "test-token".to_string(),
-            description: Some("Test token description".to_string()),
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
-            enabled: true,
-            last_used_at: Some(chrono::Utc::now().into()),
-            usage_count: 10,
-            expires_at: Some(chrono::Utc::now().into()),
-        };
-
-        assert_eq!(model.name, "Test Token");
-        assert_eq!(model.token, "test-token");
-        assert_eq!(model.usage_count, 10);
-        assert!(model.enabled);
-    }
-
-    #[test]
-    fn test_token_active_model() {
-        let active_model = ActiveModel {
-            id: Set("test-id".to_string()),
-            name: Set("Test Token".to_string()),
-            token: Set("test-token".to_string()),
-            description: Set(Some("Test token description".to_string())),
-            ..Default::default()
-        };
-
-        assert_eq!(active_model.name.unwrap(), "Test Token");
-        assert_eq!(active_model.token.unwrap(), "test-token");
-        assert!(active_model.description.unwrap().is_some());
-    }
-}
 

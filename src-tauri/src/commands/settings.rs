@@ -145,7 +145,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
     let settings_obj = match settings.as_object() {
         Some(obj) => obj,
         None => {
-            return Err(McpError::ConfigError("Invalid settings payload: not an object".to_string()));
+            return Err(McpError::ConfigError(
+                "Invalid settings payload: not an object".to_string(),
+            ));
         }
     };
 
@@ -252,7 +254,8 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             if config.logging.is_none() {
                 config.logging = Some(types::LoggingSettings {
                     level: "info".to_string(),
-                    file_name: Some("mcprouter.log".to_string()),
+                    file_name: Some("mcprouter".to_string()),
+                    sql_log: false,
                 });
             }
             let logging_mut = config.logging.as_mut().unwrap();
@@ -306,7 +309,8 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
     }
 
     // Save configuration
-    config.save()
+    config
+        .save()
         .map_err(|e| McpError::ConfigError(format!("Failed to save config: {}", e)))?;
 
     // Post-save: detect tray visibility change and server restarts
@@ -501,7 +505,8 @@ pub async fn save_language_preference(app: tauri::AppHandle, language: String) -
     }
 
     // Save configuration
-    config.save()
+    config
+        .save()
         .map_err(|e| McpError::ConfigError(format!("Failed to save config: {}", e)))?;
 
     // Update tray menu to reflect new language (safe method)

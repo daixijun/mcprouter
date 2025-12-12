@@ -8,6 +8,7 @@ import {
   InputNumber,
   Row,
   Select,
+  Space,
   Switch,
   Typography,
 } from 'antd'
@@ -35,6 +36,7 @@ const Settings: React.FC = memo(() => {
     logging: {
       level: 'info',
       file_name: '',
+      sql_log: false,
     },
     settings: {
       autostart: false,
@@ -189,7 +191,7 @@ const Settings: React.FC = memo(() => {
   )
 
   const handleLoggingSettingChange = useCallback(
-    (key: string, value: string | number) => {
+    (key: string, value: string | number | boolean) => {
       setSettings((prev) => ({
         ...prev,
         logging: {
@@ -448,6 +450,24 @@ const Settings: React.FC = memo(() => {
                 placeholder='mcp-router.log'
                 style={{ marginTop: '4px' }}
               />
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+            <Col xs={24} md={12}>
+              <Space>
+                <Switch
+                  checked={settings.logging.sql_log}
+                  onChange={(checked: boolean) =>
+                    handleLoggingSettingChange('sql_log', checked)
+                  }
+                />
+                <Text strong>{t('settings.logging.sql_log')}</Text>
+              </Space>
+              <div style={{ marginTop: '4px' }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  {t('settings.logging.sql_log_description')}
+                </Text>
+              </div>
             </Col>
           </Row>
         </Card>

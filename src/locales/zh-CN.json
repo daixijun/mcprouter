@@ -464,6 +464,8 @@
   "settings.logging.level": "日志级别",
   "settings.logging.file_name": "日志文件名",
   "settings.logging.file_name_placeholder": "mcp-router.log",
+  "settings.logging.sql_log": "启用 SQL 日志",
+  "settings.logging.sql_log_description": "启用后将在日志中显示 SeaORM 的 SQL 查询语句，可能包含敏感信息",
   "settings.app.title": "应用配置",
   "settings.app.system_tray.title": "系统托盘",
   "settings.app.system_tray.enable": "启用系统托盘",

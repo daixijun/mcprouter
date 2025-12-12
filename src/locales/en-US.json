@@ -463,6 +463,8 @@
   "settings.logging.level": "Log Level",
   "settings.logging.file_name": "Log File Name",
   "settings.logging.file_name_placeholder": "mcp-router.log",
+  "settings.logging.sql_log": "Enable SQL Logging",
+  "settings.logging.sql_log_description": "When enabled, SeaORM SQL query statements will be displayed in logs, which may contain sensitive information",
   "settings.app.title": "Application Configuration",
   "settings.app.system_tray.title": "System Tray",
   "settings.app.system_tray.enable": "Enable System Tray",

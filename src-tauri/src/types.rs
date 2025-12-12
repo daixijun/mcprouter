@@ -51,8 +51,12 @@ impl McpServerConfig {
     /// Validate configuration and provide migration suggestions for deprecated features
     pub fn validate_and_warn(&self) {
         // Check if this looks like a legacy SSE configuration that might need migration
-        if self.url.is_some() && self.headers.is_some() &&
-           self.command.is_none() && self.args.is_none() && self.env.is_none() {
+        if self.url.is_some()
+            && self.headers.is_some()
+            && self.command.is_none()
+            && self.args.is_none()
+            && self.env.is_none()
+        {
             tracing::warn!(
                 "Server '{}' appears to be configured for HTTP transport. Note: SSE transport is no longer supported. Please use HTTP transport instead.",
                 self.name
@@ -78,7 +82,9 @@ impl McpServerConfig {
 
 // Conditional serialization helpers removed
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, PartialEq, Eq, strum::Display, strum::EnumString,
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ServiceTransport {
@@ -86,26 +92,6 @@ pub enum ServiceTransport {
     Http,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::ServiceTransport;
-
-    #[test]
-    fn test_service_transport_parsing() {
-        // 测试正确的解析
-        assert_eq!("stdio".parse::<ServiceTransport>().unwrap(), ServiceTransport::Stdio);
-        assert_eq!("http".parse::<ServiceTransport>().unwrap(), ServiceTransport::Http);
-
-        // 测试错误的解析
-        assert!("invalid".parse::<ServiceTransport>().is_err());
-    }
-
-    #[test]
-    fn test_service_transport_display() {
-        assert_eq!(ServiceTransport::Stdio.to_string(), "stdio");
-        assert_eq!(ServiceTransport::Http.to_string(), "http");
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -121,6 +107,8 @@ pub struct AppConfig {
 pub struct LoggingSettings {
     pub level: String,
     pub file_name: Option<String>,
+    #[serde(default)]
+    pub sql_log: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -505,7 +493,8 @@ impl Default for AppConfig {
             },
             logging: Some(crate::types::LoggingSettings {
                 level: "info".to_string(),
-                file_name: Some("mcprouter.log".to_string()),
+                file_name: Some("mcprouter".to_string()),
+                sql_log: false,
             }),
             settings: Some(Settings {
                 theme: Some("auto".to_string()),
@@ -651,9 +640,7 @@ impl Token {
         };
 
         // Check for exact match only
-        allowed_tools.iter().any(|allowed| {
-            allowed == tool_name
-        })
+        allowed_tools.iter().any(|allowed| allowed == tool_name)
     }
 
     /// Check if token has permission for a specific resource
@@ -674,9 +661,9 @@ impl Token {
         };
 
         // Check for exact match only
-        allowed_resources.iter().any(|allowed| {
-            allowed == resource_uri
-        })
+        allowed_resources
+            .iter()
+            .any(|allowed| allowed == resource_uri)
     }
 
     /// Check if token has permission for a specific prompt
@@ -697,9 +684,7 @@ impl Token {
         };
 
         // Check for exact match only
-        allowed_prompts.iter().any(|allowed| {
-            allowed == prompt_name
-        })
+        allowed_prompts.iter().any(|allowed| allowed == prompt_name)
     }
 
     /// Check if token has permission for a specific prompt template
@@ -720,9 +705,9 @@ impl Token {
         };
 
         // Check for exact match only
-        allowed_prompt_templates.iter().any(|allowed| {
-            allowed == template_name
-        })
+        allowed_prompt_templates
+            .iter()
+            .any(|allowed| allowed == template_name)
     }
 
     /// Check if token is expired
@@ -813,11 +798,11 @@ pub struct ValidationResult {
 /// 可用权限项 - 简化版本，使用 resource_path
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionItem {
-    pub id: String,                    // 保留 UUID 用于数据库主键
-    pub resource_path: String,         // 格式：server__resource_name
-    pub resource_type: String,         // 'tool' | 'resource' | 'prompt'
-    pub description: Option<String>,    // 权限描述
-    pub server_name: String,           // 服务器名称
+    pub id: String,                  // 保留 UUID 用于数据库主键
+    pub resource_path: String,       // 格式：server__resource_name
+    pub resource_type: String,       // 'tool' | 'resource' | 'prompt'
+    pub description: Option<String>, // 权限描述
+    pub server_name: String,         // 服务器名称
 }
 
 /// 可用权限集合

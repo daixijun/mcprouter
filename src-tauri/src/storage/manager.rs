@@ -48,7 +48,7 @@ pub struct UnifiedStorageManager {
 
 impl UnifiedStorageManager {
     /// Create new unified storage manager with SeaORM backend
-    pub async fn new(config: StorageConfig) -> Result<Self> {
+    pub async fn new(config: StorageConfig, sql_log: bool, log_level: log::LevelFilter) -> Result<Self> {
         let database_url = config.database_url();
 
         // Run migrations first with better error handling
@@ -84,7 +84,7 @@ impl UnifiedStorageManager {
             }
         }
 
-        let orm_storage = Storage::new(&database_url)
+        let orm_storage = Storage::new(&database_url, sql_log, log_level)
             .await
             .map_err(|e| McpError::DatabaseConnectionError(format!("Failed to initialize SeaORM: {}", e)))?;
 
@@ -99,9 +99,9 @@ impl UnifiedStorageManager {
     }
 
     /// Create with default configuration
-    pub async fn with_default() -> Result<Self> {
+    pub async fn with_default(sql_log: bool, log_level: log::LevelFilter) -> Result<Self> {
         let config = StorageConfig::default();
-        Self::new(config).await
+        Self::new(config, sql_log, log_level).await
     }
 
     /// Get ORM storage

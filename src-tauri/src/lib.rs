@@ -15,11 +15,11 @@ pub mod entities;
 pub mod migration;
 
 use std::sync::Arc;
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
-use crate::mcp_manager::{McpServerManager};
+use crate::mcp_manager::McpServerManager;
 use crate::storage::UnifiedStorageManager;
 use commands::token_management::TokenManagerState;
 use commands::*;
@@ -55,11 +55,14 @@ pub async fn wait_for_service_manager() -> Result<Arc<McpServerManager>, crate::
         attempts += 1;
     }
 
-    Err(crate::error::McpError::Internal("SERVICE_MANAGER initialization timeout".to_string()))
+    Err(crate::error::McpError::Internal(
+        "SERVICE_MANAGER initialization timeout".to_string(),
+    ))
 }
 
 /// Wait for TokenManager to be initialized (with timeout)
-pub async fn wait_for_token_manager() -> Result<Arc<crate::token_manager::TokenManager>, crate::error::McpError> {
+pub async fn wait_for_token_manager(
+) -> Result<Arc<crate::token_manager::TokenManager>, crate::error::McpError> {
     let mut attempts = 0;
     let max_attempts = 50; // 5 seconds max
 
@@ -75,7 +78,9 @@ pub async fn wait_for_token_manager() -> Result<Arc<crate::token_manager::TokenM
         attempts += 1;
     }
 
-    Err(crate::error::McpError::InternalError("TokenManager initialization timeout".to_string()))
+    Err(crate::error::McpError::InternalError(
+        "TokenManager initialization timeout".to_string(),
+    ))
 }
 
 // Global state - use MCP Server Manager
@@ -405,7 +410,7 @@ pub async fn run() {
     });
 
     // 2) Prepare log plugin from config BEFORE any other operations
-    let (log_level, log_file_name) = if let Some(ref logging) = config.logging {
+    let (log_level, log_file_name, sql_log_enabled) = if let Some(ref logging) = config.logging {
         let level = match logging.level.to_lowercase().as_str() {
             "trace" => log::LevelFilter::Trace,
             "debug" => log::LevelFilter::Debug,
@@ -421,29 +426,25 @@ pub async fn run() {
             .filter(|name| !name.is_empty())
             .cloned();
 
-        (level, file_name)
+        (level, file_name, logging.sql_log)
     } else {
-        (log::LevelFilter::Info, None)
+        (log::LevelFilter::Info, None, false)
     };
 
-    // Convert log::LevelFilter to tracing::level_filters::LevelFilter for tracing_subscriber
-    let tracing_level = match log_level {
-        log::LevelFilter::Off => tracing::level_filters::LevelFilter::OFF,
-        log::LevelFilter::Error => tracing::level_filters::LevelFilter::ERROR,
-        log::LevelFilter::Warn => tracing::level_filters::LevelFilter::WARN,
-        log::LevelFilter::Info => tracing::level_filters::LevelFilter::INFO,
-        log::LevelFilter::Debug => tracing::level_filters::LevelFilter::DEBUG,
-        log::LevelFilter::Trace => tracing::level_filters::LevelFilter::TRACE,
-    };
+    // Use a single, explicit log target
+    // Ensure the file name doesn't already have .log extension to avoid duplication
+    let final_log_name = log_file_name
+        .clone()
+        .unwrap_or_else(|| "mcprouter".to_string());
 
-    let mut log_builder = tauri_plugin_log::Builder::new().level(log_level);
-
-    // Always write logs to log dir (file name from config, or default)
-    log_builder = log_builder.target(tauri_plugin_log::Target::new(
-        tauri_plugin_log::TargetKind::LogDir {
-            file_name: log_file_name.clone(), // Clone for the plugin
-        },
-    ));
+    let log_builder =
+        tauri_plugin_log::Builder::new()
+            .level(log_level)
+            .targets([tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::LogDir {
+                    file_name: Some(final_log_name),
+                },
+            )]);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
@@ -482,51 +483,11 @@ pub async fn run() {
             None,
         ))
         .setup(move |app| {
-            // Get log directory path (same as tauri-plugin-log uses)
-            let log_dir = app.path().app_log_dir().expect("Failed to get log directory");
-            std::fs::create_dir_all(&log_dir).expect("Failed to create log directory");
-
-            // Create file appender for the log file
-            let file_name = log_file_name.unwrap_or_else(|| "mcprouter.log".to_string());
-            let file_appender = tracing_appender::rolling::never(&log_dir, file_name);
-            let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-
-            // Initialize tracing subscriber with both stdout and file output
-            use tracing_subscriber::layer::SubscriberExt;
-            use tracing_subscriber::Layer;
-            use tracing_subscriber::fmt;
-
-            let subscriber = tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .with_target(false)
-                        .with_level(false)
-                        .with_file(false)
-                        .with_line_number(false)
-                        .event_format(fmt::format().compact())
-                        .with_filter(tracing_level),
-                )
-                .with(
-                    fmt::layer()
-                        .with_writer(non_blocking)
-                        .with_ansi(false)
-                        .with_target(false)
-                        .with_level(false)
-                        .with_file(false)
-                        .with_line_number(false)
-                        .event_format(fmt::format().compact())
-                        .with_filter(tracing_level),
-                );
-
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Failed to set tracing subscriber");
-
-            // Keep the guard alive for the entire application lifetime
-            // This ensures the non-blocking worker continues running
-            std::mem::forget(guard);
-
-            // Log after subscriber is initialized
-            tracing::info!("Starting MCP Router");
+            // Clone the log configuration for use in async tasks
+            let log_level_for_init = log_level;
+            let sql_log_for_init = sql_log_enabled;
+            // Initialize tracing-log bridge to capture log crate outputs
+            tracing_log::LogTracer::init().ok();
 
 
 
@@ -562,7 +523,7 @@ pub async fn run() {
 
             // Spawn async initialization
             tokio::spawn(async move {
-                match crate::storage::UnifiedStorageManager::new(storage_config).await {
+                match crate::storage::UnifiedStorageManager::new(storage_config, sql_log_for_init, log_level_for_init).await {
                     Ok(storage_manager) => {
                         tracing::info!("SeaORM database initialized successfully");
 
@@ -741,7 +702,7 @@ async fn initialize_managers(
             Ok(token_manager) => {
                 tracing::info!("Token Manager initialized successfully");
                 token_manager
-            },
+            }
             Err(e) => {
                 tracing::error!("Failed to initialize Token Manager: {}", e);
                 return Err(format!("Failed to initialize Token Manager: {}", e).into());
