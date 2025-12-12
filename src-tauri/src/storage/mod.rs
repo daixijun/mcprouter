@@ -1,6 +1,5 @@
-// SQLite storage module
+// SeaORM-based storage module
 
-use sqlx::SqlitePool;
 use thiserror::Error;
 
 /// Storage error types
@@ -25,15 +24,8 @@ pub enum StorageError {
 pub type Result<T> = std::result::Result<T, StorageError>;
 
 /// Re-export storage modules
-pub mod config;
-pub mod init;
 pub mod manager;
-pub mod mcp_server_storage;
-pub mod sqlite_storage;
-pub mod token_storage;
-pub mod permission_storage;
-pub mod session_storage;
+pub mod orm_storage;
 
 // Re-export commonly used types
-pub use config::{StorageConfig, StorageConfigManager};
 pub use manager::UnifiedStorageManager;

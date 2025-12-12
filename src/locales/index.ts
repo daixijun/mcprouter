@@ -46,16 +46,5 @@ i18n
     preload: ['zh-CN', 'en-US'],
   })
 
-// 开发环境下输出额外的诊断信息
-if (process.env.NODE_ENV === 'development') {
-  console.log('=== I18n 初始化完成 ===')
-  console.log('配置信息:', {
-    fallbackLng: i18n.options.fallbackLng,
-    defaultNS: i18n.options.defaultNS,
-    ns: i18n.options.ns,
-    currentLanguage: i18n.language,
-    resources: Object.keys(i18n.options.resources || {}),
-  })
-}
 
 export default i18n

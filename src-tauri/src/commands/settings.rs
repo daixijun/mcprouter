@@ -2,7 +2,7 @@
 
 use crate::config as config_mod;
 use crate::error::{McpError, Result};
-use crate::{build_main_tray, types, AGGREGATOR, MCP_CLIENT_MANAGER, SERVICE_MANAGER, TOKEN_MANAGER};
+use crate::{build_main_tray, types, AGGREGATOR, MCP_CLIENT_MANAGER};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -345,18 +345,10 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
         let server_config = Arc::new(config.server.clone());
 
         // Get TokenManager
-        let token_manager = {
-            let token_manager_guard = TOKEN_MANAGER.read().await;
-            (*token_manager_guard)
-                .as_ref()
-                .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-                .clone()
-        };
+        let token_manager = crate::wait_for_token_manager().await?;
 
         // Get service manager
-        let service_manager = SERVICE_MANAGER.lock().unwrap().as_ref()
-            .ok_or_else(|| McpError::Internal("SERVICE_MANAGER not initialized".to_string()))?
-            .clone();
+        let service_manager = crate::wait_for_service_manager().await?;
 
         // Create new aggregator instance
         tracing::debug!(

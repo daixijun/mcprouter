@@ -1,7 +1,8 @@
 use crate::auth_context::{AuthContext, SessionIdExtension, SessionInfoExtension};
 use crate::mcp_client::McpClientManager;
-use crate::mcp_manager::McpServerManager;
-use crate::token_manager::TokenManager;
+// Primary implementations
+pub use crate::mcp_manager::McpServerManager;
+pub use crate::token_manager::TokenManager;
 use crate::types::ServerConfig;
 use axum::{
     body::Body,
@@ -14,7 +15,7 @@ use rmcp::model::{
     CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult,
     InitializeRequestParam, InitializeResult, ListPromptsResult, ListResourcesResult,
     ListToolsResult, PaginatedRequestParam, ProtocolVersion, ReadResourceRequestParam,
-    ReadResourceResult, Tool as McpTool,
+    ReadResourceResult, Resource, Tool as McpTool,
 };
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
@@ -221,55 +222,56 @@ async fn dynamic_bearer_auth_middleware(
     // Validate token using TokenManager
     if let Some(token_value) = token_value {
         tracing::debug!("Validating token with TokenManager...");
-        if let Some(token_id) = token_manager.validate_token(token_value).await {
-            tracing::info!("Authentication successful for token_id: {}", token_id);
+        match token_manager.validate_token(token_value).await {
+            Ok(token_id) => {
+                tracing::info!("Authentication successful for token_id: {}", token_id);
 
-            // Record usage statistics asynchronously
-            let manager_clone = token_manager.clone();
-            let token_id_clone = token_id.clone();
-            tokio::spawn(async move {
-                if let Err(e) = manager_clone.record_usage(&token_id_clone).await {
-                    tracing::error!("Failed to record token usage: {}", e);
+                // Record usage statistics asynchronously (usage is already recorded in validate_token)
+                // No need to record again here
+
+                // Try to get full token information and store it directly
+                tracing::debug!("Retrieving full token information for token_id: {}", token_id);
+                if let Ok(Some(token)) = token_manager.get_by_id(&token_id).await {
+                    tracing::debug!("Token information retrieved, storing in request extensions...");
+
+                    // Create a session-like info object directly from the token
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    let session_info = crate::auth_context::SessionInfo {
+                        id: token_id.clone(), // Use token_id as session_id
+                        token_id: Some(token_id.clone()),
+                        created_at: now,
+                        last_used_at: Some(now),
+                        expires_at: token.expires_at, // Use token expiration if available
+                    };
+
+                    tracing::debug!("Session info created, storing in request extensions");
+                    // Store session info directly in request extensions for MCP layer to access
+                    req.extensions_mut()
+                        .insert(SessionInfoExtension(Arc::new(session_info)));
+                    req.extensions_mut()
+                        .insert(SessionIdExtension(token_id.clone()));
+
+                    tracing::info!(
+                        "Authentication successful for token: {} (stored in request extensions)",
+                        token_id
+                    );
+                } else {
+                    tracing::warn!(
+                        "Authentication successful for token: {} (token not found in database)",
+                        token_id
+                    );
                 }
-            });
 
-            // Try to get full token information and store it directly
-            tracing::debug!("Retrieving full token information for token_id: {}", token_id);
-            if let Ok(token) = token_manager.get_token_by_id(&token_id).await {
-                tracing::debug!("Token information retrieved, storing in request extensions...");
-
-                // Create a session-like info object directly from the token
-                let session_info = crate::session_manager::SessionInfo {
-                    id: token_id.clone(), // Use token_id as session_id
-                    token: token.clone(),
-                    created_at: std::time::Instant::now(),
-                    last_accessed: std::time::Instant::now(),
-                    expires_at: None, // We can add token expiration logic later if needed
-                };
-
-                tracing::debug!("Session info created, storing in request extensions");
-                // Store session info directly in request extensions for MCP layer to access
-                req.extensions_mut()
-                    .insert(SessionInfoExtension(Arc::new(session_info)));
-                req.extensions_mut()
-                    .insert(SessionIdExtension(token_id.clone()));
-
-                tracing::info!(
-                    "Authentication successful for token: {} (stored in request extensions)",
-                    token_id
-                );
-            } else {
-                tracing::warn!(
-                    "Authentication successful for token: {} (token not found in database)",
-                    token_id
-                );
+                tracing::debug!("Proceeding to MCP handler");
+                Ok(next.run(req).await)
             }
-
-            tracing::debug!("Proceeding to MCP handler");
-            Ok(next.run(req).await)
-        } else {
-            tracing::warn!("Authentication failed: invalid token value. Token validation returned None.");
-            Err(StatusCode::UNAUTHORIZED)
+            Err(e) => {
+                tracing::warn!("Authentication failed: {}", e);
+                Err(StatusCode::UNAUTHORIZED)
+            }
         }
     } else {
         tracing::error!("Unexpected state: token_value is None after extraction");
@@ -588,7 +590,7 @@ impl McpAggregator {
         let entries = self.mcp_server_manager.get_tools_cache_entries();
         let total = entries.len();
         let ttl = self.mcp_server_manager.get_tools_cache_ttl_seconds();
-        let updated_count: usize = entries.iter().map(|e| e.len()).sum();
+        let updated_count: usize = entries.iter().map(|e| e.0.len() + e.1.len()).sum();
         let latest = std::time::SystemTime::now();
         serde_json::json!({
             "status": "running",
@@ -624,7 +626,8 @@ impl McpAggregator {
             let resource_path = format!("{}__{}", server_name_str, tool_name);
 
             // 处理 input_schema，使用数据库中存储的真实数据或创建默认的空 schema
-            let input_schema: std::sync::Arc<serde_json::Map<String, serde_json::Value>> = if let Some(ref schema_str) = input_schema_json {
+            // TODO: Fix input schema parsing when proper MCP manager is implemented
+            let input_schema: std::sync::Arc<serde_json::Map<String, serde_json::Value>> = if let Some(schema_str) = &input_schema_json {
                 // 尝试解析 JSON Schema
                 match serde_json::from_str::<serde_json::Value>(schema_str) {
                     Ok(schema) => {
@@ -656,7 +659,7 @@ impl McpAggregator {
 
             mcp_tools.push(McpTool {
                 name: resource_path.clone().into(), // 克隆 resource_path 并转换为 Cow
-                description: Some(description.unwrap_or_else(|| "Tool from server".to_string()).into()),
+                description: Some(description.clone().into()),
                 input_schema,
                 // Default values for other fields
                 title: None,
@@ -682,95 +685,164 @@ impl McpAggregator {
     }
 
     /// 获取资源 - 从数据库查询并生成 resource_path
-    pub async fn list_resources(&self) -> Result<Vec<rmcp::model::Resource>, RmcpErrorData> {
-        // 使用 McpServerManager 的新方法获取权限项
-        let permissions = self.mcp_server_manager.get_available_permissions_by_type("resource").await
-            .map_err(|e| RmcpErrorData::internal_error(format!("Failed to fetch resources: {}", e), None))?;
+    pub async fn list_resources(&self) -> Result<Vec<Resource>, RmcpErrorData> {
+        tracing::info!("🔍 Starting list_resources - loading resources from database");
+
+        // 通过 McpServerManager 的公共方法获取完整的资源信息
+        let resources_data = self.mcp_server_manager.get_all_resources_for_aggregation().await
+            .map_err(|e| {
+                tracing::error!("❌ Failed to fetch resources from manager: {}", e);
+                RmcpErrorData::internal_error(format!("Failed to fetch resources: {}", e), None)
+            })?;
+
+        tracing::info!("📊 Retrieved {} resources from database", resources_data.len());
 
         let mut mcp_resources = Vec::new();
 
-        for permission in permissions {
-            // 从 resource_path 解析服务器名和资源名
-            let parts: Vec<&str> = permission.resource_path.split("__").collect();
-            if parts.len() >= 2 {
-                let _server_name = parts[0];
-                let resource_uri = parts[1..].join("__");
+        for (_resource_id, uri, name, description, mime_type, server_name) in resources_data {
+            // 记录原始数据
+            tracing::debug!("🔧 Processing resource: {} from server: {}", uri, server_name);
 
-                mcp_resources.push(rmcp::model::Resource {
-                    raw: rmcp::model::RawResource {
-                        uri: permission.resource_path.clone(), // 使用 resource_path 作为 uri
-                        name: resource_uri.clone(),
-                        description: Some("Resource from server".to_string()),
-                        mime_type: Some("application/octet-stream".to_string()),
-                        icons: None,
-                        meta: None,
-                        size: None,
-                        title: None,
-                    },
-                    annotations: None,
-                });
-            }
+            let server_name_str = server_name.clone(); // server_name 已经是 String 类型
+
+            // 构建完整的 resource_path (server_name__uri)
+            let resource_path = format!("{}__{}", server_name_str, uri);
+
+            // 创建 Resource 结构体
+            let raw_resource = rmcp::model::RawResource {
+                uri: resource_path.clone(),
+                name: name.clone(),
+                title: None,
+                description: Some(description),
+                mime_type: mime_type,
+                size: None,
+                icons: None,
+                meta: None,
+            };
+
+            let resource = Resource {
+                raw: raw_resource,
+                annotations: None,
+            };
+
+            mcp_resources.push(resource);
         }
 
+        tracing::info!("✅ Successfully processed {} resources", mcp_resources.len());
         Ok(mcp_resources)
     }
 
     /// 获取提示词 - 从数据库查询并生成 resource_path
     pub async fn list_prompts(&self) -> Result<Vec<rmcp::model::Prompt>, RmcpErrorData> {
-        // 使用 McpServerManager 的新方法获取权限项
-        let permissions = self.mcp_server_manager.get_available_permissions_by_type("prompt").await
-            .map_err(|e| RmcpErrorData::internal_error(format!("Failed to fetch prompts: {}", e), None))?;
+        tracing::info!("🔍 Starting list_prompts - loading prompts from database");
+
+        // 通过 McpServerManager 的公共方法获取完整的提示词信息
+        let prompts_data = self.mcp_server_manager.get_all_prompts_for_aggregation().await
+            .map_err(|e| {
+                tracing::error!("❌ Failed to fetch prompts from manager: {}", e);
+                RmcpErrorData::internal_error(format!("Failed to fetch prompts: {}", e), None)
+            })?;
+
+        tracing::info!("📊 Retrieved {} prompts from database", prompts_data.len());
 
         let mut mcp_prompts = Vec::new();
 
-        for permission in permissions {
-            // 从 resource_path 解析服务器名和提示词名
-            let parts: Vec<&str> = permission.resource_path.split("__").collect();
-            if parts.len() >= 2 {
-                let _server_name = parts[0];
-                let _prompt_name = parts[1..].join("__");
+        for (_prompt_id, name, description, server_name) in prompts_data {
+            // 记录原始数据
+            tracing::debug!("🔧 Processing prompt: {} from server: {}", name, server_name);
 
-                mcp_prompts.push(rmcp::model::Prompt {
-                    name: permission.resource_path.clone(), // 使用 resource_path 作为 name
-                    description: Some("Prompt from server".to_string()),
-                    arguments: Some(vec![]), // 空的参数列表
-                    title: None,
-                    icons: None,
-                    meta: None,
-                });
-            }
+            let server_name_str = server_name.clone(); // server_name 已经是 String 类型
+
+            // 生成 resource_path (server_name__prompt_name)
+            let resource_path = format!("{}__{}", server_name_str, name);
+
+            // 创建 Prompt 结构体
+            let prompt = rmcp::model::Prompt {
+                name: resource_path.clone(),
+                description: description.clone(),
+                arguments: None, // TODO: 根据需要实现参数
+                icons: None,
+                meta: None,
+                title: None,
+            };
+
+            mcp_prompts.push(prompt);
         }
 
+        tracing::info!("✅ Successfully processed {} prompts", mcp_prompts.len());
         Ok(mcp_prompts)
     }
 
-    /// list_tools 方法现在直接使用权限验证
-    pub async fn list_tools_with_auth(
+    /// list_tools 方法使用真实的权限验证
+    pub async fn list_tools_with_auth_and_token_manager(
         &self,
         auth_context: &AuthContext,
+        token_manager: Arc<crate::token_manager::TokenManager>,
     ) -> Result<ListToolsResult, RmcpErrorData> {
         tracing::info!("🔐 list_tools_with_auth called with auth_context");
 
         let tools = self.list_tools().await?;
         tracing::info!("📋 Retrieved {} tools from database", tools.len());
 
+        // 获取 Token 信息进行权限过滤
+        let token_info = if let Some(token_id) = auth_context.token_id() {
+            tracing::info!("Loading permissions for token: {}", token_id);
+            match token_manager.get_token_by_id(token_id).await {
+                Ok(Some(info)) => {
+                    tracing::info!("Loaded {} tool permissions for token: {}",
+                        info.allowed_tools.len(), token_id);
+                    Some(info)
+                }
+                Ok(None) => {
+                    tracing::warn!("Token not found: {}", token_id);
+                    None
+                }
+                Err(e) => {
+                    tracing::error!("Failed to load token permissions: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::warn!("No token_id found in auth_context");
+            None
+        };
+
+        // 如果没有有效的 Token 信息，返回空列表
+        let token_info = match token_info {
+            Some(info) => info,
+            None => {
+                tracing::warn!("No valid token info available, returning empty tool list");
+                return Ok(ListToolsResult {
+                    meta: None,
+                    tools: vec![],
+                    next_cursor: None,
+                });
+            }
+        };
+
         // 记录权限检查前的工具列表
         for tool in &tools {
-            tracing::debug!("🔍 Tool before permission filter: {} (schema size: {})",
-                tool.name,
-                tool.input_schema.len());
+            tracing::debug!("🔍 Tool before permission filter: {}", tool.name);
         }
 
         // 记录工具数量用于日志
         let original_count = tools.len();
 
-        // 直接使用权限过滤（精确匹配 resource_path）
+        // 真实的权限过滤（精确匹配 resource_path）
         let filtered_tools: Vec<McpTool> = tools
             .into_iter()
             .filter(|tool| {
-                let has_permission = auth_context.has_tool_permission(&tool.name);
-                if !has_permission {
-                    tracing::debug!("🚫 Tool {} filtered out due to permissions", tool.name);
+                let tool_name = &tool.name;
+                let has_permission = token_info.allowed_tools.iter().any(|allowed_tool| {
+                    // 只支持精确匹配
+                    allowed_tool == tool_name
+                });
+
+                if has_permission {
+                    tracing::debug!("✅ Tool {} allowed by permission", tool_name);
+                } else {
+                    tracing::debug!("🚫 Tool {} filtered out - not in allowed tools: {:?}",
+                        tool_name, token_info.allowed_tools);
                 }
                 has_permission
             })
@@ -780,9 +852,7 @@ impl McpAggregator {
 
         // 记录最终返回的工具列表
         for tool in &filtered_tools {
-            tracing::debug!("🎯 Tool after permission filter: {} (schema: {})",
-                tool.name,
-                serde_json::to_string(&*tool.input_schema).unwrap_or_else(|_| "INVALID".to_string()));
+            tracing::debug!("🎯 Tool after permission filter: {}", tool.name);
         }
 
         Ok(ListToolsResult {
@@ -793,21 +863,39 @@ impl McpAggregator {
     }
 
     /// list_resources 方法
-    pub async fn list_resources_with_auth(
+    pub async fn list_resources_with_auth_and_token_manager(
         &self,
         auth_context: &AuthContext,
+        token_manager: Arc<crate::token_manager::TokenManager>,
     ) -> Result<ListResourcesResult, RmcpErrorData> {
         let resources = self.list_resources().await?;
+        let original_count = resources.len();
+
+        // 获取 Token 信息进行权限过滤
+        let token_info = if let Some(token_id) = auth_context.token_id() {
+            match token_manager.get_token_by_id(token_id).await {
+                Ok(Some(info)) => Some(info),
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         let filtered_resources: Vec<rmcp::model::Resource> = resources
-            .iter()
+            .into_iter()
             .filter(|resource| {
-                auth_context.has_resource_permission(&resource.uri)
+                if let Some(ref token_info) = token_info {
+                    // 只支持精确匹配，包括 scheme://resource 格式
+                    token_info.allowed_resources.iter().any(|allowed_resource| {
+                        allowed_resource == &resource.uri
+                    })
+                } else {
+                    false
+                }
             })
-            .cloned()
             .collect();
 
-        tracing::info!("Permission filtering: {} -> {} resources", resources.len(), filtered_resources.len());
+        tracing::info!("Permission filtering: {} -> {} resources", original_count, filtered_resources.len());
 
         Ok(ListResourcesResult {
             meta: None,
@@ -817,21 +905,39 @@ impl McpAggregator {
     }
 
     /// list_prompts 方法
-    pub async fn list_prompts_with_auth(
+    pub async fn list_prompts_with_auth_and_token_manager(
         &self,
         auth_context: &AuthContext,
+        token_manager: Arc<crate::token_manager::TokenManager>,
     ) -> Result<ListPromptsResult, RmcpErrorData> {
         let prompts = self.list_prompts().await?;
+        let original_count = prompts.len();
+
+        // 获取 Token 信息进行权限过滤
+        let token_info = if let Some(token_id) = auth_context.token_id() {
+            match token_manager.get_token_by_id(token_id).await {
+                Ok(Some(info)) => Some(info),
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         let filtered_prompts: Vec<rmcp::model::Prompt> = prompts
-            .iter()
+            .into_iter()
             .filter(|prompt| {
-                auth_context.has_prompt_permission(&prompt.name)
+                if let Some(ref token_info) = token_info {
+                    // 只支持精确匹配
+                    token_info.allowed_prompts.iter().any(|allowed_prompt| {
+                        allowed_prompt == &prompt.name
+                    })
+                } else {
+                    false
+                }
             })
-            .cloned()
             .collect();
 
-        tracing::info!("Permission filtering: {} -> {} prompts", prompts.len(), filtered_prompts.len());
+        tracing::info!("Permission filtering: {} -> {} prompts", original_count, filtered_prompts.len());
 
         Ok(ListPromptsResult {
             meta: None,
@@ -892,29 +998,11 @@ impl McpAggregator {
         false
     }
 
-    /// Evaluate resource permissions for a session with support for alias matching
-    fn evaluate_session_resource_permission(
-        &self,
-        auth_context: &AuthContext,
-        resource: &rmcp::model::Resource,
-    ) -> crate::auth_context::PermissionResult {
-        use crate::auth_context::PermissionResult;
-
-        let primary = auth_context.check_resource_permission_with_result(&resource.uri);
-        if matches!(primary, PermissionResult::InsufficientPermissions) {
-            if let Some(alias) = self.build_resource_name_alias(resource) {
-                if auth_context.has_resource_permission(&alias) {
-                    return PermissionResult::Allowed;
-                }
-            }
-        }
-        primary
-    }
-
+    
     /// Resolve a legacy alias (server__resourceName) for a prefixed URI via the cache
     async fn resolve_resource_alias_from_uri(&self, prefixed_uri: &str) -> Option<String> {
         if let Some((server_name, original_uri)) = self.parse_resource_uri(prefixed_uri) {
-            if let Some(resources) = self
+            if let Ok(resources) = self
                 .mcp_server_manager
                 .get_cached_resources_raw(&server_name)
                 .await
@@ -936,9 +1024,9 @@ impl McpAggregator {
     ) -> Option<crate::types::Token> {
         if auth_header.starts_with("Bearer ") {
             let token_value = &auth_header[7..]; // Skip "Bearer "
-            if let Some(token_id) = self.token_manager.validate_token(token_value).await {
-                if let Ok(token) = self.token_manager.get_token_by_id(&token_id).await {
-                    return Some(token);
+            if let Ok(token_id) = self.token_manager.validate_token(token_value).await {
+                if let Ok(Some(token)) = self.token_manager.get_by_id(&token_id).await {
+                    return Some(token.into());
                 }
             }
         }
@@ -1495,8 +1583,8 @@ impl ServerHandler for McpAggregator {
             tracing::info!("Session ID: {}", session_id);
         }
 
-        if let Some(token) = auth_context.token() {
-            tracing::info!("Token ID: {}", token.id);
+        if let Some(token_id) = auth_context.token_id() {
+            tracing::info!("Token ID: {}", token_id);
         }
 
         // Check if we have a valid session with permissions
@@ -1519,85 +1607,43 @@ impl ServerHandler for McpAggregator {
             ));
         }
 
-        // Get all tools and filter by session permissions
-        tracing::info!("Getting tools from database...");
-        match self.list_tools().await {
-            Ok(mut tools) => {
-                tracing::info!("Successfully retrieved {} tools from database", tools.len());
+        // 调用带权限验证的方法
+        match self.list_tools_with_auth_and_token_manager(&auth_context, self.token_manager.clone()).await {
+            Ok(result) => {
+                tracing::info!("Successfully retrieved tools with permission filtering");
 
-                // Log first few tool names for debugging
-                if tools.len() > 0 {
-                    let tool_names: Vec<String> = tools.iter().take(5).map(|t| t.name.to_string()).collect();
-                    tracing::info!("First few tools: {:?}", tool_names);
-                }
-
-                // Filter tools based on session permissions
-                let original_count = tools.len();
-                tools.retain(|tool| {
-                    let permission_result =
-                        auth_context.check_tool_permission_with_result(&tool.name);
-                    let allowed = match permission_result {
-                        crate::auth_context::PermissionResult::Allowed => {
-                            tracing::debug!("Tool {} allowed", tool.name);
-                            true
-                        }
-                        crate::auth_context::PermissionResult::NotAuthenticated => {
-                            tracing::warn!("Tool {} access denied: not authenticated", tool.name);
-                            false
-                        }
-                        crate::auth_context::PermissionResult::SessionExpired => {
-                            tracing::warn!("Tool {} access denied: session expired", tool.name);
-                            false
-                        }
-                        crate::auth_context::PermissionResult::InsufficientPermissions => {
-                            tracing::info!(
-                                "Tool {} access denied: insufficient permissions",
-                                tool.name
-                            );
-                            false
-                        }
-                    };
-                    allowed
-                });
-
-                tracing::info!("Permission filtering: {} -> {} tools", original_count, tools.len());
-
+                // 应用分页逻辑
                 let mut offset = 0usize;
                 if let Some(param) = _request {
                     offset = param.cursor.map(|c| c.parse().unwrap_or(0)).unwrap_or(0);
                 }
 
-                let slice = if tools.len() > offset {
-                    let end = std::cmp::min(offset + 100, tools.len());
-                    &tools[offset..end]
+                let total = result.tools.len();
+                let end = std::cmp::min(offset + 100, total);
+                let slice = if offset < end {
+                    result.tools[offset..end].to_vec()
                 } else {
-                    &[]
+                    Vec::new()
                 };
 
-                let next = if slice.len() == 100 && tools.len() > offset + 100 {
-                    Some((offset + 100).to_string())
-                } else {
-                    None
-                };
+                let next_cursor = if end < total { Some(end.to_string()) } else { None };
 
                 tracing::info!(
-                    "Successfully listed {} tools for session {} (filtered from total)",
+                    "Successfully listed {} tools for session {} (filtered from total {})",
                     slice.len(),
-                    auth_context.session_id().unwrap_or("unknown")
+                    auth_context.session_id().unwrap_or("unknown"),
+                    total
                 );
+
                 Ok(ListToolsResult {
-                    meta: None,
-                    tools: slice.to_vec(),
-                    next_cursor: next,
+                    meta: result.meta,
+                    tools: slice,
+                    next_cursor: next_cursor,
                 })
             }
             Err(e) => {
-                tracing::error!("Failed to get tools from memory: {}", e);
-                Err(RmcpErrorData::new(
-                    ErrorCode(500),
-                    format!("Internal server error: {}", e),
-                    None,
-                ))
+                tracing::error!("Failed to get tools with auth: {}", e);
+                Err(e)
             }
         }
     }
@@ -1744,92 +1790,47 @@ impl ServerHandler for McpAggregator {
             ));
         }
 
-        let mut offset = 0usize;
-        if let Some(param) = _request {
-            if let Some(cursor) = param.cursor {
-                if let Ok(v) = cursor.parse::<usize>() {
-                    offset = v;
-                } else {
-                    return Err(RmcpErrorData::new(
-                        ErrorCode(400),
-                        "Invalid cursor".to_string(),
-                        None,
-                    ));
-                }
-            }
-        }
+        // 调用带权限验证的方法
+        match self.list_prompts_with_auth_and_token_manager(&auth_context, self.token_manager.clone()).await {
+            Ok(result) => {
+                tracing::info!("Successfully retrieved prompts with permission filtering");
 
-        let page_size = 100usize;
-        match self.list_prompts().await {
-            Ok(prompts) => {
-                // Save original count for logging
-                let original_count = prompts.len();
-
-                // Filter prompts based on permissions with detailed checking
-                let filtered_prompts: Vec<_> = prompts
-                    .into_iter()
-                    .filter(|prompt| {
-                        let permission_result =
-                            auth_context.check_prompt_permission_with_result(&prompt.name);
-                        match permission_result {
-                            crate::auth_context::PermissionResult::Allowed => true,
-                            crate::auth_context::PermissionResult::NotAuthenticated => {
-                                tracing::warn!(
-                                    "Prompt {} access denied: not authenticated",
-                                    prompt.name
-                                );
-                                false
-                            }
-                            crate::auth_context::PermissionResult::SessionExpired => {
-                                tracing::warn!(
-                                    "Prompt {} access denied: session expired",
-                                    prompt.name
-                                );
-                                false
-                            }
-                            crate::auth_context::PermissionResult::InsufficientPermissions => {
-                                tracing::debug!(
-                                    "Prompt {} access denied: insufficient permissions",
-                                    prompt.name
-                                );
-                                false
-                            }
+                // 应用分页逻辑
+                let mut offset = 0usize;
+                if let Some(param) = _request {
+                    if let Some(cursor) = param.cursor {
+                        if let Ok(v) = cursor.parse::<usize>() {
+                            offset = v;
+                        } else {
+                            return Err(RmcpErrorData::new(
+                                ErrorCode(400),
+                                "Invalid cursor".to_string(),
+                                None,
+                            ));
                         }
-                    })
-                    .collect();
+                    }
+                }
 
-                tracing::info!(
-                    "Permission filtering: {} prompts remaining (filtered from {} total)",
-                    filtered_prompts.len(),
-                    original_count
-                );
-
-                let total = filtered_prompts.len();
-                let end = std::cmp::min(offset + page_size, total);
+                let total = result.prompts.len();
+                let end = std::cmp::min(offset + 100, total);
                 let slice = if offset < end {
-                    filtered_prompts[offset..end].to_vec()
+                    result.prompts[offset..end].to_vec()
                 } else {
                     Vec::new()
                 };
-                let next = if end < total {
-                    Some(end.to_string())
-                } else {
-                    None
-                };
-                tracing::debug!("Successfully listed {} authorized prompts", total);
+
+                let next_cursor = if end < total { Some(end.to_string()) } else { None };
+
+                tracing::debug!("Successfully listed {} authorized prompts", slice.len());
                 Ok(ListPromptsResult {
-                    meta: None,
+                    meta: result.meta,
                     prompts: slice,
-                    next_cursor: next,
+                    next_cursor: next_cursor,
                 })
             }
             Err(e) => {
-                tracing::error!("Failed to get prompt list: {}", e);
-                Err(RmcpErrorData::new(
-                    ErrorCode(500),
-                    format!("Failed to list prompts: {}", e),
-                    None,
-                ))
+                tracing::error!("Failed to get prompts with auth: {}", e);
+                Err(e)
             }
         }
     }
@@ -1866,7 +1867,7 @@ impl ServerHandler for McpAggregator {
 
             // 检查会话是否过期
             if auth_context.is_session_expired() {
-                tracing::warn!("拒绝过期会话的get_prompt请求: {}", request.name);
+                tracing::warn!("Rejected get_prompt request from expired session: {}", request.name);
                 return Err(RmcpErrorData::new(
                     ErrorCode(401),
                     "Session expired for get_prompt".to_string(),
@@ -1876,7 +1877,7 @@ impl ServerHandler for McpAggregator {
 
             // 检查提示词权限
             if !auth_context.has_prompt_permission(&request.name) {
-                tracing::warn!("拒绝无权限的提示词获取: {}", request.name);
+                tracing::warn!("Access denied for prompt: {}", request.name);
                 return Err(RmcpErrorData::new(
                     ErrorCode(403),
                     format!("Access denied: prompt '{}' is not permitted", request.name),
@@ -1884,7 +1885,7 @@ impl ServerHandler for McpAggregator {
                 ));
             }
 
-            tracing::debug!("提示词 {} 权限验证通过", request.name);
+            tracing::debug!("Prompt {} permission verification passed", request.name);
         }
 
         // Parse the prompt name to extract server name and original name
@@ -1984,7 +1985,7 @@ impl ServerHandler for McpAggregator {
 
         // 检查会话是否过期
         if auth_context.is_session_expired() {
-            tracing::warn!("拒绝过期会话的list_resources请求");
+            tracing::warn!("Rejected list_resources request from expired session");
             return Err(RmcpErrorData::new(
                 ErrorCode(401),
                 "Session expired for list_resources".to_string(),
@@ -1992,92 +1993,47 @@ impl ServerHandler for McpAggregator {
             ));
         }
 
-        let mut offset = 0usize;
-        if let Some(param) = _request {
-            if let Some(cursor) = param.cursor {
-                if let Ok(v) = cursor.parse::<usize>() {
-                    offset = v;
-                } else {
-                    return Err(RmcpErrorData::new(
-                        ErrorCode(400),
-                        "Invalid cursor".to_string(),
-                        None,
-                    ));
-                }
-            }
-        }
+        // 调用带权限验证的方法
+        match self.list_resources_with_auth_and_token_manager(&auth_context, self.token_manager.clone()).await {
+            Ok(result) => {
+                tracing::info!("Successfully retrieved resources with permission filtering");
 
-        let page_size = 100usize;
-        match self.list_resources().await {
-            Ok(resources) => {
-                // Save original count for logging
-                let original_count = resources.len();
-
-                // Filter resources based on permissions with detailed checking
-                let filtered_resources: Vec<_> = resources
-                    .into_iter()
-                    .filter(|resource| {
-                        let permission_result =
-                            self.evaluate_session_resource_permission(&auth_context, resource);
-                        match permission_result {
-                            crate::auth_context::PermissionResult::Allowed => true,
-                            crate::auth_context::PermissionResult::NotAuthenticated => {
-                                tracing::warn!(
-                                    "Resource {} access denied: not authenticated",
-                                    resource.uri
-                                );
-                                false
-                            }
-                            crate::auth_context::PermissionResult::SessionExpired => {
-                                tracing::warn!(
-                                    "Resource {} access denied: session expired",
-                                    resource.uri
-                                );
-                                false
-                            }
-                            crate::auth_context::PermissionResult::InsufficientPermissions => {
-                                tracing::debug!(
-                                    "Resource {} access denied: insufficient permissions",
-                                    resource.uri
-                                );
-                                false
-                            }
+                // 应用分页逻辑
+                let mut offset = 0usize;
+                if let Some(param) = _request {
+                    if let Some(cursor) = param.cursor {
+                        if let Ok(v) = cursor.parse::<usize>() {
+                            offset = v;
+                        } else {
+                            return Err(RmcpErrorData::new(
+                                ErrorCode(400),
+                                "Invalid cursor".to_string(),
+                                None,
+                            ));
                         }
-                    })
-                    .collect();
+                    }
+                }
 
-                tracing::info!(
-                    "Permission filtering: {} resources remaining (filtered from {} total)",
-                    filtered_resources.len(),
-                    original_count
-                );
-
-                let total = filtered_resources.len();
-                let end = std::cmp::min(offset + page_size, total);
+                let total = result.resources.len();
+                let end = std::cmp::min(offset + 100, total);
                 let slice = if offset < end {
-                    filtered_resources[offset..end].to_vec()
+                    result.resources[offset..end].to_vec()
                 } else {
                     Vec::new()
                 };
-                let next = if end < total {
-                    Some(end.to_string())
-                } else {
-                    None
-                };
-                tracing::debug!("Successfully listed {} authorized resources", total);
+
+                let next_cursor = if end < total { Some(end.to_string()) } else { None };
+
+                tracing::debug!("Successfully listed {} authorized resources", slice.len());
                 Ok(ListResourcesResult {
-                    meta: None,
+                    meta: result.meta,
                     resources: slice,
-                    next_cursor: next,
+                    next_cursor: next_cursor,
                 })
             }
             Err(e) => {
-                tracing::error!("Failed to get resource list: {}", e);
-                Err(RmcpErrorData::new(
-                    ErrorCode(500),
-                    format!("Failed to list resources: {}", e),
-                    None,
-                ))
+                tracing::error!("Failed to get resources with auth: {}", e);
+                Err(e)
             }
         }
     }
@@ -2101,7 +2057,7 @@ impl ServerHandler for McpAggregator {
 
             // 检查是否有有效会话
             if !auth_context.has_valid_session() {
-                tracing::warn!("拒绝未认证的read_resource请求: {}", request.uri);
+                tracing::warn!("Rejected unauthenticated read_resource request: {}", request.uri);
                 return Err(RmcpErrorData::new(
                     ErrorCode(401),
                     "Authentication required for read_resource".to_string(),
@@ -2111,7 +2067,7 @@ impl ServerHandler for McpAggregator {
 
             // 检查会话是否过期
             if auth_context.is_session_expired() {
-                tracing::warn!("拒绝过期会话的read_resource请求: {}", request.uri);
+                tracing::warn!("Rejected read_resource request from expired session: {}", request.uri);
                 return Err(RmcpErrorData::new(
                     ErrorCode(401),
                     "Session expired for read_resource".to_string(),
@@ -2128,7 +2084,7 @@ impl ServerHandler for McpAggregator {
             }
 
             if !has_permission {
-                tracing::warn!("拒绝无权限的资源读取: {}", request.uri);
+                tracing::warn!("Access denied for resource: {}", request.uri);
                 return Err(RmcpErrorData::new(
                     ErrorCode(403),
                     format!("Access denied: resource '{}' is not permitted", request.uri),

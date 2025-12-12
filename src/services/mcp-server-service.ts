@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { McpServerInfo } from '../types'
+import type { McpServerInfo, McpResourceInfo } from '../types'
 
 export class McpServerService {
   // MCP Server Management
@@ -78,5 +78,10 @@ export class McpServerService {
 
   static async importMcpServersConfig(configJson: any): Promise<string> {
     return invoke('import_mcp_servers_config', { configJson })
+  }
+
+  // MCP Resources Management
+  static async listMcpServerResources(serverName: string): Promise<McpResourceInfo[]> {
+    return invoke('list_mcp_server_resources', { server_name: serverName })
   }
 }

@@ -80,12 +80,14 @@ tauri-plugin-shell = "2.3.1"
 base64 = "0.22.1"
 tracing-appender = "0.2.3"
 rand = "0.8"
+rand_core = "0.6"
 sha2 = "0.10"
 dashmap = "6.1"
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.1"
 tabled = "0.15"
+# SQLx - 保留直到完全迁移完成
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
     "sqlite",
@@ -93,6 +95,18 @@ sqlx = { version = "0.8", features = [
     "chrono",
     "migrate",
 ] }
+
+# SeaORM - 新增 ORM 框架（使用与 sqlx 0.8 兼容的版本）
+sea-orm = { version = "1.0", features = [
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+    "macros",
+    "with-chrono",
+    "with-uuid",
+    "with-json",
+] }
+sea-orm-migration = "1.0"
+sea-query = "0.31"
 
 [dev-dependencies]
 tempfile = "3.8"

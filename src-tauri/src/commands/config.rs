@@ -44,7 +44,6 @@ pub async fn update_config(config: config_mod::AppConfig) -> Result<String> {
 
 #[tauri::command]
 pub async fn import_mcp_servers_config(
-    _app_handle: tauri::AppHandle,
     config_json: serde_json::Value,
 ) -> Result<String> {
     // Extract mcpServers object from config
@@ -146,7 +145,7 @@ pub async fn import_mcp_servers_config(
                         let guard = SERVICE_MANAGER.lock().unwrap();
                         guard.as_ref().unwrap().clone()
                     };
-                    match service_manager.add_mcp_server(service_config).await {
+                    match service_manager.add_server(&service_config).await {
                         Ok(()) => added_servers.push(service_name.clone()),
                         Err(e) => {
                             tracing::error!("Failed to import service '{}': {}", service_name, e);

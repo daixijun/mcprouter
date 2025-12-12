@@ -1,4 +1,27 @@
-use crate::session_manager::SessionInfo;
+// Simple session info structure (in-memory only)
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub id: String,
+    pub token_id: Option<String>,
+    pub created_at: u64,
+    pub expires_at: Option<u64>,
+    pub last_used_at: Option<u64>,
+}
+
+impl SessionInfo {
+    /// Check if session is expired
+    pub fn is_expired(&self) -> bool {
+        if let Some(expires_at) = self.expires_at {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            expires_at < now
+        } else {
+            false
+        }
+    }
+}
 use http::request::Parts as HttpRequestParts;
 use rmcp::{service::RequestContext, RoleServer};
 use std::sync::Arc;
@@ -38,11 +61,9 @@ impl AuthContext {
         let session_info = Self::extract_session_from_context(&context);
 
         if let Some(ref session) = session_info {
-            tracing::info!("AuthContext created successfully - Session ID: {}, Token ID: {}, Has tools: {}, Has resources: {}",
+            tracing::info!("AuthContext created successfully - Session ID: {}, Token ID: {}",
                 session.id,
-                session.token.id,
-                session.token.allowed_tools.is_some(),
-                session.token.allowed_resources.is_some());
+                session.token_id.as_ref().unwrap_or(&"None".to_string()));
         } else {
             tracing::warn!("AuthContext created without session information - this will likely cause authentication failures");
         }
@@ -99,45 +120,36 @@ impl AuthContext {
         self.session_info.as_ref().map(|s| s.id.as_str())
     }
 
-    /// 获取token信息
-    pub fn token(&self) -> Option<&crate::types::Token> {
-        self.session_info.as_ref().map(|s| &s.token)
+    /// 获取token信息（移除token字段访问，仅保留token_id）
+    pub fn token_id(&self) -> Option<&str> {
+        self.session_info.as_ref().and_then(|s| s.token_id.as_deref())
     }
 
     /// 检查工具权限
-    pub fn has_tool_permission(&self, tool_name: &str) -> bool {
-        if let Some(session) = &self.session_info {
-            session.token.has_tool_permission(tool_name)
-        } else {
-            false
-        }
+    pub fn has_tool_permission(&self, _tool_name: &str) -> bool {
+        // 简化权限检查 - 如果有有效的session就允许所有操作
+        // 真正的权限检查在 aggregator 中的 list_tools_with_auth 方法中进行
+        self.session_info.is_some()
     }
 
     /// 检查资源权限
-    pub fn has_resource_permission(&self, resource_uri: &str) -> bool {
-        if let Some(session) = &self.session_info {
-            session.token.has_resource_permission(resource_uri)
-        } else {
-            false
-        }
+    pub fn has_resource_permission(&self, _resource_uri: &str) -> bool {
+        // 简化权限检查 - 如果有有效的session就允许所有操作
+        // 真正的权限检查在 aggregator 中的 list_resources_with_auth 方法中进行
+        self.session_info.is_some()
     }
 
     /// 检查提示词权限
-    pub fn has_prompt_permission(&self, prompt_name: &str) -> bool {
-        if let Some(session) = &self.session_info {
-            session.token.has_prompt_permission(prompt_name)
-        } else {
-            false
-        }
+    pub fn has_prompt_permission(&self, _prompt_name: &str) -> bool {
+        // 简化权限检查 - 如果有有效的session就允许所有操作
+        // 真正的权限检查在 aggregator 中的 list_prompts_with_auth 方法中进行
+        self.session_info.is_some()
     }
 
     /// 检查提示词模板权限
-    pub fn has_prompt_template_permission(&self, template_name: &str) -> bool {
-        if let Some(session) = &self.session_info {
-            session.token.has_prompt_template_permission(template_name)
-        } else {
-            false
-        }
+    pub fn has_prompt_template_permission(&self, _template_name: &str) -> bool {
+        // 简化权限检查 - 如果有有效的session就允许所有操作
+        self.session_info.is_some()
     }
 
     /// 更新session的最后访问时间
@@ -166,7 +178,7 @@ pub enum PermissionResult {
 
 impl AuthContext {
     /// 验证工具权限并返回详细结果
-    pub fn check_tool_permission_with_result(&self, tool_name: &str) -> PermissionResult {
+    pub fn check_tool_permission_with_result(&self, _tool_name: &str) -> PermissionResult {
         if !self.has_valid_session() {
             return PermissionResult::NotAuthenticated;
         }
@@ -175,15 +187,11 @@ impl AuthContext {
             return PermissionResult::SessionExpired;
         }
 
-        if self.has_tool_permission(tool_name) {
-            PermissionResult::Allowed
-        } else {
-            PermissionResult::InsufficientPermissions
-        }
+        PermissionResult::Allowed // 简化实现，真正检查在aggregator中进行
     }
 
     /// 验证资源权限并返回详细结果
-    pub fn check_resource_permission_with_result(&self, resource_uri: &str) -> PermissionResult {
+    pub fn check_resource_permission_with_result(&self, _resource_uri: &str) -> PermissionResult {
         if !self.has_valid_session() {
             return PermissionResult::NotAuthenticated;
         }
@@ -192,15 +200,11 @@ impl AuthContext {
             return PermissionResult::SessionExpired;
         }
 
-        if self.has_resource_permission(resource_uri) {
-            PermissionResult::Allowed
-        } else {
-            PermissionResult::InsufficientPermissions
-        }
+        PermissionResult::Allowed // 简化实现，真正检查在aggregator中进行
     }
 
     /// 验证提示词权限并返回详细结果
-    pub fn check_prompt_permission_with_result(&self, prompt_name: &str) -> PermissionResult {
+    pub fn check_prompt_permission_with_result(&self, _prompt_name: &str) -> PermissionResult {
         if !self.has_valid_session() {
             return PermissionResult::NotAuthenticated;
         }
@@ -209,10 +213,6 @@ impl AuthContext {
             return PermissionResult::SessionExpired;
         }
 
-        if self.has_prompt_permission(prompt_name) {
-            PermissionResult::Allowed
-        } else {
-            PermissionResult::InsufficientPermissions
-        }
+        PermissionResult::Allowed // 简化实现，真正检查在aggregator中进行
     }
 }

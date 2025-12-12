@@ -140,8 +140,7 @@ const Marketplace: React.FC = memo(() => {
     async (isReset = false) => {
       // Prevent multiple simultaneous requests
       if (isLoadingRef.current) {
-        console.log('Already loading, skipping request')
-        return
+          return
       }
 
       isLoadingRef.current = true
@@ -155,8 +154,7 @@ const Marketplace: React.FC = memo(() => {
       const controller = new AbortController()
       abortControllerRef.current = controller
 
-      console.log(`Loading services: isReset=${isReset}`)
-
+    
       try {
         // Unified marketplace pagination
         const currentPage = isReset ? 1 : modelScopePagination.page
@@ -169,14 +167,10 @@ const Marketplace: React.FC = memo(() => {
 
         // 检查请求是否被取消
         if (controller.signal.aborted) {
-          console.log('Request was aborted')
-          return
+            return
         }
 
-        console.log(
-          `Loaded ${result.services.length} services, page=${currentPage}, has_more=${result.has_more}`,
-        )
-
+    
         if (isReset) {
           setServices(result.services)
         } else {
@@ -191,8 +185,7 @@ const Marketplace: React.FC = memo(() => {
       } catch (error) {
         // 如果请求被取消，不显示错误
         if (controller.signal.aborted) {
-          console.log('Request was aborted, ignoring error')
-          return
+              return
         }
         console.error('Failed to search services:', error)
         message.error(t('marketplace.messages.search_failed', { error }))
@@ -244,8 +237,7 @@ const Marketplace: React.FC = memo(() => {
 
   // Handle load more button click
   const handleLoadMore = useCallback(() => {
-    console.log('Load more button clicked')
-    searchServices(false)
+      searchServices(false)
   }, [searchServices])
 
   const handleInstall = useCallback(
@@ -293,7 +285,7 @@ const Marketplace: React.FC = memo(() => {
         setPendingInstallService(null)
         setEnvSchema(null)
       } catch (error) {
-        console.error('安装失败:', error)
+        console.error('Installation failed:', error)
         message.error(t('marketplace.messages.install_failed'))
       } finally {
         setIsInstalling(false)

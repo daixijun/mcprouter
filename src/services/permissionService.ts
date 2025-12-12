@@ -12,7 +12,7 @@ export interface PermissionUpdateRequest {
 export interface UnifiedPermissionUpdateRequest {
   token_id: string
   resource_type: PermissionType
-  resource_id: string
+  resource_path: string  // 修正：使用 resource_path 而不是 resource_id
   action: 'add' | 'remove'
 }
 
@@ -147,10 +147,10 @@ class PermissionService {
   async updateTokenPermission(
     tokenId: string,
     resourceType: PermissionType,
-    resourceId: string,
+    resourcePath: string,  // 修正：使用 resourcePath 而不是 resourceId
     isAdd: boolean
   ): Promise<SimplePermissionUpdateResponse> {
-    const key = `unified_${tokenId}_${resourceType}_${resourceId}_${isAdd ? 'add' : 'remove'}`
+    const key = `unified_${tokenId}_${resourceType}_${resourcePath}_${isAdd ? 'add' : 'remove'}`
 
     // 取消之前的相同请求
     if (this.pendingRequests.has(key)) {
@@ -165,7 +165,7 @@ class PermissionService {
       const request: UnifiedPermissionUpdateRequest = {
         token_id: tokenId,
         resource_type: resourceType,
-        resource_id: resourceId,
+        resource_path: resourcePath,  // 修正：使用 resource_path 而不是 resource_id
         action: isAdd ? 'add' : 'remove'
       }
 

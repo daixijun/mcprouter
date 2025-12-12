@@ -40,15 +40,9 @@ pub struct McpServerUpdateRequest {
     pub enabled: bool,
 }
 
-// Helper function to get MCP server manager from global state
-fn get_mcp_manager() -> Result<Arc<McpServerManager>> {
-    let service_manager = crate::SERVICE_MANAGER.lock().map_err(|e| {
-        McpError::Internal(format!("Failed to lock SERVICE_MANAGER: {}", e))
-    })?;
-
-    service_manager.as_ref().cloned().ok_or_else(|| {
-        McpError::Internal("SERVICE_MANAGER not initialized".to_string())
-    })
+// Helper function to get MCP server manager from global state (with wait)
+async fn get_mcp_manager() -> Result<Arc<McpServerManager>> {
+    crate::wait_for_service_manager().await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -89,8 +83,8 @@ pub async fn add_mcp_server(
         enabled: true, // Default to enabled when adding
     };
 
-    let mcp_manager = get_mcp_manager()?;
-    mcp_manager.add_mcp_server(config).await?;
+    let mcp_manager = get_mcp_manager().await?;
+    mcp_manager.add_server(&config).await?;
 
     Ok(format!("MCP server '{}' added successfully", request.name))
 }
@@ -133,8 +127,8 @@ pub async fn update_mcp_server(
         enabled: request.enabled,
     };
 
-    let mcp_manager = get_mcp_manager()?;
-    mcp_manager.update_mcp_server(config).await?;
+    let mcp_manager = get_mcp_manager().await?;
+    mcp_manager.update_server(&request.name, &config).await?;
 
     Ok(format!(
         "MCP server '{}' updated successfully",
@@ -143,92 +137,37 @@ pub async fn update_mcp_server(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn delete_mcp_server(_app_handle: tauri::AppHandle, name: String) -> Result<String> {
-    let mcp_manager = get_mcp_manager()?;
-    mcp_manager.remove_mcp_server(&name).await?;
+pub async fn delete_mcp_server(name: String) -> Result<String> {
+    let mcp_manager = get_mcp_manager().await?;
+    mcp_manager.delete_server(&name).await?;
 
     Ok(format!("MCP server '{}' removed successfully", name))
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn toggle_mcp_server(_app_handle: tauri::AppHandle, name: String) -> Result<bool> {
-    let mcp_manager = get_mcp_manager()?;
+pub async fn toggle_mcp_server(name: String) -> Result<bool> {
+    let mcp_manager = get_mcp_manager().await?;
     let new_state = mcp_manager.toggle_mcp_server(&name).await?;
 
     Ok(new_state)
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_servers(
-    _app_handle: tauri::AppHandle,
-) -> Result<Vec<McpServerInfo>> {
-    let mcp_manager = get_mcp_manager()?;
-    let servers = mcp_manager.list_mcp_servers().await?;
+pub async fn list_mcp_servers() -> Result<Vec<McpServerInfo>> {
+    let mcp_manager = get_mcp_manager().await?;
+    let servers = mcp_manager.get_all_servers().await?;
 
     Ok(servers)
 }
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn get_mcp_server_tools(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<Vec<McpToolInfo>> {
-    let mcp_manager = get_mcp_manager()?;
-    let tools = mcp_manager.get_mcp_server_tools(&server_name).await?;
-
-    Ok(tools)
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn get_mcp_server_resources(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<Vec<McpResourceInfo>> {
-    let mcp_manager = get_mcp_manager()?;
-    let resources = mcp_manager.get_mcp_server_resources(&server_name).await?;
-
-    Ok(resources)
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn get_mcp_server_prompts(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<Vec<McpPromptInfo>> {
-    let mcp_manager = get_mcp_manager()?;
-    let prompts = mcp_manager.get_mcp_server_prompts(&server_name).await?;
-
-    Ok(prompts)
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn refresh_mcp_server_capabilities(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<String> {
-    let mcp_manager = get_mcp_manager()?;
-
-    // Clear existing cache
-    mcp_manager.clear_server_cache(&server_name).await?;
-
-    // Sync capabilities from service
-    mcp_manager.sync_server_capabilities(&server_name).await?;
-
-    Ok(format!(
-        "Capabilities for MCP server '{}' refreshed successfully",
-        server_name
-    ))
-}
-
 
 // ============================================================================
 // Statistics and Monitoring
 // ============================================================================
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn get_mcp_server_statistics(_app_handle: tauri::AppHandle) -> Result<serde_json::Value> {
-    let mcp_manager = get_mcp_manager()?;
-    let servers = mcp_manager.list_mcp_servers().await?;
+pub async fn get_mcp_server_statistics() -> Result<serde_json::Value> {
+    let mcp_manager = get_mcp_manager().await?;
+    let servers = mcp_manager.get_all_servers().await?;
 
     let mut total_tools = 0;
     let mut total_resources = 0;
@@ -264,40 +203,27 @@ pub async fn get_mcp_server_statistics(_app_handle: tauri::AppHandle) -> Result<
     Ok(stats)
 }
 
-// Alias functions for command compatibility
-
-/// List MCP server tools (alias for get_mcp_server_tools)
+/// List MCP server tools
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_server_tools(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<Vec<McpToolInfo>> {
-    get_mcp_server_tools(_app_handle, server_name).await
+pub async fn list_mcp_server_tools(server_name: String) -> Result<Vec<McpToolInfo>> {
+    let mcp_manager = get_mcp_manager().await?;
+    let tools = mcp_manager.list_mcp_server_tools(&server_name).await?;
+    Ok(tools)
 }
 
-/// List MCP server resources (alias for get_mcp_server_resources)
+/// List MCP server resources
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_server_resources(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<Vec<McpResourceInfo>> {
-    get_mcp_server_resources(_app_handle, server_name).await
+pub async fn list_mcp_server_resources(server_name: String) -> Result<Vec<McpResourceInfo>> {
+    let mcp_manager = get_mcp_manager().await?;
+    let resources = mcp_manager.list_mcp_server_resources(&server_name).await?;
+
+    Ok(resources)
 }
 
-/// List MCP server prompts (alias for get_mcp_server_prompts)
+/// List MCP server prompts
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_server_prompts(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<Vec<McpPromptInfo>> {
-    get_mcp_server_prompts(_app_handle, server_name).await
-}
-
-/// Refresh all MCP servers (alias for refresh_mcp_server_capabilities)
-#[tauri::command(rename_all = "snake_case")]
-pub async fn refresh_all_mcp_servers(
-    _app_handle: tauri::AppHandle,
-    server_name: String,
-) -> Result<String> {
-    refresh_mcp_server_capabilities(_app_handle, server_name).await
+pub async fn list_mcp_server_prompts(server_name: String) -> Result<Vec<McpPromptInfo>> {
+    let mcp_manager = get_mcp_manager().await?;
+    let prompts = mcp_manager.list_mcp_server_prompts(&server_name).await?;
+    Ok(prompts)
 }

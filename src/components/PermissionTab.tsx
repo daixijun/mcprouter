@@ -9,18 +9,9 @@ import {
   SelectOutlined,
   UpOutlined,
 } from '@ant-design/icons'
-import {
-  Button,
-  Card,
-  Checkbox,
-  Divider,
-  Input,
-  Space,
-  Tooltip,
-  Typography,
-} from 'antd'
+import { Button, Card, Checkbox, Divider, Input, Space, Typography } from 'antd'
 import type { CheckboxGroupProps } from 'antd/es/checkbox'
-import React, { useMemo, useState, useEffect } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PermissionItem } from '../types'
 
@@ -64,9 +55,11 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
   // 默认展开所有服务器
   useEffect(() => {
     // 从 resource_path 解析服务器名
-    const serverNames = [...new Set(permissionItems.map(item =>
-      item.resource_path.split("__")[0]
-    ))]
+    const serverNames = [
+      ...new Set(
+        permissionItems.map((item) => item.resource_path.split('__')[0]),
+      ),
+    ]
     setExpandedServers(serverNames)
   }, [permissionItems])
 
@@ -77,9 +70,9 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
 
   // 获取权限显示名称 - 从 resource_path 解析出资源名
   const getDisplayName = (resourcePath: string): string => {
-    const parts = resourcePath.split("__")
+    const parts = resourcePath.split('__')
     if (parts.length >= 2) {
-      return parts.slice(1).join("__") // 返回资源名部分
+      return parts.slice(1).join('__') // 返回资源名部分
     }
     return resourcePath
   }
@@ -382,11 +375,18 @@ const PermissionTab: React.FC<PermissionTabProps> = ({
                               }}>
                               <Text strong>{getDisplayName(permission)}</Text>
                               {(() => {
-                                const item = permissionItems.find((item) => item.resource_path === permission)
+                                const item = permissionItems.find(
+                                  (item) => item.resource_path === permission,
+                                )
                                 if (!item) return null
 
-                                const description = getPermissionDescription(item)
-                                if (!description || description === item.resource_path) return null
+                                const description =
+                                  getPermissionDescription(item)
+                                if (
+                                  !description ||
+                                  description === item.resource_path
+                                )
+                                  return null
 
                                 return (
                                   <Text

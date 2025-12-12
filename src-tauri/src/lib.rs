@@ -6,17 +6,20 @@ pub mod error;
 pub mod marketplace;
 pub mod mcp_client;
 pub mod mcp_manager;
-pub mod session_manager;
 pub mod storage;
 pub mod token_manager;
 pub mod types;
 
+// SeaORM 实体模块
+pub mod entities;
+pub mod migration;
+
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
-use crate::mcp_manager::McpServerManager;
+use crate::mcp_manager::{McpServerManager};
 use crate::storage::UnifiedStorageManager;
 use commands::token_management::TokenManagerState;
 use commands::*;
@@ -24,6 +27,49 @@ use mcp_client::McpClientManager;
 
 // Re-export types for public use
 pub use types::*;
+
+/// Wait for SERVICE_MANAGER to be initialized (with timeout)
+pub async fn wait_for_service_manager() -> Result<Arc<McpServerManager>, crate::error::McpError> {
+    let mut attempts = 0;
+    let max_attempts = 50; // 5 seconds max
+
+    while attempts < max_attempts {
+        {
+            let guard = SERVICE_MANAGER.lock().map_err(|e| {
+                crate::error::McpError::Internal(format!("Failed to lock SERVICE_MANAGER: {}", e))
+            })?;
+
+            if let Some(ref manager) = *guard {
+                return Ok(manager.clone());
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        attempts += 1;
+    }
+
+    Err(crate::error::McpError::Internal("SERVICE_MANAGER initialization timeout".to_string()))
+}
+
+/// Wait for TokenManager to be initialized (with timeout)
+pub async fn wait_for_token_manager() -> Result<Arc<crate::token_manager::TokenManager>, crate::error::McpError> {
+    let mut attempts = 0;
+    let max_attempts = 50; // 5 seconds max
+
+    while attempts < max_attempts {
+        {
+            let guard = TOKEN_MANAGER.write().await;
+            if let Some(ref manager) = *guard {
+                return Ok(manager.clone());
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        attempts += 1;
+    }
+
+    Err(crate::error::McpError::InternalError("TokenManager initialization timeout".to_string()))
+}
 
 // Global state - use MCP Server Manager
 static SERVICE_MANAGER: std::sync::Mutex<Option<Arc<McpServerManager>>> =
@@ -470,28 +516,36 @@ pub async fn run() {
             let mcp_client_manager = MCP_CLIENT_MANAGER.clone();
             let server_config = Arc::new(config.server.clone());
 
-            // 2.6) Initialize SQLite database and managers in background
-            // Split into multiple spawn tasks to prevent stack overflow
+            // 2.6) Initialize SeaORM database and managers in background
             let config_dir_for_init = config_dir.clone();
             let mcp_client_manager_for_init = mcp_client_manager.clone();
             let server_config_for_init = server_config.clone();
 
-            // Stage 1: Initialize SQLite database
-            tokio::spawn(async move {
-                let db_path = config_dir_for_init.join("mcprouter.db");
-                let db_url = format!("sqlite:{}", db_path.display());
+            // Stage 1: Initialize SeaORM database and managers asynchronously
+            let db_path = config_dir_for_init.join("mcprouter.db");
+            let storage_config = crate::storage::manager::StorageConfig::with_db_path(db_path);
+            let db_url = storage_config.database_url();
 
-                tracing::info!("Initializing SQLite database at: {}", db_url);
-                match crate::storage::sqlite_storage::SqliteStorage::new(&db_url).await {
-                    Ok(storage) => {
-                        tracing::info!("SQLite database initialized successfully");
-                        // Spawn Stage 2: Initialize managers with the pool
-                        tokio::spawn(async move {
-                            initialize_managers(storage.pool, mcp_client_manager_for_init, server_config_for_init).await;
-                        });
+            tracing::info!("Initializing SeaORM database at: {}", db_url);
+
+            // Spawn async initialization
+            tokio::spawn(async move {
+                match crate::storage::UnifiedStorageManager::new(storage_config).await {
+                    Ok(storage_manager) => {
+                        tracing::info!("SeaORM database initialized successfully");
+
+                        // Initialize managers
+                        match initialize_managers(storage_manager, mcp_client_manager_for_init, server_config_for_init).await {
+                            Ok(_) => {
+                                tracing::info!("All managers initialized successfully");
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to initialize managers: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
-                        tracing::error!("Failed to initialize SQLite database: {}", e);
+                        tracing::error!("Failed to initialize SeaORM database: {}", e);
                     }
                 }
             });
@@ -587,7 +641,6 @@ pub async fn run() {
             list_mcp_server_tools,
             list_mcp_server_resources,
             list_mcp_server_prompts,
-            refresh_all_mcp_servers,
             // Legacy Commands
             toggle_mcp_server_tool,
             enable_all_mcp_server_tools,
@@ -616,7 +669,7 @@ pub async fn run() {
             // 统一的权限更新命令
             update_token_permission,
             // Permission Management Commands
-            get_available_permissions,
+            list_available_permissions,
             // Language Management Commands (temporarily disabled)
         ])
         .run(tauri::generate_context!())
@@ -625,21 +678,21 @@ pub async fn run() {
 
 /// Initialize managers (split from main run function to prevent stack overflow)
 async fn initialize_managers(
-    pool: sqlx::Pool<sqlx::Sqlite>,
+    storage_manager: crate::storage::UnifiedStorageManager,
     mcp_client_manager: Arc<McpClientManager>,
     server_config: Arc<ServerConfig>,
-) {
-    // Stage 2a: Initialize MCP Server Storage and Manager
-    let mcp_storage = crate::storage::mcp_server_storage::McpServerStorage::new(pool.clone());
-    if let Err(e) = mcp_storage.init().await {
-        tracing::error!("Failed to initialize MCP server storage: {}", e);
-        return;
-    }
-
-    let mcp_server_manager: Arc<McpServerManager> = {
-        let manager = crate::mcp_manager::McpServerManager::new(mcp_storage);
-        tracing::info!("Using MCP Server Manager");
-        Arc::new(manager)
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Stage 2a: Initialize MCP Server Manager
+    tracing::info!("Initializing MCP Server Manager");
+    let mcp_server_manager: Arc<crate::mcp_manager::McpServerManager> = {
+        // Create MCP manager using ORM storage
+        match McpServerManager::with_storage_manager(Arc::new(storage_manager.clone())).await {
+            Ok(manager) => Arc::new(manager),
+            Err(e) => {
+                tracing::error!("Failed to create MCP Server Manager: {}", e);
+                return Err(format!("Failed to create MCP Server Manager: {}", e).into());
+            }
+        }
     };
 
     // Set global SERVICE_MANAGER for backward compatibility
@@ -649,14 +702,18 @@ async fn initialize_managers(
     }
 
     // Stage 2b: Initialize Token Manager
-    let token_manager = match crate::token_manager::TokenManager::new(pool.clone()).await {
-        Ok(manager) => {
-            tracing::info!("Using TokenManager");
-            Arc::new(manager)
-        }
-        Err(e) => {
-            tracing::error!("Failed to initialize TokenManager: {}", e);
-            std::process::exit(1);
+    tracing::info!("Token Manager initialized");
+    let token_manager: Arc<crate::token_manager::TokenManager> = {
+        // Use the storage manager to create the token manager
+        match storage_manager.create_token_manager().await {
+            Ok(token_manager) => {
+                tracing::info!("Token Manager initialized successfully");
+                token_manager
+            },
+            Err(e) => {
+                tracing::error!("Failed to initialize Token Manager: {}", e);
+                return Err(format!("Failed to initialize Token Manager: {}", e).into());
+            }
         }
     };
 
@@ -666,10 +723,13 @@ async fn initialize_managers(
         *token_manager_guard = Some(token_manager.clone());
     }
 
-    // Stage 3: Create and start aggregator (spawned separately to prevent stack overflow)
+    // Stage 3: Create and start aggregator
     let mcp_server_manager_for_agg = mcp_server_manager.clone();
     let token_manager_for_agg = token_manager.clone();
     tokio::spawn(async move {
+        // Give a brief moment for all managers to be fully initialized
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
         create_and_start_aggregator(
             mcp_server_manager_for_agg,
             mcp_client_manager,
@@ -683,43 +743,51 @@ async fn initialize_managers(
     tokio::spawn(async move {
         load_and_connect_services(mcp_server_manager).await;
     });
+
+    Ok(())
 }
 
-/// Create and start the MCP aggregator
+// Create and start the MCP aggregator
 async fn create_and_start_aggregator(
-    mcp_server_manager: Arc<McpServerManager>,
+    mcp_server_manager: Arc<crate::mcp_manager::McpServerManager>,
     mcp_client_manager: Arc<McpClientManager>,
     server_config: Arc<ServerConfig>,
     token_manager: Arc<crate::token_manager::TokenManager>,
 ) {
-    // Create aggregator with TokenManager
-    let aggregator = Arc::new(aggregator::McpAggregator::new_with_trait(
-        mcp_server_manager.clone(),
+    tracing::info!("Creating and starting MCP aggregator");
+
+    // Create the aggregator instance
+    let aggregator = aggregator::McpAggregator::new(
+        mcp_server_manager,
         mcp_client_manager,
         server_config,
-        token_manager.clone(),
-    ));
+        token_manager,
+    );
 
-    // Store aggregator in global variable
+    // Store the aggregator in the global variable
     {
-        let mut agg_guard = AGGREGATOR.lock().unwrap();
-        *agg_guard = Some(aggregator.clone());
+        let mut aggregator_guard = AGGREGATOR.lock().unwrap();
+        *aggregator_guard = Some(Arc::new(aggregator));
     }
 
-    // Start aggregator
-    if let Err(e) = aggregator.start().await {
-        tracing::error!(
-            "Failed to start MCP aggregator server: {}\n\
-            The application cannot continue without the MCP aggregator service.\n\
-            Please check if the port is already in use or if there are permission issues.",
-            e
-        );
-        std::process::exit(1);
+    // Start the aggregator HTTP server
+    let aggregator_for_start = {
+        let guard = AGGREGATOR.lock().unwrap();
+        guard.as_ref().unwrap().clone()
+    };
+
+    match aggregator_for_start.start().await {
+        Ok(_) => {
+            tracing::info!("MCP Aggregator created and started successfully");
+        }
+        Err(e) => {
+            tracing::error!("Failed to start MCP Aggregator: {}", e);
+        }
     }
 }
 
 /// Load and connect MCP services
-async fn load_and_connect_services(mcp_server_manager: Arc<McpServerManager>) {
+async fn load_and_connect_services(mcp_server_manager: Arc<crate::mcp_manager::McpServerManager>) {
     tracing::info!("Loading MCP services from SQLite database");
     match mcp_server_manager.load_mcp_servers().await {
         Ok(_) => {

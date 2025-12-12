@@ -57,8 +57,7 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
       // 直接从数据库获取工具列表（无需连接服务）
       const serverTools = await ToolService.listMcpServerTools(mcpServer.name)
       setTools(serverTools)
-      console.log(`✅ 成功加载 ${serverTools.length} 个工具`)
-    } catch (error) {
+      } catch (error) {
       console.error('Failed to load tools:', error)
       message.error('加载工具列表失败')
     } finally {
@@ -66,9 +65,8 @@ const ToolManager: React.FC<ToolManagerProps> = ({ mcpServer }) => {
     }
   }
 
-  // 手动刷新工具列表
+  // Manual refresh tool list
   const handleRefresh = () => {
-    console.log('🔄 手动刷新工具列表')
     setRefreshVersion((prev) => prev + 1)
   }
 

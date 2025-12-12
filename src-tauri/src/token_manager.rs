@@ -1,12 +1,10 @@
-// SQLite-based Token Manager implementation
-#![allow(dead_code)]
+// Token Manager implementation
 
 use crate::error::{McpError, Result};
-use crate::storage::token_storage::TokenStorage;
+use crate::storage::orm_storage::Storage;
 use crate::types::{PermissionType, PermissionValidationResult, Token};
 use serde::{Deserialize, Serialize};
-
-// Token Manager with SQLite backend
+use std::sync::Arc;
 
 /// Token information for listing (without actual token value)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,453 +37,809 @@ pub struct TokenForDashboard {
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::Utc;
-use sqlx::SqlitePool;
-use std::sync::Arc;
+use uuid::Uuid;
 
-/// Token Manager with SQLite backend
+/// Token Manager
+#[derive(Debug)]
 pub struct TokenManager {
-    storage: Arc<TokenStorage>,
+    orm_storage: Arc<Storage>,
 }
 
 impl TokenManager {
-    /// Create a new TokenManager with SQLite backend
-    pub async fn new(pool: SqlitePool) -> Result<Self> {
-        let storage = Arc::new(TokenStorage::new(pool));
+    /// Create a new TokenManager with SeaORM backend
+    pub async fn new(orm_storage: Arc<Storage>) -> Result<Self> {
+        Ok(Self { orm_storage })
+    }
 
-        Ok(Self { storage })
+    /// Get access to the underlying ORM storage (for internal use)
+    pub fn orm_storage(&self) -> Arc<Storage> {
+        self.orm_storage.clone()
+    }
+
+    /// Generate a secure random token
+    pub fn generate_token(&self) -> String {
+        // Use UUID v7 for better randomness and sortable timestamps
+        let uuid = Uuid::now_v7();
+        let token_bytes = uuid.as_bytes();
+        URL_SAFE_NO_PAD.encode(token_bytes)
     }
 
     /// Create a new token with generated value
     pub async fn create(&self, name: String, description: Option<String>) -> Result<TokenInfo> {
         let token_value = self.generate_token();
-        self.create_with_permissions(
-            name,
-            description,
-            None,
-            None,
-            None,
-            Some(token_value.clone()),
-        )
-        .await
-    }
-
-    /// Create a new token with specified permissions
-    pub async fn create_with_permissions(
-        &self,
-        name: String,
-        description: Option<String>,
-        allowed_tools: Option<Vec<String>>,
-        allowed_resources: Option<Vec<String>>,
-        allowed_prompts: Option<Vec<String>>,
-        token_value: Option<String>,
-    ) -> Result<TokenInfo> {
-        let token_value = token_value.unwrap_or_else(|| self.generate_token());
-        let token_id = format!("tok_{}", &token_value[4..12]); // Generate a token ID
+        let now = Utc::now();
+        let id = Uuid::now_v7().to_string();
 
         let token = Token {
-            id: token_id.clone(),
-            name: name.clone(),
-            value: token_value.clone(),
+            id: id.clone(),
+            name,
+            value: token_value,
             description,
-            created_at: Utc::now().timestamp() as u64,
-            expires_at: None,
+            created_at: now.timestamp() as u64,
+            enabled: true,
             last_used_at: None,
             usage_count: 0,
-            enabled: true,
-            allowed_tools: allowed_tools.clone(),
-            allowed_resources: allowed_resources.clone(),
-            allowed_prompts: allowed_prompts.clone(),
-            allowed_prompt_templates: None,
+            expires_at: None, // TODO: Make configurable
+            allowed_tools: Some(vec![]),
+            allowed_resources: Some(vec![]),
+            allowed_prompts: Some(vec![]),
+            allowed_prompt_templates: Some(vec![]),
         };
 
-        self.storage
+        self.orm_storage
             .create_token(&token)
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to create token: {}", e)))?;
+            .map_err(|e| McpError::ValidationError(format!("Failed to create token: {}", e)))?;
 
-        // Add permissions if provided
-        if let Some(tools) = allowed_tools {
-            for tool in tools {
-                self.storage
-                    .add_permission(&token_id, "tool", &tool)
-                    .await
-                    .map_err(|e| {
-                        McpError::InternalError(format!("Failed to add tool permission: {}", e))
-                    })?;
-            }
-        }
-
-        if let Some(resources) = allowed_resources {
-            for resource in resources {
-                self.storage
-                    .add_permission(&token_id, "resource", &resource)
-                    .await
-                    .map_err(|e| {
-                        McpError::InternalError(format!("Failed to add resource permission: {}", e))
-                    })?;
-            }
-        }
-
-        if let Some(prompts) = allowed_prompts {
-            for prompt in prompts {
-                self.storage
-                    .add_permission(&token_id, "prompt", &prompt)
-                    .await
-                    .map_err(|e| {
-                        McpError::InternalError(format!("Failed to add prompt permission: {}", e))
-                    })?;
-            }
-        }
-
-        let description = token.description.clone();
-        let token_info = TokenInfo {
-            id: token_id,
-            name,
-            description,
-            created_at: Utc::now().timestamp() as u64,
-            expires_at: token.expires_at,
-            last_used_at: token.last_used_at,
-            usage_count: token.usage_count,
-            is_expired: self.is_token_expired(&token),
-            enabled: token.enabled,
-            allowed_tools: token.allowed_tools.clone().unwrap_or_default(),
-            allowed_resources: token.allowed_resources.clone().unwrap_or_default(),
-            allowed_prompts: token.allowed_prompts.clone().unwrap_or_default(),
-            allowed_prompt_templates: token.allowed_prompt_templates.clone().unwrap_or_default(),
-        };
-
-        Ok(token_info)
+        self.convert_to_token_info(&token).await
     }
 
-    /// List all tokens
+    /// Validate a token and return token info if valid
+    pub async fn validate(
+        &self,
+        token_value: &str,
+    ) -> Result<(PermissionValidationResult, Option<String>)> {
+        let token = self
+            .orm_storage
+            .get_token_by_value(token_value)
+            .await
+            .map_err(|e| McpError::ValidationError(format!("Failed to validate token: {}", e)))?;
+
+        if let Some(token) = token {
+            // Check if token is enabled
+            if !token.enabled {
+                return Ok((
+                    PermissionValidationResult {
+                        is_valid: false,
+                        error: Some("Token is disabled".to_string()),
+                        normalized_value: None,
+                    },
+                    Some(token.id),
+                ));
+            }
+
+            // Check if token is expired
+            if let Some(expires_at) = token.expires_at {
+                let now = Utc::now().timestamp() as u64;
+                if expires_at < now {
+                    return Ok((
+                        PermissionValidationResult {
+                            is_valid: false,
+                            error: Some("Token has expired".to_string()),
+                            normalized_value: None,
+                        },
+                        Some(token.id),
+                    ));
+                }
+            }
+
+            // Update usage statistics
+            if let Err(e) = self.orm_storage.update_token_usage(&token.id).await {
+                tracing::warn!("Failed to update token usage: {}", e);
+            }
+
+            // Check permissions from database
+            // For now, we'll validate token existence but detailed permission checks will be implemented later
+            Ok((
+                PermissionValidationResult {
+                    is_valid: true,
+                    error: None,
+                    normalized_value: Some(token.value),
+                },
+                Some(token.id),
+            ))
+        } else {
+            Ok((
+                PermissionValidationResult {
+                    is_valid: false,
+                    error: Some("Token not found".to_string()),
+                    normalized_value: None,
+                },
+                None,
+            ))
+        }
+    }
+
+    /// Get all tokens (for listing)
     pub async fn list(&self) -> Result<Vec<TokenInfo>> {
-        self.storage
-            .list_tokens()
+        let tokens = self
+            .orm_storage
+            .get_all_tokens()
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to list tokens: {}", e)))
-    }
+            .map_err(|e| McpError::ValidationError(format!("Failed to list tokens: {}", e)))?;
 
-    /// List all tokens for dashboard (minimal fields)
-    pub async fn list_for_dashboard(&self) -> Result<Vec<TokenForDashboard>> {
-        let token_infos = self.storage
-            .list_tokens()
-            .await
-            .map_err(|e| McpError::InternalError(format!("Failed to list tokens: {}", e)))?;
-
-        let mut dashboard_tokens = Vec::new();
-
-        for token_info in token_infos {
-            // Get the full token to access the value field
-            let full_token = self.storage.get_token_by_id(&token_info.id).await
-                .map_err(|e| McpError::InternalError(format!("Failed to get token {}: {}", token_info.id, e)))?;
-
-            dashboard_tokens.push(TokenForDashboard {
-                id: token_info.id,
-                name: token_info.name,
-                token: full_token.value,
-                expires_at: token_info.expires_at,
-                is_expired: token_info.is_expired,
-            });
+        let mut token_infos = Vec::new();
+        for token in tokens {
+            let info = self.convert_to_token_info(&token).await?;
+            token_infos.push(info);
         }
 
-        Ok(dashboard_tokens)
+        Ok(token_infos)
+    }
+
+    /// Get token by ID
+    pub async fn get_by_id(&self, token_id: &str) -> Result<Option<TokenInfo>> {
+        if let Some(token) = self
+            .orm_storage
+            .get_token_by_id(token_id)
+            .await
+            .map_err(|e| McpError::ValidationError(format!("Failed to get token: {}", e)))?
+        {
+            let info = self.convert_to_token_info(&token).await?;
+            Ok(Some(info))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get token by ID (alias for get_by_id)
+    pub async fn get_token_by_id(&self, token_id: &str) -> Result<Option<TokenInfo>> {
+        self.get_by_id(token_id).await
     }
 
     /// Delete a token
     pub async fn delete(&self, token_id: &str) -> Result<()> {
-        self.storage
+        self.orm_storage
             .delete_token(token_id)
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to delete token: {}", e)))
+            .map_err(|e| McpError::ValidationError(format!("Failed to delete token: {}", e)))
     }
 
-    /// Validate token and return token_id if valid
-    pub async fn validate_token(&self, token_value: &str) -> Option<String> {
-        match self.storage.get_token_by_value(token_value).await {
-            Ok(Some(token)) => {
-                // Check if token is expired
-                if self.is_token_expired(&token) {
-                    return None;
-                }
-                Some(token.id)
+    /// Enable or disable a token
+    pub async fn set_enabled(&self, token_id: &str, enabled: bool) -> Result<()> {
+        self.orm_storage
+            .set_token_enabled(token_id, enabled)
+            .await
+            .map_err(|e| McpError::ValidationError(format!("Failed to update token status: {}", e)))
+    }
+
+    /// Get tokens for dashboard
+    pub async fn get_for_dashboard(&self) -> Result<Vec<TokenForDashboard>> {
+        let tokens = self.orm_storage.get_all_tokens().await.map_err(|e| {
+            McpError::ValidationError(format!("Failed to get tokens for dashboard: {}", e))
+        })?;
+
+        let now = Utc::now().timestamp() as u64;
+        let token_infos: Vec<TokenForDashboard> = tokens
+            .into_iter()
+            .map(|token| TokenForDashboard {
+                id: token.id,
+                name: token.name,
+                token: token.value,
+                expires_at: token.expires_at,
+                is_expired: token
+                    .expires_at
+                    .map_or(false, |expires_at| expires_at < now),
+            })
+            .collect();
+
+        Ok(token_infos)
+    }
+
+    /// Check if token has permission for a specific resource
+    pub async fn check_permission(
+        &self,
+        token_id: &str,
+        resource_type: &str,
+        resource_path: &str,
+    ) -> Result<bool> {
+        self.orm_storage
+            .check_permission(token_id, resource_type, resource_path)
+            .await
+            .map_err(|e| McpError::ValidationError(format!("Failed to check permission: {}", e)))
+    }
+
+    /// Validate token (alias for compatibility with aggregator)
+    pub async fn validate_token(&self, token_value: &str) -> Result<String> {
+        let (validation_result, token_id) = self.validate(token_value).await?;
+        if validation_result.is_valid {
+            // Return the token_id
+            if let Some(id) = token_id {
+                Ok(id)
+            } else {
+                Err(McpError::ValidationError(
+                    "Token validation failed: no token_id returned".to_string(),
+                ))
             }
-            _ => None,
+        } else {
+            Err(McpError::ValidationError(format!(
+                "Token validation failed: {}",
+                validation_result
+                    .error
+                    .unwrap_or_else(|| "Unknown error".to_string())
+            )))
         }
     }
 
-    /// Get token by ID
-    pub async fn get_token_by_id(&self, token_id: &str) -> Result<Token> {
-        self.storage
-            .get_token_by_id(token_id)
+    /// Update token permissions
+    pub async fn update_permissions(
+        &self,
+        token_id: &str,
+        permissions: Vec<PermissionType>,
+    ) -> Result<()> {
+        // Clear existing permissions
+        let existing_permissions = self
+            .orm_storage
+            .get_token_permissions(token_id)
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to get token: {}", e)))
-    }
+            .map_err(|e| {
+                McpError::ValidationError(format!("Failed to get existing permissions: {}", e))
+            })?;
 
-    // get_token_permissions has been removed - permissions are now included in list_tokens response
-
-    /// Get all tokens (for internal use)
-    pub async fn get_all_tokens(&self) -> Result<Vec<Token>> {
-        let token_infos = self
-            .storage
-            .list_tokens()
-            .await
-            .map_err(|e| McpError::InternalError(format!("Failed to list tokens: {}", e)))?;
-
-        let mut tokens = Vec::new();
-        for token_info in token_infos {
-            let token = self
-                .storage
-                .get_token_by_id(&token_info.id)
+        for perm in existing_permissions {
+            if let Err(e) = self
+                .orm_storage
+                .remove_permission(token_id, &perm.resource_type, &perm.resource_path)
                 .await
-                .map_err(|e| {
-                    McpError::InternalError(format!("Failed to get token details: {}", e))
-                })?;
-            tokens.push(token);
+            {
+                tracing::warn!("Failed to remove existing permission: {}", e);
+            }
         }
 
-        Ok(tokens)
-    }
+        // Add new permissions
+        // 由于 PermissionType 现在是单元变体，我们需要为每个类型创建默认模式
+        for permission in permissions {
+            let pattern = "*".to_string(); // 默认模式
+            match permission {
+                PermissionType::Tools => {
+                    self.orm_storage
+                        .add_permission(token_id, "tool", &pattern)
+                        .await
+                        .map_err(|e| {
+                            McpError::ValidationError(format!(
+                                "Failed to add tool permission: {}",
+                                e
+                            ))
+                        })?;
+                }
+                PermissionType::Resources => {
+                    self.orm_storage
+                        .add_permission(token_id, "resource", &pattern)
+                        .await
+                        .map_err(|e| {
+                            McpError::ValidationError(format!(
+                                "Failed to add resource permission: {}",
+                                e
+                            ))
+                        })?;
+                }
+                PermissionType::Prompts => {
+                    self.orm_storage
+                        .add_permission(token_id, "prompt", &pattern)
+                        .await
+                        .map_err(|e| {
+                            McpError::ValidationError(format!(
+                                "Failed to add prompt permission: {}",
+                                e
+                            ))
+                        })?;
+                }
+                PermissionType::PromptTemplates => {
+                    self.orm_storage
+                        .add_permission(token_id, "prompt_template", &pattern)
+                        .await
+                        .map_err(|e| {
+                            McpError::ValidationError(format!(
+                                "Failed to add prompt template permission: {}",
+                                e
+                            ))
+                        })?;
+                }
+            }
+        }
 
-    /// Record token usage
-    pub async fn record_usage(&self, token_id: &str) -> Result<()> {
-        self.storage
-            .update_token_usage(token_id)
-            .await
-            .map_err(|e| McpError::InternalError(format!("Failed to record token usage: {}", e)))?;
         Ok(())
     }
 
-    /// Toggle token active status
-    pub async fn toggle_token(&self, token_id: &str) -> Result<bool> {
-        // Get current token to determine its current state
-        let token = self.get_token_by_id(token_id).await?;
-        let new_status = !token.enabled;
+    /// Get token statistics
+    pub async fn get_stats(&self) -> Result<std::collections::HashMap<String, u64>> {
+        let tokens =
+            self.orm_storage.get_all_tokens().await.map_err(|e| {
+                McpError::ValidationError(format!("Failed to get token stats: {}", e))
+            })?;
 
-        self.storage
-            .toggle_token_enabled(token_id, new_status)
-            .await
-            .map_err(|e| McpError::InternalError(format!("Failed to toggle token: {}", e)))?;
+        let now = Utc::now().timestamp() as u64;
+        let mut stats = std::collections::HashMap::new();
 
-        Ok(new_status)
+        let total = tokens.len() as u64;
+        let enabled = tokens.iter().filter(|t| t.enabled).count() as u64;
+        let expired = tokens
+            .iter()
+            .filter(|t| t.expires_at.map_or(false, |expires_at| expires_at < now))
+            .count() as u64;
+
+        stats.insert("total".to_string(), total);
+        stats.insert("enabled".to_string(), enabled);
+        stats.insert("disabled".to_string(), total - enabled);
+        stats.insert("expired".to_string(), expired);
+        stats.insert("active".to_string(), enabled - expired);
+
+        Ok(stats)
     }
 
-    /// Add permission to a token
+    /// Update token (alias for create/update functionality)
+    pub async fn update_token(
+        &self,
+        name: String,
+        _description: Option<String>,
+        enabled: bool,
+    ) -> Result<TokenInfo> {
+        // Find existing token by name - we need to search through all tokens
+        let tokens = self.list().await?;
+
+        if let Some(token_info) = tokens.iter().find(|t| t.name == name) {
+            // Update the token using its ID
+            self.set_enabled(&token_info.id, enabled).await?;
+
+            // Get the updated token info
+            if let Some(updated_token) = self.get_by_id(&token_info.id).await? {
+                Ok(updated_token)
+            } else {
+                Err(McpError::NotFound(
+                    "Token not found after update".to_string(),
+                ))
+            }
+        } else {
+            Err(McpError::NotFound(format!(
+                "Token with name '{}' not found",
+                name
+            )))
+        }
+    }
+
+    /// Toggle token enabled status
+    pub async fn toggle_token(&self, token_id: &str) -> Result<bool> {
+        // Get current token info
+        if let Some(token_info) = self.get_by_id(token_id).await? {
+            let new_enabled = !token_info.enabled;
+            self.set_enabled(token_id, new_enabled).await?;
+            Ok(new_enabled)
+        } else {
+            Err(McpError::NotFound("Token not found".to_string()))
+        }
+    }
+
+    /// Record token usage (alias for update_token_usage)
+    pub async fn record_usage(&self, token_id: &str) -> Result<()> {
+        self.orm_storage
+            .update_token_usage(token_id)
+            .await
+            .map_err(|e| McpError::ValidationError(format!("Failed to record token usage: {}", e)))
+    }
+
+    /// List tokens for dashboard
+    pub async fn list_for_dashboard(&self) -> Result<Vec<TokenForDashboard>> {
+        self.get_for_dashboard().await
+    }
+
+    /// Add permission to token (by type, supports wildcards)
     pub async fn add_permission(
         &self,
         token_id: &str,
-        permission_type: PermissionType,
-        pattern: String,
+        permission_type: crate::types::PermissionType,
     ) -> Result<()> {
+        let pattern = "*".to_string(); // Default pattern
         let resource_type = match permission_type {
-            PermissionType::Tools => "tool",
-            PermissionType::Resources => "resource",
-            PermissionType::Prompts => "prompt",
-            PermissionType::PromptTemplates => "prompt_template",
+            crate::types::PermissionType::Tools => "tool",
+            crate::types::PermissionType::Resources => "resource",
+            crate::types::PermissionType::Prompts => "prompt",
+            crate::types::PermissionType::PromptTemplates => "prompt_template",
         };
 
-        self.storage
+        self.orm_storage
             .add_permission(token_id, resource_type, &pattern)
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to add permission: {}", e)))
+            .map_err(|e| McpError::ValidationError(format!("Failed to add permission: {}", e)))
     }
 
-    /// Remove permission from a token
+    /// Add specific permission to token (by resource path)
+    pub async fn add_permission_by_path(
+        &self,
+        token_id: &str,
+        resource_type: &crate::types::PermissionType,
+        resource_path: &str,
+    ) -> Result<()> {
+        let resource_type_str = match resource_type {
+            crate::types::PermissionType::Tools => "tool",
+            crate::types::PermissionType::Resources => "resource",
+            crate::types::PermissionType::Prompts => "prompt",
+            crate::types::PermissionType::PromptTemplates => "prompt_template",
+        };
+
+        self.orm_storage
+            .add_permission(token_id, resource_type_str, resource_path)
+            .await
+            .map_err(|e| McpError::ValidationError(format!("Failed to add permission: {}", e)))
+    }
+
+    /// Remove permission from token (by type, supports wildcards)
     pub async fn remove_permission(
         &self,
         token_id: &str,
-        permission_type: PermissionType,
-        pattern: String,
+        permission_type: crate::types::PermissionType,
     ) -> Result<()> {
+        let pattern = "*".to_string(); // Default pattern
         let resource_type = match permission_type {
-            PermissionType::Tools => "tool",
-            PermissionType::Resources => "resource",
-            PermissionType::Prompts => "prompt",
-            PermissionType::PromptTemplates => "prompt_template",
+            crate::types::PermissionType::Tools => "tool",
+            crate::types::PermissionType::Resources => "resource",
+            crate::types::PermissionType::Prompts => "prompt",
+            crate::types::PermissionType::PromptTemplates => "prompt_template",
         };
 
-        self.storage
+        self.orm_storage
             .remove_permission(token_id, resource_type, &pattern)
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to remove permission: {}", e)))
+            .map_err(|e| McpError::ValidationError(format!("Failed to remove permission: {}", e)))
     }
 
-    /// Update token field
-    pub async fn update_field(&self, token_id: &str, field: &str, value: String) -> Result<()> {
-        match field {
-            "name" => {
-                self.storage
-                    .update_token(token_id, Some(value), None)
-                    .await
-                    .map_err(|e| {
-                        McpError::InternalError(format!("Failed to update token name: {}", e))
-                    })?;
-            }
-            "description" => {
-                self.storage
-                    .update_token(token_id, None, Some(value))
-                    .await
-                    .map_err(|e| {
-                        McpError::InternalError(format!(
-                            "Failed to update token description: {}",
-                            e
-                        ))
-                    })?;
-            }
-            _ => {
-                return Err(McpError::InternalError(format!(
-                    "Unsupported field: {}",
-                    field
-                )));
-            }
-        }
-        Ok(())
-    }
-
-    /// Update permissions for a token (batch operation)
-    pub async fn update_permission_typed(
-        &self,
-        token_id: String,
-        permission_type: PermissionType,
-        permissions: Vec<PermissionItem>,
-    ) -> Result<()> {
-        let resource_type = match permission_type {
-            PermissionType::Tools => "tool",
-            PermissionType::Resources => "resource",
-            PermissionType::Prompts => "prompt",
-            PermissionType::PromptTemplates => "prompt_template",
-        };
-
-        let permission_tuples: Vec<(String, String, bool)> = permissions
-            .into_iter()
-            .map(|p| (resource_type.to_string(), p.pattern, p.allowed))
-            .collect();
-
-        self.storage
-            .update_permissions(&token_id, permission_tuples)
-            .await
-            .map_err(|e| McpError::InternalError(format!("Failed to update permissions: {}", e)))
-    }
-
-    /// Update token with new permissions
-    pub async fn update_token(
+    /// Remove specific permission from token (by resource path)
+    pub async fn remove_permission_by_path(
         &self,
         token_id: &str,
-        name: Option<String>,
-        description: Option<String>,
-        allowed_tools: Option<Vec<String>>,
-        allowed_resources: Option<Vec<String>>,
-        allowed_prompts: Option<Vec<String>>,
-        allowed_prompt_templates: Option<Vec<String>>,
+        resource_type: &crate::types::PermissionType,
+        resource_path: &str,
     ) -> Result<()> {
-        // Update basic token info
-        self.storage
-            .update_token(token_id, name, description)
+        let resource_type_str = match resource_type {
+            crate::types::PermissionType::Tools => "tool",
+            crate::types::PermissionType::Resources => "resource",
+            crate::types::PermissionType::Prompts => "prompt",
+            crate::types::PermissionType::PromptTemplates => "prompt_template",
+        };
+
+        self.orm_storage
+            .remove_permission(token_id, resource_type_str, resource_path)
             .await
-            .map_err(|e| McpError::InternalError(format!("Failed to update token: {}", e)))?;
-
-        // Build permissions list for batch update
-        let mut permissions = Vec::new();
-
-        if let Some(tools) = allowed_tools {
-            for tool in tools {
-                permissions.push(("tool".to_string(), tool, true));
-            }
-        }
-
-        if let Some(resources) = allowed_resources {
-            for resource in resources {
-                permissions.push(("resource".to_string(), resource, true));
-            }
-        }
-
-        if let Some(prompts) = allowed_prompts {
-            for prompt in prompts {
-                permissions.push(("prompt".to_string(), prompt, true));
-            }
-        }
-
-        if let Some(prompt_templates) = allowed_prompt_templates {
-            for template in prompt_templates {
-                permissions.push(("prompt_template".to_string(), template, true));
-            }
-        }
-
-        // Batch update permissions
-        if !permissions.is_empty() {
-            self.storage
-                .update_permissions(token_id, permissions)
-                .await
-                .map_err(|e| {
-                    McpError::InternalError(format!("Failed to update permissions: {}", e))
-                })?;
-        }
-
-        Ok(())
+            .map_err(|e| McpError::ValidationError(format!("Failed to remove permission: {}", e)))
     }
 
     /// Clean up expired tokens
-    pub async fn cleanup_expired(&self) -> Result<usize> {
-        self.storage
-            .cleanup_expired_tokens()
-            .await
-            .map_err(|e| McpError::InternalError(format!("Failed to cleanup expired tokens: {}", e)))
-    }
+    pub async fn cleanup_expired(&self) -> Result<u64> {
+        let tokens = self.orm_storage.get_all_tokens().await.map_err(|e| {
+            McpError::ValidationError(format!("Failed to cleanup expired tokens: {}", e))
+        })?;
 
-    /// Validate permission for a specific token and resource
-    pub async fn validate_permission(
-        &self,
-        token_id: &str,
-        permission_type: PermissionType,
-        resource_pattern: &str,
-    ) -> Result<PermissionValidationResult> {
-        let resource_type = match permission_type {
-            PermissionType::Tools => "tool",
-            PermissionType::Resources => "resource",
-            PermissionType::Prompts => "prompt",
-            PermissionType::PromptTemplates => "prompt_template",
-        };
+        let now = Utc::now().timestamp() as u64;
+        let expired_tokens: Vec<String> = tokens
+            .into_iter()
+            .filter_map(|t| {
+                if t.expires_at.map_or(false, |expires_at| expires_at < now) {
+                    Some(t.id)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-        let has_permission = self
-            .storage
-            .has_permission(token_id, resource_type, resource_pattern)
-            .await
-            .map_err(|e| {
-                McpError::InternalError(format!("Failed to validate permission: {}", e))
-            })?;
-
-        Ok(PermissionValidationResult {
-            is_valid: has_permission,
-            error: if has_permission {
-                None
+        let mut cleaned_count = 0;
+        for token_id in expired_tokens {
+            if let Err(e) = self.orm_storage.delete_token(&token_id).await {
+                tracing::warn!("Failed to delete expired token {}: {}", token_id, e);
             } else {
-                Some("Permission denied".to_string())
-            },
-            normalized_value: None,
-        })
+                cleaned_count += 1;
+            }
+        }
+
+        tracing::info!("Cleaned up {} expired tokens", cleaned_count);
+        Ok(cleaned_count)
     }
 
-    /// Generate a secure random token
-    fn generate_token(&self) -> String {
-        use rand::RngCore;
-        let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
-        URL_SAFE_NO_PAD.encode(&bytes)
-    }
+    // ============================================================================
+    // Public utility methods
+    // ============================================================================
 
-    /// Check if a token is expired
-    fn is_token_expired(&self, token: &Token) -> bool {
-        if let Some(expires_at) = token.expires_at {
-            let now = Utc::now().timestamp() as u64;
-            now > expires_at
-        } else {
-            false
+    /// Convert TokenInfo to Token for older API compatibility
+    pub fn token_info_to_token(token_info: &TokenInfo) -> Token {
+        // Create a Token value based on token name
+        let token_value = base64::engine::general_purpose::STANDARD
+            .encode(format!("{}:{}", token_info.id, token_info.name));
+
+        Token {
+            id: token_info.id.clone(),
+            name: token_info.name.clone(),
+            value: token_value,
+            description: token_info.description.clone(),
+            created_at: token_info.created_at,
+            enabled: token_info.enabled,
+            last_used_at: token_info.last_used_at,
+            usage_count: token_info.usage_count,
+            expires_at: token_info.expires_at,
+            allowed_tools: Some(token_info.allowed_tools.clone()),
+            allowed_resources: Some(token_info.allowed_resources.clone()),
+            allowed_prompts: Some(token_info.allowed_prompts.clone()),
+            allowed_prompt_templates: Some(token_info.allowed_prompt_templates.clone()),
         }
     }
+
+    // ============================================================================
+    // Private helper methods
+    // ============================================================================
+
+    async fn convert_to_token_info(&self, token: &Token) -> Result<TokenInfo> {
+        let now = Utc::now().timestamp() as u64;
+
+        // Get token permissions from database
+        let permissions = self
+            .orm_storage
+            .get_token_permissions(&token.id)
+            .await
+            .map_err(|e| {
+                McpError::ValidationError(format!("Failed to get token permissions: {}", e))
+            })?;
+
+        // Group permissions by type
+        let mut allowed_tools = Vec::new();
+        let mut allowed_resources = Vec::new();
+        let mut allowed_prompts = Vec::new();
+        let mut allowed_prompt_templates = Vec::new();
+
+        for permission in permissions {
+            if permission.allowed {
+                match permission.resource_type.as_str() {
+                    "tool" => allowed_tools.push(permission.resource_path),
+                    "resource" => allowed_resources.push(permission.resource_path),
+                    "prompt" => allowed_prompts.push(permission.resource_path),
+                    "prompt_template" => allowed_prompt_templates.push(permission.resource_path),
+                    _ => {
+                        tracing::warn!(
+                            "Unknown resource type in permission: {}",
+                            permission.resource_type
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(TokenInfo {
+            id: token.id.clone(),
+            name: token.name.clone(),
+            description: token.description.clone(),
+            created_at: now, // TODO: Store created_at in database
+            expires_at: token.expires_at,
+            last_used_at: token.last_used_at,
+            usage_count: token.usage_count,
+            is_expired: token
+                .expires_at
+                .map_or(false, |expires_at| expires_at < now),
+            enabled: token.enabled,
+            allowed_tools,
+            allowed_resources,
+            allowed_prompts,
+            allowed_prompt_templates,
+        })
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PermissionItem {
-    pub pattern: String,
-    pub allowed: bool,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm_migration::MigratorTrait;
+
+    async fn create_test_token_manager() -> TokenManager {
+        // Create in-memory database for testing
+        let db_url = "sqlite::memory:";
+
+        // Run migrations first
+        let db = sea_orm::Database::connect(db_url).await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+
+        let orm_storage = crate::storage::orm_storage::Storage::new(db_url)
+            .await
+            .unwrap();
+        TokenManager::new(std::sync::Arc::new(orm_storage))
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_create_token() {
+        let token_manager = create_test_token_manager().await;
+
+        let token_info = token_manager
+            .create("test-token".to_string(), Some("Test token".to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(token_info.name, "test-token");
+        assert_eq!(token_info.description, Some("Test token".to_string()));
+        assert!(token_info.enabled);
+        assert!(!token_info.is_expired);
+        assert_eq!(token_info.usage_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_validate_token() {
+        let token_manager = create_test_token_manager().await;
+
+        // Create a token first
+        let token_info = token_manager
+            .create("test-token".to_string(), None)
+            .await
+            .unwrap();
+        let token = token_manager
+            .orm_storage
+            .get_token_by_id(&token_info.id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Validate the token
+        let (validation_result, token_id) = token_manager.validate(&token.value).await.unwrap();
+
+        assert!(validation_result.is_valid);
+        assert_eq!(token_id, Some(token_info.id));
+    }
+
+    #[tokio::test]
+    async fn test_list_tokens() {
+        let token_manager = create_test_token_manager().await;
+
+        // Create multiple tokens
+        token_manager
+            .create("token1".to_string(), None)
+            .await
+            .unwrap();
+        token_manager
+            .create("token2".to_string(), None)
+            .await
+            .unwrap();
+
+        let tokens = token_manager.list().await.unwrap();
+        assert_eq!(tokens.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_delete_token() {
+        let token_manager = create_test_token_manager().await;
+
+        let token_info = token_manager
+            .create("test-token".to_string(), None)
+            .await
+            .unwrap();
+
+        // Verify token exists
+        let retrieved = token_manager.get_by_id(&token_info.id).await.unwrap();
+        assert!(retrieved.is_some());
+
+        // Delete token
+        token_manager.delete(&token_info.id).await.unwrap();
+
+        // Verify token is gone
+        let retrieved = token_manager.get_by_id(&token_info.id).await.unwrap();
+        assert!(retrieved.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_set_enabled() {
+        let token_manager = create_test_token_manager().await;
+
+        let token_info = token_manager
+            .create("test-token".to_string(), None)
+            .await
+            .unwrap();
+
+        // Disable token
+        token_manager
+            .set_enabled(&token_info.id, false)
+            .await
+            .unwrap();
+
+        // Try to validate - should fail
+        let token = token_manager
+            .orm_storage
+            .get_token_by_id(&token_info.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let (validation_result, _token_id) = token_manager.validate(&token.value).await.unwrap();
+        assert!(!validation_result.is_valid);
+        assert!(validation_result.error.unwrap().contains("disabled"));
+
+        // Re-enable token
+        token_manager
+            .set_enabled(&token_info.id, true)
+            .await
+            .unwrap();
+
+        // Should validate now
+        let (validation_result, _token_id) = token_manager.validate(&token.value).await.unwrap();
+        assert!(validation_result.is_valid);
+    }
+
+    #[tokio::test]
+    async fn test_token_permissions_integration() {
+        // This test demonstrates that token permissions are correctly loaded
+        // from the database when calling convert_to_token_info
+
+        // Create test environment
+        let db_url = "sqlite::memory:";
+        let db = sea_orm::Database::connect(db_url).await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+
+        let orm_storage = crate::storage::orm_storage::Storage::new(db_url)
+            .await
+            .unwrap();
+        let token_manager = TokenManager::new(std::sync::Arc::new(orm_storage))
+            .await
+            .unwrap();
+
+        // Create a token
+        let token_info = token_manager
+            .create("test-token".to_string(), Some("Test token".to_string()))
+            .await
+            .unwrap();
+
+        // Add some permissions
+        let _ = token_manager
+            .orm_storage
+            .add_permission(&token_info.id, "tool", "test-server__test-tool")
+            .await;
+        let _ = token_manager
+            .orm_storage
+            .add_permission(&token_info.id, "resource", "test-server__test-resource")
+            .await;
+        let _ = token_manager
+            .orm_storage
+            .add_permission(&token_info.id, "prompt", "test-server__test-prompt")
+            .await;
+
+        // Get the raw token from database
+        let token = token_manager
+            .orm_storage
+            .get_token_by_id(&token_info.id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Test the convert_to_token_info method (this is our main fix)
+        let result = token_manager.convert_to_token_info(&token).await.unwrap();
+
+        // Verify permissions are correctly loaded
+        assert_eq!(result.id, token_info.id);
+        assert_eq!(result.name, "test-token");
+        assert_eq!(result.allowed_tools, vec!["test-server__test-tool"]);
+        assert_eq!(result.allowed_resources, vec!["test-server__test-resource"]);
+        assert_eq!(result.allowed_prompts, vec!["test-server__test-prompt"]);
+
+        // Verify that the fix works - permissions are loaded from database, not empty vectors
+        assert!(
+            !result.allowed_tools.is_empty(),
+            "Tools should not be empty"
+        );
+        assert!(
+            !result.allowed_resources.is_empty(),
+            "Resources should not be empty"
+        );
+        assert!(
+            !result.allowed_prompts.is_empty(),
+            "Prompts should not be empty"
+        );
+
+        println!("✅ Token permissions integration test passed!");
+    }
 }
 
+impl From<TokenInfo> for Token {
+    fn from(token_info: TokenInfo) -> Self {
+        TokenManager::token_info_to_token(&token_info)
+    }
+}

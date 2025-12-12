@@ -12,9 +12,11 @@ pub struct AvailablePermissions {
     pub prompt_templates: Vec<PermissionItem>,
 }
 
-/// Get all available permissions for token configuration
+/// List available permissions (all types or specific type)
 #[tauri::command]
-pub async fn get_available_permissions() -> Result<AvailablePermissions> {
+pub async fn list_available_permissions(
+    resource_type: Option<String>,
+) -> Result<AvailablePermissions> {
     // Use the global SERVICE_MANAGER to get actual cached data
     let mcp_manager = {
         let guard = crate::SERVICE_MANAGER.lock().unwrap();
@@ -23,56 +25,61 @@ pub async fn get_available_permissions() -> Result<AvailablePermissions> {
             .clone()
     };
 
-    // Get all available permissions using new method
-    let permissions = mcp_manager
-        .get_available_permissions()
-        .await
-        .map_err(|e| crate::error::McpError::DatabaseQueryError(format!("Failed to get available permissions: {}", e)))?;
+    // If resource_type is specified, return only that type (others empty)
+    if let Some(resource_type) = resource_type {
+        let permissions = mcp_manager
+            .get_detailed_permissions_by_type(&resource_type)
+            .await
+            .map_err(|e| crate::error::McpError::DatabaseQueryError(format!("Failed to get permissions: {}", e)))?;
 
-    // Group permissions by type
-    let tools: Vec<PermissionItem> = permissions
-        .iter()
-        .filter(|p| p.resource_type == "tool")
-        .cloned()
-        .collect();
+        // Return only the specified type, others as empty arrays
+        match resource_type.as_str() {
+            "tool" => Ok(AvailablePermissions {
+                tools: permissions,
+                resources: Vec::new(),
+                prompts: Vec::new(),
+                prompt_templates: Vec::new(),
+            }),
+            "resource" => Ok(AvailablePermissions {
+                tools: Vec::new(),
+                resources: permissions,
+                prompts: Vec::new(),
+                prompt_templates: Vec::new(),
+            }),
+            "prompt" => Ok(AvailablePermissions {
+                tools: Vec::new(),
+                resources: Vec::new(),
+                prompts: permissions,
+                prompt_templates: Vec::new(),
+            }),
+            _ => Err(crate::error::McpError::InvalidInput(format!("Invalid resource_type: {}", resource_type))),
+        }
+    } else {
+        // Return all types
+        let tools = mcp_manager
+            .get_detailed_permissions_by_type("tool")
+            .await
+            .map_err(|e| crate::error::McpError::DatabaseQueryError(format!("Failed to get tools permissions: {}", e)))?;
 
-    let resources: Vec<PermissionItem> = permissions
-        .iter()
-        .filter(|p| p.resource_type == "resource")
-        .cloned()
-        .collect();
+        let resources = mcp_manager
+            .get_detailed_permissions_by_type("resource")
+            .await
+            .map_err(|e| crate::error::McpError::DatabaseQueryError(format!("Failed to get resources permissions: {}", e)))?;
 
-    let prompts: Vec<PermissionItem> = permissions
-        .iter()
-        .filter(|p| p.resource_type == "prompt")
-        .cloned()
-        .collect();
+        let prompts = mcp_manager
+            .get_detailed_permissions_by_type("prompt")
+            .await
+            .map_err(|e| crate::error::McpError::DatabaseQueryError(format!("Failed to get prompts permissions: {}", e)))?;
 
-    let prompt_templates: Vec<PermissionItem> = Vec::new(); // Not supported yet
+        let prompt_templates: Vec<PermissionItem> = Vec::new(); // Not supported yet
 
-    Ok(AvailablePermissions {
-        tools,
-        resources,
-        prompts,
-        prompt_templates,
-    })
+        Ok(AvailablePermissions {
+            tools,
+            resources,
+            prompts,
+            prompt_templates,
+        })
+    }
 }
 
-/// Get available permissions by type
-#[tauri::command]
-pub async fn get_available_permissions_by_type(
-    resource_type: String,
-) -> Result<Vec<PermissionItem>> {
-    // Use the global SERVICE_MANAGER to get actual cached data
-    let mcp_manager = {
-        let guard = crate::SERVICE_MANAGER.lock().unwrap();
-        guard.as_ref()
-            .ok_or_else(|| crate::error::McpError::InternalError("MCP Server Manager not initialized".to_string()))?
-            .clone()
-    };
 
-    mcp_manager
-        .get_available_permissions_by_type(&resource_type)
-        .await
-        .map_err(|e| crate::error::McpError::DatabaseQueryError(format!("Failed to get permissions by type: {}", e)))
-}

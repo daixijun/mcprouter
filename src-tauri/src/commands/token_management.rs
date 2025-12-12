@@ -8,7 +8,6 @@ use crate::types::{
     SimplePermissionUpdateResponse
 };
 use std::sync::Arc;
-use tauri::State;
 use tokio::sync::RwLock;
 
 /// State for managing TokenManager across the application
@@ -18,74 +17,54 @@ pub type TokenManagerState = Arc<RwLock<Option<Arc<TokenManager>>>>;
 #[tauri::command]
 pub async fn create_token(
     request: CreateTokenRequest,
-    state: State<'_, TokenManagerState>,
 ) -> Result<CreateTokenResponse> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let token_info = token_manager
-        .create_with_permissions(
-            request.name,
-            request.description,
-            request.allowed_tools,
-            request.allowed_resources,
-            request.allowed_prompts,
-            None,
-        )
+        .create(request.name, request.description)
         .await?;
 
-    // Get the full token with value
-    let token = token_manager
-        .get_token_by_id(&token_info.id)
-        .await?;
+    // Get the actual token value from storage
+    let token_with_value = token_manager.orm_storage().get_token_by_id(&token_info.id)
+        .await?
+        .ok_or_else(|| McpError::ValidationError("Failed to retrieve created token".to_string()))?;
 
-    Ok(CreateTokenResponse { token })
+    Ok(CreateTokenResponse { token: token_with_value })
 }
 
 /// Update an existing token
 #[tauri::command]
 pub async fn update_token(
     request: UpdateTokenRequest,
-    state: State<'_, TokenManagerState>,
 ) -> Result<UpdateTokenResponse> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     token_manager
         .update_token(
-            &request.id,
-            request.name,
-            request.description,
-            request.allowed_tools,
-            request.allowed_resources,
-            request.allowed_prompts,
-            request.allowed_prompt_templates,
+            request.name.clone().unwrap_or_default(),
+            request.description.clone(),
+            true, // enabled - default to true for now
         )
         .await?;
 
     // Get the updated token
-    let token = token_manager.get_token_by_id(&request.id).await?;
+    let token_info = token_manager.get_token_by_id(&request.id).await?;
+
+    // Convert TokenInfo to Token
+    let token = token_info
+        .ok_or_else(|| crate::error::McpError::NotFound("Token not found".to_string()))?
+        .into();
 
     Ok(UpdateTokenResponse { token })
 }
 
 /// List all tokens (without actual values for security)
 #[tauri::command]
-pub async fn list_tokens(state: State<'_, TokenManagerState>) -> Result<Vec<TokenInfo>> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+pub async fn list_tokens() -> Result<Vec<TokenInfo>> {
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let tokens = token_manager.list().await?;
 
@@ -96,14 +75,9 @@ pub async fn list_tokens(state: State<'_, TokenManagerState>) -> Result<Vec<Toke
 #[tauri::command]
 pub async fn delete_token(
     id: String,
-    state: State<'_, TokenManagerState>,
 ) -> Result<String> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     token_manager.delete(&id).await?;
 
@@ -114,14 +88,9 @@ pub async fn delete_token(
 #[tauri::command]
 pub async fn toggle_token(
     id: String,
-    state: State<'_, TokenManagerState>,
 ) -> Result<bool> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let enabled = token_manager.toggle_token(&id).await?;
 
@@ -130,13 +99,9 @@ pub async fn toggle_token(
 
 /// Get token statistics
 #[tauri::command]
-pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<TokenStats> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+pub async fn get_token_stats() -> Result<TokenStats> {
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let tokens = token_manager.list().await?;
 
@@ -155,15 +120,9 @@ pub async fn get_token_stats(state: State<'_, TokenManagerState>) -> Result<Toke
 
 /// Clean up expired tokens
 #[tauri::command]
-pub async fn cleanup_expired_tokens(
-    state: State<'_, TokenManagerState>,
-) -> Result<CleanupResult> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+pub async fn cleanup_expired_tokens() -> Result<CleanupResult> {
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let removed_count = token_manager.cleanup_expired().await?;
 
@@ -177,29 +136,30 @@ pub async fn cleanup_expired_tokens(
 #[tauri::command]
 pub async fn validate_token(
     token_value: String,
-    state: State<'_, TokenManagerState>,
 ) -> Result<ValidationResult> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let token_id = token_manager.validate_token(&token_value).await;
 
     match token_id {
-        Some(id) => {
+        Ok(id) => {
             // Record token usage
             let _ = token_manager.record_usage(&id).await;
 
+            // Get token info and convert to Token
+            let token_info = token_manager.get_token_by_id(&id).await?;
+            let token = token_info
+                .ok_or_else(|| crate::error::McpError::NotFound("Token not found".to_string()))?
+                .into();
+
             Ok(ValidationResult {
                 valid: true,
-                token_info: Some(token_manager.get_token_by_id(&id).await?),
+                token_info: Some(token),
                 message: "Token is valid".to_string(),
             })
         }
-        None => Ok(ValidationResult {
+        Err(_) => Ok(ValidationResult {
             valid: false,
             token_info: None,
             message: "Token is invalid or expired".to_string(),
@@ -209,15 +169,9 @@ pub async fn validate_token(
 
 /// Get tokens for dashboard (simplified list)
 #[tauri::command]
-pub async fn get_tokens_for_dashboard(
-    state: State<'_, TokenManagerState>,
-) -> Result<Vec<TokenForDashboard>> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+pub async fn get_tokens_for_dashboard() -> Result<Vec<TokenForDashboard>> {
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let tokens = token_manager.list_for_dashboard().await?;
 
@@ -229,30 +183,25 @@ pub async fn get_tokens_for_dashboard(
 #[tauri::command]
 pub async fn update_token_permission(
     request: UpdateTokenPermissionRequest,
-    state: State<'_, TokenManagerState>,
 ) -> Result<SimplePermissionUpdateResponse> {
-    let token_manager_guard = state.read().await;
-
-    let token_manager = token_manager_guard
-        .as_ref()
-        .ok_or_else(|| McpError::InternalError("TokenManager not initialized".to_string()))?
-        .clone();
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
 
     let action_text = match request.action {
         PermissionAction::Add => "add",
         PermissionAction::Remove => "remove",
     };
 
-    // 使用新的结构化权限管理方法
+    // 使用新的结构化权限管理方法（基于具体资源路径）
     match request.action {
         PermissionAction::Add => {
             token_manager
-                .add_permission(&request.token_id, request.resource_type.clone(), request.resource_id)
+                .add_permission_by_path(&request.token_id, &request.resource_type, &request.resource_path)
                 .await?
         }
         PermissionAction::Remove => {
             token_manager
-                .remove_permission(&request.token_id, request.resource_type.clone(), request.resource_id)
+                .remove_permission_by_path(&request.token_id, &request.resource_type, &request.resource_path)
                 .await?
         }
     };

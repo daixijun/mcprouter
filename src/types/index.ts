@@ -38,14 +38,53 @@ export interface McpServerInfo {
 }
 
 export interface McpTool {
+  id: string
   name: string
   description: string
   enabled: boolean
   // 后端始终返回 input_schema 字段，但可能为 null
   // 为兼容 rmcp 的灵活 JSON Schema，这里不限制具体形状
   input_schema?: Record<string, any> | null
+  // 输出架构 (JSON Schema)
+  output_schema?: Record<string, any> | null
+  // 工具注解
+  annotations?: Record<string, any> | null
+  // 元数据
+  meta?: Record<string, any> | null
   // 后端当前返回为 null，占位保留
   parameters?: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface McpResourceInfo {
+  id: string
+  uri: string
+  name: string
+  description?: string
+  mime_type?: string
+  enabled: boolean
+  meta?: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface McpPromptInfo {
+  id: string
+  name: string
+  description?: string
+  enabled: boolean
+  arguments?: McpPromptArgument[]
+  meta?: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface McpPromptArgument {
+  name: string
+  description?: string
+  required: boolean
+  argument_type: 'string' | 'number' | 'boolean' | 'array' | 'object'
 }
 
 export interface McpServer {
@@ -217,15 +256,13 @@ export interface DashboardStats {
   }
 }
 
- 
-
 export type ToolCallArguments = Record<string, any> | null
 export type ToolCallResult = Record<string, any> | null
 
 // Token Management Types
 export interface Token {
   id: string
-  value: string  // 实际的 token 值，用于配置生成
+  value: string // 实际的 token 值，用于配置生成
   name: string
   description?: string
   created_at: number
@@ -287,11 +324,11 @@ export interface UpdateTokenResponse {
 }
 
 export interface PermissionItem {
-  id: string                    // 保留 UUID 用于数据库主键
-  resource_path: string         // 格式：server__resource_name
-  resource_type: string         // 'tool' | 'resource' | 'prompt'
-  description?: string          // 权限描述
-  server_name: string           // 服务器名称
+  id: string // 保留 UUID 用于数据库主键
+  resource_path: string // 格式：server__resource_name
+  resource_type: string // 'tool' | 'resource' | 'prompt'
+  description?: string // 权限描述
+  server_name: string // 服务器名称
 }
 
 export interface AvailablePermissions {

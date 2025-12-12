@@ -36,11 +36,9 @@ import type { ColumnsType } from 'antd/es/table'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PermissionSelector from '../components/PermissionSelector'
-import {
-  AvailablePermissions,
-  Token,
-  TokenStats,
-} from '../types'
+import { permissionService } from '../services/permissionService'
+import { AvailablePermissions, Token, TokenStats } from '../types'
+import { PermissionType } from '../types/permissions'
 
 const { Text, Paragraph } = Typography
 
@@ -105,14 +103,7 @@ const TokenManagement: React.FC = () => {
     setLoading(true)
     try {
       const response = await invoke<Token[]>('list_tokens')
-      console.log('获取到的Token列表:', response.map(t => ({
-        id: t.id,
-        name: t.name,
-        allowed_tools_count: t.allowed_tools?.length || 0,
-        allowed_resources_count: t.allowed_resources?.length || 0,
-        allowed_prompts_count: t.allowed_prompts?.length || 0
-      })))
-      setTokens(response)
+        setTokens(response)
     } catch (error) {
       message.error(t('token.messages.load_tokens_failed') + ': ' + error)
     } finally {
@@ -122,15 +113,7 @@ const TokenManagement: React.FC = () => {
 
   const fetchStats = async (retryCount = 0) => {
     try {
-      console.log('Fetching token stats...')
       const response = await invoke<TokenStats>('get_token_stats')
-      console.log('Token stats response:', response)
-      console.log('Response type:', typeof response)
-      console.log('Response keys:', response ? Object.keys(response) : 'null')
-      console.log('total_count value:', response?.total_count)
-      console.log('active_count value:', response?.active_count)
-      console.log('expired_count value:', response?.expired_count)
-      console.log('total_usage value:', response?.total_usage)
 
       // Check if the response has the expected fields
       if (response && typeof response === 'object') {
@@ -141,8 +124,7 @@ const TokenManagement: React.FC = () => {
           total_usage: response.total_usage ?? 0,
           last_used: response.last_used,
         }
-        console.log('Processed stats:', stats)
-        setStats(stats)
+          setStats(stats)
       } else {
         console.error('Invalid response format:', response)
         setStats({
@@ -161,12 +143,7 @@ const TokenManagement: React.FC = () => {
         retryCount < 3 &&
         String(error).includes('TokenManager not initialized')
       ) {
-        console.log(
-          `TokenManager not initialized, retrying in 1 second... (${
-            retryCount + 1
-          }/3)`,
-        )
-        setTimeout(() => fetchStats(retryCount + 1), 1000)
+          setTimeout(() => fetchStats(retryCount + 1), 1000)
         return
       }
 
@@ -190,7 +167,8 @@ const TokenManagement: React.FC = () => {
 
     try {
       const result = await invoke<AvailablePermissions>(
-        'get_available_permissions',
+        'list_available_permissions',
+        { resource_type: null },
       )
 
       // 设置真实权限数据，确保包含提示词模板字段
@@ -210,7 +188,7 @@ const TokenManagement: React.FC = () => {
         prompt_templates: [],
         prompt_categories: [],
       })
-      message.error('权限数据加载失败')
+      message.error('Failed to load permission data')
     } finally {
       if (isEdit) {
         setEditPermissionsLoading(false)
@@ -316,15 +294,6 @@ const TokenManagement: React.FC = () => {
   }
 
   const handleEditToken = async (token: Token) => {
-    // 打印Token的权限数据用于调试
-    console.log('打开权限编辑，Token权限数据:', {
-      tokenId: token.id,
-      allowed_tools_count: token.allowed_tools?.length || 0,
-      allowed_tools: token.allowed_tools?.slice(0, 3),
-      allowed_resources_count: token.allowed_resources?.length || 0,
-      allowed_prompts_count: token.allowed_prompts?.length || 0
-    })
-
     setEditingToken(token)
     setEditPermissionsLoading(true)
 
@@ -335,16 +304,15 @@ const TokenManagement: React.FC = () => {
       // 权限数据加载完成后，再打开Drawer
       setEditModalVisible(true)
     } catch (error) {
-      console.error('权限数据加载失败:', error)
-      message.error('加载权限数据失败，请重试')
+      console.error('Failed to load permission data:', error)
+      message.error('Failed to load permission data, please try again')
     } finally {
       setEditPermissionsLoading(false)
     }
   }
 
-  
-  // Handle permissions change with auto-update
-  const handlePermissionChange = async (permissions: {
+  // Handle permissions change with individual permission updates
+  const handlePermissionChange = async (newPermissions: {
     allowed_tools?: string[]
     allowed_resources?: string[]
     allowed_prompts?: string[]
@@ -352,47 +320,131 @@ const TokenManagement: React.FC = () => {
   }) => {
     if (!editingToken) return
 
+    const oldPermissions = {
+      allowed_tools: editingToken.allowed_tools || [],
+      allowed_resources: editingToken.allowed_resources || [],
+      allowed_prompts: editingToken.allowed_prompts || [],
+      allowed_prompt_templates: editingToken.allowed_prompt_templates || [],
+    }
+
     try {
-      // 更新本地状态
+      // 先更新本地状态以提供即时反馈
       setEditingToken({
         ...editingToken,
-        ...permissions
+        ...newPermissions,
       })
+
+      // 找出所有需要添加和移除的权限
+      const changes: Array<{
+        type: 'tools' | 'resources' | 'prompts' | 'prompt_templates'
+        resourceType: PermissionType
+        permissionType: string
+        toAdd: string[]
+        toRemove: string[]
+      }> = [
+        {
+          type: 'tools',
+          resourceType: PermissionType.TOOLS,
+          permissionType: 'tools',
+          toAdd: (newPermissions.allowed_tools || []).filter(
+            (p) => !oldPermissions.allowed_tools.includes(p),
+          ),
+          toRemove: oldPermissions.allowed_tools.filter(
+            (p) => !(newPermissions.allowed_tools || []).includes(p),
+          ),
+        },
+        {
+          type: 'resources',
+          resourceType: PermissionType.RESOURCES,
+          permissionType: 'resources',
+          toAdd: (newPermissions.allowed_resources || []).filter(
+            (p) => !oldPermissions.allowed_resources.includes(p),
+          ),
+          toRemove: oldPermissions.allowed_resources.filter(
+            (p) => !(newPermissions.allowed_resources || []).includes(p),
+          ),
+        },
+        {
+          type: 'prompts',
+          resourceType: PermissionType.PROMPTS,
+          permissionType: 'prompts',
+          toAdd: (newPermissions.allowed_prompts || []).filter(
+            (p) => !oldPermissions.allowed_prompts.includes(p),
+          ),
+          toRemove: oldPermissions.allowed_prompts.filter(
+            (p) => !(newPermissions.allowed_prompts || []).includes(p),
+          ),
+        },
+        {
+          type: 'prompt_templates',
+          resourceType: PermissionType.PROMPT_TEMPLATES,
+          permissionType: 'prompt_templates',
+          toAdd: (newPermissions.allowed_prompt_templates || []).filter(
+            (p) => !oldPermissions.allowed_prompt_templates.includes(p),
+          ),
+          toRemove: oldPermissions.allowed_prompt_templates.filter(
+            (p) => !(newPermissions.allowed_prompt_templates || []).includes(p),
+          ),
+        },
+      ]
+
+      // 逐个更新权限
+      const updatePromises = []
+      for (const change of changes) {
+        // 添加新权限
+        for (const permission of change.toAdd) {
+          updatePromises.push(
+            permissionService.updateTokenPermission(
+              editingToken.id,
+              change.resourceType,
+              permission,
+              true, // add
+            ),
+          )
+        }
+
+        // 移除权限
+        for (const permission of change.toRemove) {
+          updatePromises.push(
+            permissionService.updateTokenPermission(
+              editingToken.id,
+              change.resourceType,
+              permission,
+              false, // remove
+            ),
+          )
+        }
+      }
+
+      // 等待所有权限更新完成
+      await Promise.all(updatePromises)
 
       // 更新tokens列表中的对应token
-      setTokens(prev => prev.map(token =>
-        token.id === editingToken.id
-          ? { ...token, ...permissions }
-          : token
-      ))
+      setTokens((prev) =>
+        prev.map((token) =>
+          token.id === editingToken.id
+            ? { ...token, ...newPermissions }
+            : token,
+        ),
+      )
 
-      // 调用后端API更新权限
-      const response = await invoke('update_token', {
-        request: {
-          id: editingToken.id,
-          ...permissions
-        }
-      })
-
-      console.log('权限更新成功:', response)
-      console.log('保存的权限数据格式验证:', {
-        allowed_tools_count: permissions.allowed_tools?.length || 0,
-        allowed_resources_count: permissions.allowed_resources?.length || 0,
-        allowed_prompts_count: permissions.allowed_prompts?.length || 0,
-        sample_tool: permissions.allowed_tools?.[0],
-        sample_resource: permissions.allowed_resources?.[0],
-        sample_prompt: permissions.allowed_prompts?.[0]
-      })
-    } catch (error: any) {
+        } catch (error: any) {
       console.error('Failed to update permissions:', error)
+
       // 错误处理：回滚本地状态
-      setEditingToken(prev => prev ? {
-        ...prev,
-        allowed_tools: editingToken.allowed_tools,
-        allowed_resources: editingToken.allowed_resources,
-        allowed_prompts: editingToken.allowed_prompts,
-        allowed_prompt_templates: editingToken.allowed_prompt_templates
-      } : null)
+      setEditingToken((prev) =>
+        prev
+          ? {
+              ...prev,
+              allowed_tools: oldPermissions.allowed_tools,
+              allowed_resources: oldPermissions.allowed_resources,
+              allowed_prompts: oldPermissions.allowed_prompts,
+              allowed_prompt_templates: oldPermissions.allowed_prompt_templates,
+            }
+          : null,
+      )
+
+      message.error('Permission update failed: ' + (error.message || error))
     }
   }
 
@@ -430,7 +482,6 @@ const TokenManagement: React.FC = () => {
       allowed_prompt_templates: editingToken.allowed_prompt_templates,
     }
 
-    
     return permissions
   }
 
@@ -885,7 +936,7 @@ const TokenManagement: React.FC = () => {
           <Space>
             <EditOutlined />
             {t('token.actions.edit_permissions')} - {editingToken?.name}
-            {editPermissionsLoading && <span>(加载权限中...)</span>}
+            {editPermissionsLoading && <span>(Loading permissions...)</span>}
           </Space>
         }
         open={editModalVisible}
@@ -896,8 +947,7 @@ const TokenManagement: React.FC = () => {
         footer={null}
         size={800}
         placement='right'>
-
-          {editPermissionsLoading ? (
+        {editPermissionsLoading ? (
           <Card>
             <Skeleton active paragraph={{ rows: 6 }} />
           </Card>
@@ -908,11 +958,13 @@ const TokenManagement: React.FC = () => {
               title={
                 <Space>
                   <InfoCircleOutlined />
-                  <Typography.Text strong>{t('token.permissions.realtime_update_notice')}</Typography.Text>
+                  <Typography.Text strong>
+                    {t('token.permissions.realtime_update_notice')}
+                  </Typography.Text>
                 </Space>
               }
               description={t('token.permissions.realtime_update_description')}
-              type="info"
+              type='info'
               showIcon={false}
               style={{ marginBottom: 16 }}
             />

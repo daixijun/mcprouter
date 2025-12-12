@@ -68,7 +68,7 @@ pub async fn install_marketplace_service(
         let guard = SERVICE_MANAGER.lock().unwrap();
         guard.as_ref().unwrap().clone()
     };
-    service_manager.add_mcp_server(config.clone()).await?;
+    service_manager.add_server(&config).await?;
 
     // Try to connect immediately to retrieve version (cache only)
     match MCP_CLIENT_MANAGER.ensure_connection(&config, false).await {

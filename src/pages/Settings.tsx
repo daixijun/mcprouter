@@ -157,46 +157,20 @@ const Settings: React.FC = memo(() => {
   }, [loadSettings, loadLocalIPs, loadSystemPaths])
 
   const saveSettings = useCallback(async () => {
-    console.log('=== SAVE SETTINGS START ===')
-    console.log('Current settings state:', JSON.stringify(settings, null, 2))
-
     setSaving(true)
 
     try {
-      console.log('1. Importing ConfigService...')
       const { ConfigService } = await import('../services/config-service')
-      console.log(
-        '2. ConfigService imported successfully:',
-        typeof ConfigService,
-      )
-
-      console.log(
-        '3. About to save settings:',
-        JSON.stringify(settings, null, 2),
-      )
-      console.log('4. Calling ConfigService.saveSystemSettings...')
-
       const result = await ConfigService.saveSystemSettings(settings)
-      console.log('5. Save successful, result:', result)
 
       // 不再重新加载设置，避免页面刷新
       // 状态已经通过 handleSystemTraySettingChange 的即时更新保持同步
 
       message.success(t('settings.messages.save_success'))
-      console.log('=== SAVE SETTINGS SUCCESS ===')
     } catch (error) {
-      console.error('=== SAVE SETTINGS ERROR ===')
-      console.error('Error details:', error)
-      console.error('Error name:', (error as Error)?.name || 'Unknown')
-      console.error(
-        'Error message:',
-        (error as Error)?.message || String(error),
-      )
-      console.error('Error stack:', (error as Error)?.stack || 'No stack trace')
       message.error(t('settings.errors.save_settings_failed'))
     } finally {
-      console.log('=== SAVE SETTINGS FINALLY ===')
-      setSaving(false)
+          setSaving(false)
     }
   }, [settings, message.error])
 
@@ -247,22 +221,18 @@ const Settings: React.FC = memo(() => {
       // 对于系统托盘启用状态，立即保存并应用变更
       if (key === 'enabled') {
         try {
-          console.log('=== IMMEDIATE TRAY SETTINGS UPDATE ===')
-          console.log(`Updating system_tray.${key} to:`, value)
-
+  
           const { ConfigService } = await import('../services/config-service')
           await ConfigService.saveSystemSettings(newSettings)
 
-          console.log('System tray settings updated immediately')
-
+        
           // 显示成功提示
           message.success(t('settings.messages.tray_settings_updated'))
 
           // 不重新加载设置，因为状态已经更新，避免可能的页面刷新
           // 如果后端返回的数据有差异，可以在响应后更新特定字段
 
-          console.log('=== IMMEDIATE TRAY SETTINGS SUCCESS ===')
-        } catch (error) {
+                } catch (error) {
           console.error('Failed to update system tray settings:', error)
           message.error(t('settings.errors.update_tray_settings_failed'))
 
@@ -645,8 +615,6 @@ const Settings: React.FC = memo(() => {
         }}>
         <Button
           onClick={() => {
-            console.log('=== SAVE BUTTON CLICKED ===')
-            console.log('Button onClick triggered, calling saveSettings...')
             saveSettings()
           }}
           loading={saving}

@@ -78,11 +78,33 @@ impl McpServerConfig {
 
 // Conditional serialization helpers removed
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, strum::Display, strum::EnumString)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum ServiceTransport {
     Stdio,
     Http,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ServiceTransport;
+
+    #[test]
+    fn test_service_transport_parsing() {
+        // 测试正确的解析
+        assert_eq!("stdio".parse::<ServiceTransport>().unwrap(), ServiceTransport::Stdio);
+        assert_eq!("http".parse::<ServiceTransport>().unwrap(), ServiceTransport::Http);
+
+        // 测试错误的解析
+        assert!("invalid".parse::<ServiceTransport>().is_err());
+    }
+
+    #[test]
+    fn test_service_transport_display() {
+        assert_eq!(ServiceTransport::Stdio.to_string(), "stdio");
+        assert_eq!(ServiceTransport::Http.to_string(), "http");
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -299,6 +321,10 @@ pub struct McpToolInfo {
     pub name: String,
     pub description: String,
     pub enabled: bool,
+    pub input_schema: Option<serde_json::Value>,
+    pub output_schema: Option<serde_json::Value>,
+    pub annotations: Option<serde_json::Value>,
+    pub meta: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -322,6 +348,7 @@ pub struct McpResourceInfo {
     pub description: Option<String>,
     pub mime_type: Option<String>,
     pub enabled: bool,
+    pub meta: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -334,6 +361,8 @@ pub struct McpPromptInfo {
     pub name: String,
     pub description: Option<String>,
     pub enabled: bool,
+    pub arguments: Option<Vec<McpPromptArgument>>,
+    pub meta: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -345,6 +374,7 @@ pub struct McpPromptArgument {
     pub name: String,
     pub description: Option<String>,
     pub required: bool,
+    pub argument_type: String,
 }
 
 // ============================================================================
@@ -534,7 +564,7 @@ pub struct UpdatePermissionRequest {
 pub struct UpdateTokenPermissionRequest {
     pub token_id: String,
     pub resource_type: PermissionType,
-    pub resource_id: String,
+    pub resource_path: String,
     pub action: PermissionAction,
 }
 
