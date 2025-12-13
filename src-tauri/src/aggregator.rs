@@ -599,8 +599,8 @@ impl McpAggregator {
         })
     }
 
-    /// 获取工具 - 从数据库查询并生成 resource_path
-    pub async fn list_tools(&self) -> Result<Vec<McpTool>, RmcpErrorData> {
+    /// 获取所有工具 - 从数据库查询并生成 resource_path
+    pub async fn list_all_tools(&self) -> Result<Vec<McpTool>, RmcpErrorData> {
         tracing::info!("🔍 Starting list_tools - loading tools from database");
 
         // 通过 McpServerManager 的公共方法获取完整的工具信息，包含 input_schema
@@ -684,8 +684,8 @@ impl McpAggregator {
         std::sync::Arc::new(default_schema)
     }
 
-    /// 获取资源 - 从数据库查询并生成 resource_path
-    pub async fn list_resources(&self) -> Result<Vec<Resource>, RmcpErrorData> {
+    /// 获取所有资源 - 从数据库查询并生成 resource_path
+    pub async fn list_all_resources(&self) -> Result<Vec<Resource>, RmcpErrorData> {
         tracing::info!("🔍 Starting list_resources - loading resources from database");
 
         // 通过 McpServerManager 的公共方法获取完整的资源信息
@@ -732,8 +732,8 @@ impl McpAggregator {
         Ok(mcp_resources)
     }
 
-    /// 获取提示词 - 从数据库查询并生成 resource_path
-    pub async fn list_prompts(&self) -> Result<Vec<rmcp::model::Prompt>, RmcpErrorData> {
+    /// 获取所有提示词 - 从数据库查询并生成 resource_path
+    pub async fn list_all_prompts(&self) -> Result<Vec<rmcp::model::Prompt>, RmcpErrorData> {
         tracing::info!("🔍 Starting list_prompts - loading prompts from database");
 
         // 通过 McpServerManager 的公共方法获取完整的提示词信息
@@ -773,53 +773,12 @@ impl McpAggregator {
         Ok(mcp_prompts)
     }
 
-    /// list_tools 方法使用真实的权限验证
-    pub async fn list_tools_with_auth_and_token_manager(
+    /// 根据权限过滤工具列表
+    fn filter_tools_by_token_permissions(
         &self,
-        auth_context: &AuthContext,
-        token_manager: Arc<crate::token_manager::TokenManager>,
-    ) -> Result<ListToolsResult, RmcpErrorData> {
-        tracing::info!("🔐 list_tools_with_auth called with auth_context");
-
-        let tools = self.list_tools().await?;
-        tracing::info!("📋 Retrieved {} tools from database", tools.len());
-
-        // 获取 Token 信息进行权限过滤
-        let token_info = if let Some(token_id) = auth_context.token_id() {
-            tracing::info!("Loading permissions for token: {}", token_id);
-            match token_manager.get_token_by_id(token_id).await {
-                Ok(Some(info)) => {
-                    tracing::info!("Loaded {} tool permissions for token: {}",
-                        info.allowed_tools.len(), token_id);
-                    Some(info)
-                }
-                Ok(None) => {
-                    tracing::warn!("Token not found: {}", token_id);
-                    None
-                }
-                Err(e) => {
-                    tracing::error!("Failed to load token permissions: {}", e);
-                    None
-                }
-            }
-        } else {
-            tracing::warn!("No token_id found in auth_context");
-            None
-        };
-
-        // 如果没有有效的 Token 信息，返回空列表
-        let token_info = match token_info {
-            Some(info) => info,
-            None => {
-                tracing::warn!("No valid token info available, returning empty tool list");
-                return Ok(ListToolsResult {
-                    meta: None,
-                    tools: vec![],
-                    next_cursor: None,
-                });
-            }
-        };
-
+        tools: Vec<McpTool>,
+        token_info: &crate::token_manager::TokenInfo,
+    ) -> Vec<McpTool> {
         // 记录权限检查前的工具列表
         for tool in &tools {
             tracing::debug!("🔍 Tool before permission filter: {}", tool.name);
@@ -855,6 +814,64 @@ impl McpAggregator {
             tracing::debug!("🎯 Tool after permission filter: {}", tool.name);
         }
 
+        filtered_tools
+    }
+
+    /// 获取 Token 信息用于权限验证
+    async fn get_token_info_for_auth(
+        &self,
+        auth_context: &AuthContext,
+        token_manager: Arc<crate::token_manager::TokenManager>,
+    ) -> Option<crate::token_manager::TokenInfo> {
+        if let Some(token_id) = auth_context.token_id() {
+            tracing::info!("Loading permissions for token: {}", token_id);
+            match token_manager.get_token_by_id(token_id).await {
+                Ok(Some(info)) => {
+                    tracing::info!("Loaded {} tool permissions for token: {}",
+                        info.allowed_tools.len(), token_id);
+                    Some(info)
+                }
+                Ok(None) => {
+                    tracing::warn!("Token not found: {}", token_id);
+                    None
+                }
+                Err(e) => {
+                    tracing::error!("Failed to load token permissions: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::warn!("No token_id found in auth_context");
+            None
+        }
+    }
+
+    /// 获取工具，使用权限验证
+    pub async fn list_tools_with_auth(
+        &self,
+        auth_context: &AuthContext,
+        token_manager: Arc<crate::token_manager::TokenManager>,
+    ) -> Result<ListToolsResult, RmcpErrorData> {
+        tracing::info!("🔐 list_tools_with_auth called with auth_context");
+
+        let tools = self.list_all_tools().await?;
+        tracing::info!("📋 Retrieved {} tools from database", tools.len());
+
+        // 获取 Token 信息进行权限过滤
+        let token_info = match self.get_token_info_for_auth(auth_context, token_manager).await {
+            Some(info) => info,
+            None => {
+                tracing::warn!("No valid token info available, returning empty tool list");
+                return Ok(ListToolsResult {
+                    meta: None,
+                    tools: vec![],
+                    next_cursor: None,
+                });
+            }
+        };
+
+        let filtered_tools = self.filter_tools_by_token_permissions(tools, &token_info);
+
         Ok(ListToolsResult {
             meta: None,
             tools: filtered_tools,
@@ -862,36 +879,36 @@ impl McpAggregator {
         })
     }
 
-    /// list_resources 方法
-    pub async fn list_resources_with_auth_and_token_manager(
+    /// 获取资源，使用权限验证
+    pub async fn list_resources_with_auth(
         &self,
         auth_context: &AuthContext,
         token_manager: Arc<crate::token_manager::TokenManager>,
     ) -> Result<ListResourcesResult, RmcpErrorData> {
-        let resources = self.list_resources().await?;
+        let resources = self.list_all_resources().await?;
         let original_count = resources.len();
 
         // 获取 Token 信息进行权限过滤
-        let token_info = if let Some(token_id) = auth_context.token_id() {
-            match token_manager.get_token_by_id(token_id).await {
-                Ok(Some(info)) => Some(info),
-                _ => None,
+        let token_info = match self.get_token_info_for_auth(auth_context, token_manager).await {
+            Some(info) => info,
+            None => {
+                tracing::warn!("No valid token info available, returning empty resource list");
+                return Ok(ListResourcesResult {
+                    meta: None,
+                    resources: vec![],
+                    next_cursor: None,
+                });
             }
-        } else {
-            None
         };
 
+        // 过滤资源
         let filtered_resources: Vec<rmcp::model::Resource> = resources
             .into_iter()
             .filter(|resource| {
-                if let Some(ref token_info) = token_info {
-                    // 只支持精确匹配，包括 scheme://resource 格式
-                    token_info.allowed_resources.iter().any(|allowed_resource| {
-                        allowed_resource == &resource.uri
-                    })
-                } else {
-                    false
-                }
+                // 只支持精确匹配，包括 scheme://resource 格式
+                token_info.allowed_resources.iter().any(|allowed_resource| {
+                    allowed_resource == &resource.uri
+                })
             })
             .collect();
 
@@ -904,36 +921,36 @@ impl McpAggregator {
         })
     }
 
-    /// list_prompts 方法
-    pub async fn list_prompts_with_auth_and_token_manager(
+    /// 获取提示词，使用权限验证
+    pub async fn list_prompts_with_auth(
         &self,
         auth_context: &AuthContext,
         token_manager: Arc<crate::token_manager::TokenManager>,
     ) -> Result<ListPromptsResult, RmcpErrorData> {
-        let prompts = self.list_prompts().await?;
+        let prompts = self.list_all_prompts().await?;
         let original_count = prompts.len();
 
         // 获取 Token 信息进行权限过滤
-        let token_info = if let Some(token_id) = auth_context.token_id() {
-            match token_manager.get_token_by_id(token_id).await {
-                Ok(Some(info)) => Some(info),
-                _ => None,
+        let token_info = match self.get_token_info_for_auth(auth_context, token_manager).await {
+            Some(info) => info,
+            None => {
+                tracing::warn!("No valid token info available, returning empty prompt list");
+                return Ok(ListPromptsResult {
+                    meta: None,
+                    prompts: vec![],
+                    next_cursor: None,
+                });
             }
-        } else {
-            None
         };
 
+        // 过滤提示词
         let filtered_prompts: Vec<rmcp::model::Prompt> = prompts
             .into_iter()
             .filter(|prompt| {
-                if let Some(ref token_info) = token_info {
-                    // 只支持精确匹配
-                    token_info.allowed_prompts.iter().any(|allowed_prompt| {
-                        allowed_prompt == &prompt.name
-                    })
-                } else {
-                    false
-                }
+                // 只支持精确匹配
+                token_info.allowed_prompts.iter().any(|allowed_prompt| {
+                    allowed_prompt == &prompt.name
+                })
             })
             .collect();
 
@@ -1106,7 +1123,7 @@ impl McpAggregator {
         };
 
         // Get all tools and filter by permissions
-        match self.list_tools().await {
+        match self.list_all_tools().await {
             Ok(mut tools) => {
                 tools = self.filter_tools_by_permission(tools, &token);
 
@@ -1198,7 +1215,7 @@ impl McpAggregator {
         };
 
         // Get all resources and filter by permissions
-        match self.list_resources().await {
+        match self.list_all_resources().await {
             Ok(mut resources) => {
                 resources = self.filter_resources_by_permission(resources, &token);
 
@@ -1290,7 +1307,7 @@ impl McpAggregator {
         };
 
         // Get all prompts and filter by permissions
-        match self.list_prompts().await {
+        match self.list_all_prompts().await {
             Ok(mut prompts) => {
                 prompts = self.filter_prompts_by_permission(prompts, &token);
 
@@ -1367,7 +1384,7 @@ impl McpAggregator {
             }
         }
         let page_size = 100usize;
-        match self.list_tools().await {
+        match self.list_all_tools().await {
             Ok(tools) => {
                 let total = tools.len();
                 let end = std::cmp::min(offset + page_size, total);
@@ -1421,7 +1438,7 @@ impl McpAggregator {
             }
         }
         let page_size = 100usize;
-        match self.list_resources().await {
+        match self.list_all_resources().await {
             Ok(resources) => {
                 let total = resources.len();
                 let end = std::cmp::min(offset + page_size, total);
@@ -1475,7 +1492,7 @@ impl McpAggregator {
             }
         }
         let page_size = 100usize;
-        match self.list_prompts().await {
+        match self.list_all_prompts().await {
             Ok(prompts) => {
                 let total = prompts.len();
                 let end = std::cmp::min(offset + page_size, total);
@@ -1608,7 +1625,7 @@ impl ServerHandler for McpAggregator {
         }
 
         // 调用带权限验证的方法
-        match self.list_tools_with_auth_and_token_manager(&auth_context, self.token_manager.clone()).await {
+        match self.list_tools_with_auth(&auth_context, self.token_manager.clone()).await {
             Ok(result) => {
                 tracing::info!("Successfully retrieved tools with permission filtering");
 
@@ -1791,7 +1808,7 @@ impl ServerHandler for McpAggregator {
         }
 
         // 调用带权限验证的方法
-        match self.list_prompts_with_auth_and_token_manager(&auth_context, self.token_manager.clone()).await {
+        match self.list_prompts_with_auth(&auth_context, self.token_manager.clone()).await {
             Ok(result) => {
                 tracing::info!("Successfully retrieved prompts with permission filtering");
 
@@ -1994,7 +2011,7 @@ impl ServerHandler for McpAggregator {
         }
 
         // 调用带权限验证的方法
-        match self.list_resources_with_auth_and_token_manager(&auth_context, self.token_manager.clone()).await {
+        match self.list_resources_with_auth(&auth_context, self.token_manager.clone()).await {
             Ok(result) => {
                 tracing::info!("Successfully retrieved resources with permission filtering");
 

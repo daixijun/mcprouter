@@ -5,6 +5,15 @@ use crate::storage::orm_storage::Storage;
 use crate::types::{McpServerConfig, McpServerInfo};
 use sea_orm::Set;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
+
+/// Helper function to handle MCP method errors
+/// Returns true if the error should be ignored (Method not found)
+fn should_ignore_mcp_error(error: &crate::error::McpError) -> bool {
+    let error_str = error.to_string();
+    error_str.contains("Method not found") || error_str.contains("-32601")
+}
 
 #[derive(Clone)]
 pub struct McpServerManager {
@@ -32,8 +41,8 @@ impl McpServerManager {
         Ok(())
     }
 
-    /// Get all MCP servers
-    pub async fn get_all_servers(&self) -> Result<Vec<McpServerInfo>> {
+    /// List all MCP servers
+    pub async fn list_servers(&self) -> Result<Vec<McpServerInfo>> {
         let servers = self.orm_storage.list_mcp_servers().await.map_err(|e| {
             crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
         })?;
@@ -89,11 +98,14 @@ impl McpServerManager {
             let (tool_count, resource_count, prompt_count, prompt_template_count) =
                 self.get_server_stats(&s.id).await;
 
+            // 🔥 动态获取版本信息
+            let version = crate::MCP_CLIENT_MANAGER.get_server_version(&s.name).await;
+
             server_infos.push(McpServerInfo {
                 name: s.name,
                 enabled: s.enabled,
                 status,
-                version: s.version,
+                version,
                 error_message,
                 transport,
                 url: s.url,
@@ -172,11 +184,14 @@ impl McpServerManager {
             let (tool_count, resource_count, prompt_count, prompt_template_count) =
                 self.get_server_stats(&s.id).await;
 
+            // 🔥 动态获取版本信息
+            let version = crate::MCP_CLIENT_MANAGER.get_server_version(&s.name).await;
+
             Ok(Some(McpServerInfo {
                 name: s.name,
                 enabled: s.enabled,
                 status,
-                version: s.version,
+                version,
                 error_message,
                 transport,
                 url: s.url,
@@ -324,18 +339,16 @@ impl McpServerManager {
 
     pub async fn load_mcp_servers(&self) -> Result<()> {
         tracing::info!("Loading MCP servers...");
-        let servers = self.get_all_servers().await?;
+        let servers = self.list_servers().await?;
         tracing::info!("Loaded {} MCP servers", servers.len());
         Ok(())
     }
 
-    /// List available permissions by type (real implementation)
-    pub async fn list_available_permissions_by_type(
-        &self,
-        resource_type: &str,
-    ) -> Result<Vec<String>> {
+    
+    /// List available permissions for a given resource type
+    pub async fn list_available_permissions(&self, resource_type: &str) -> Result<Vec<String>> {
         // Get all enabled servers
-        let servers = self.get_all_servers().await?;
+        let servers = self.list_servers().await?;
         let mut permissions = Vec::new();
 
         for server in servers {
@@ -427,18 +440,13 @@ impl McpServerManager {
         Ok(permissions)
     }
 
-    /// List available permissions (alias for the above method)
-    pub async fn list_available_permissions(&self, resource_type: &str) -> Result<Vec<String>> {
-        self.list_available_permissions_by_type(resource_type).await
-    }
-
     /// Get detailed permission items by type (for UI)
     pub async fn get_detailed_permissions_by_type(
         &self,
         resource_type: &str,
     ) -> Result<Vec<crate::types::PermissionItem>> {
         // Get all enabled servers
-        let servers = self.get_all_servers().await?;
+        let servers = self.list_servers().await?;
         let mut permission_items = Vec::new();
 
         for server in servers {
@@ -783,12 +791,83 @@ impl McpServerManager {
     }
 
     
-    /// Update server method (alias for delete + add)
+    /// Update server with proper connection management
     pub async fn update_server(&self, name: &str, config: &McpServerConfig) -> Result<()> {
-        // Delete existing server and add new one
+        // 获取旧配置用于比较
+        let old_server = self.get_raw_server_by_name(name).await?;
+        let should_reconnect = match &old_server {
+            Some(old) => self.should_reconnect(old, config).await,
+            None => true, // 如果没有旧服务器信息，总是重连
+        };
+
+        // 断开旧连接（如果需要重连）
+        if should_reconnect {
+            if let Err(e) = crate::MCP_CLIENT_MANAGER.disconnect_server(name).await {
+                tracing::warn!("Failed to disconnect server '{}' before update: {}", name, e);
+            }
+
+            // 清理旧缓存
+            if let Err(e) = self.clear_server_cache(name).await {
+                tracing::warn!("Failed to clear cache for server '{}' during update: {}", name, e);
+            }
+        }
+
+        // 执行数据库更新
         self.delete_server(name).await?;
         self.add_server(config).await?;
+
+        // 如果服务器启用且需要重连，则重新连接并同步
+        if config.enabled && should_reconnect {
+            let server_name = name.to_string();
+            let server_config = config.clone();
+            let manager = self.clone();
+
+            tokio::spawn(async move {
+                tracing::info!("Attempting to reconnect to updated server '{}'", server_name);
+                match crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, true).await {
+                    Ok(_) => {
+                        tracing::info!("Successfully reconnected to updated server '{}'", server_name);
+
+                        // 连接成功后同步资源
+                        match manager.sync_server_manifests(&server_name).await {
+                            Ok(_) => {
+                                tracing::info!("Successfully synced manifests for updated server '{}'", server_name);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to sync manifests for updated server '{}': {}", server_name, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to reconnect to updated server '{}': {}", server_name, e);
+                    }
+                }
+            });
+        }
+
         Ok(())
+    }
+
+    /// 判断是否需要重新连接
+    async fn should_reconnect(&self, old_server: &crate::entities::mcp_server::Model, new_config: &McpServerConfig) -> bool {
+        // 检查关键配置是否改变
+        let transport_changed = old_server.server_type.parse::<crate::types::ServiceTransport>()
+            .map(|t| t != new_config.transport)
+            .unwrap_or(true); // 解析失败，认为有变化
+
+        let command_changed = old_server.command.as_ref() != new_config.command.as_ref();
+        let url_changed = old_server.url.as_ref() != new_config.url.as_ref();
+        let enabled_changed = old_server.enabled != new_config.enabled;
+
+        // 检查 args 是否改变
+        let args_changed = {
+            let old_args = old_server.args.as_ref()
+                .and_then(|a| serde_json::from_str::<Vec<String>>(a).ok())
+                .unwrap_or_default();
+            old_args != new_config.args.as_ref().cloned().unwrap_or_default()
+        };
+
+        transport_changed || command_changed || args_changed || url_changed || enabled_changed
     }
 
     /// Toggle tool enabled status (real implementation)
@@ -878,7 +957,7 @@ impl McpServerManager {
 
     /// Auto connect enabled services (real implementation)
     pub async fn auto_connect_enabled_services(&self) -> Result<()> {
-        let servers = self.get_all_servers().await?;
+        let servers = self.list_servers().await?;
         let total_servers = servers.len();
         let mut connected_count = 0;
 
@@ -1017,7 +1096,11 @@ impl McpServerManager {
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to retrieve tools from server '{}': {}", server_name, e);
+                if should_ignore_mcp_error(&e) {
+                    tracing::debug!("Server '{}' does not support tools method (ignoring): {}", server_name, e);
+                } else {
+                    tracing::error!("Failed to retrieve tools from server '{}': {}", server_name, e);
+                }
             }
         }
 
@@ -1053,7 +1136,11 @@ impl McpServerManager {
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to retrieve resources from server '{}': {}", server_name, e);
+                if should_ignore_mcp_error(&e) {
+                    tracing::debug!("Server '{}' does not support resources method (ignoring): {}", server_name, e);
+                } else {
+                    tracing::error!("Failed to retrieve resources from server '{}': {}", server_name, e);
+                }
             }
         }
 
@@ -1088,11 +1175,161 @@ impl McpServerManager {
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to retrieve prompts from server '{}': {}", server_name, e);
+                if should_ignore_mcp_error(&e) {
+                    tracing::debug!("Server '{}' does not support prompts method (ignoring): {}", server_name, e);
+                } else {
+                    tracing::error!("Failed to retrieve prompts from server '{}': {}", server_name, e);
+                }
             }
         }
 
         tracing::info!("Completed manifest sync for server: {}", server_name);
+        Ok(())
+    }
+
+    /// 批处理连接启用的服务（并发控制）
+    ///
+    /// 此方法使用信号量限制同时连接的服务器数量，避免资源竞争
+    pub async fn auto_connect_enabled_services_batched(&self) -> Result<()> {
+        const BATCH_SIZE: usize = 3; // 同时最多连接3个服务器
+        const CONNECTION_TIMEOUT: Duration = Duration::from_secs(15);
+
+        let servers = self.orm_storage.list_mcp_servers().await?;
+        let enabled_servers: Vec<_> = servers
+            .iter()
+            .filter(|s| s.enabled)
+            .collect();
+
+        if enabled_servers.is_empty() {
+            tracing::info!("No enabled servers to connect");
+            return Ok(());
+        }
+
+        tracing::info!("Starting batched connection to {} enabled servers", enabled_servers.len());
+
+        let semaphore = Arc::new(Semaphore::new(BATCH_SIZE));
+        let mut tasks = Vec::new();
+          let server_count = enabled_servers.len();
+
+        for server in enabled_servers {
+            // 构建服务器配置
+            let transport = server.server_type.parse()
+                .map_err(|e| {
+                    tracing::error!("Failed to parse transport type '{}' for server '{}': {}", server.server_type, server.name, e);
+                    e
+                })
+                .unwrap_or_else(|_| {
+                    tracing::warn!("Using default transport type Stdio for server '{}' due to parse failure", server.name);
+                    crate::types::ServiceTransport::Stdio
+                });
+
+            let server_config = crate::types::McpServerConfig {
+                name: server.name.clone(),
+                description: server.description.clone(),
+                transport,
+                command: server.command.clone(),
+                args: server
+                    .args
+                    .as_ref()
+                    .and_then(|a| serde_json::from_str::<Vec<String>>(a).ok()),
+                url: server.url.clone(),
+                headers: server
+                    .headers
+                    .as_ref()
+                    .and_then(|h| serde_json::from_str::<serde_json::Value>(h).ok())
+                    .and_then(|v| {
+                        serde_json::from_value::<std::collections::HashMap<String, String>>(v).ok()
+                    }),
+                env: server
+                    .env
+                    .as_ref()
+                    .and_then(|e| serde_json::from_str::<serde_json::Value>(e).ok())
+                    .and_then(|v| {
+                        serde_json::from_value::<std::collections::HashMap<String, String>>(v).ok()
+                    }),
+                enabled: server.enabled,
+            };
+
+            let server_name = server.name.clone();
+            let semaphore = semaphore.clone();
+
+            // 创建连接任务
+            let task = tokio::spawn(async move {
+                // 获取信号量许可
+                let _permit = semaphore.acquire().await;
+
+                tracing::info!("[Batch] Connecting to server: {}", server_name);
+
+                match tokio::time::timeout(
+                    CONNECTION_TIMEOUT,
+                    crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, false)
+                ).await {
+                    Ok(Ok(_)) => {
+                        tracing::info!("[Batch] Successfully connected to server: {}", server_name);
+                        // 连接成功，但不立即同步清单（留给后台任务）
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!("[Batch] Failed to connect to server '{}': {}", server_name, e);
+                    }
+                    Err(_) => {
+                        tracing::warn!("[Batch] Connection timeout for server: {}", server_name);
+                    }
+                }
+            });
+
+            tasks.push(task);
+        }
+
+        // 等待所有连接任务完成
+        let _ = futures::future::join_all(tasks).await;
+
+        tracing::info!("Batched connection completed for {} servers", server_count);
+        Ok(())
+    }
+
+    /// 后台同步所有服务器的清单
+    ///
+    /// 此方法在后台异步同步所有已连接服务器的工具、资源和提示词
+    pub async fn sync_all_manifests_background(&self) -> Result<()> {
+        let servers = self.orm_storage.list_mcp_servers().await?;
+        let enabled_servers: Vec<_> = servers
+            .into_iter()
+            .filter(|s| s.enabled)
+            .collect();
+
+        if enabled_servers.is_empty() {
+            return Ok(());
+        }
+
+        // 延迟启动，避免与连接冲突
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let manager = self.clone();
+        tokio::spawn(async move {
+            tracing::info!("Starting background manifest sync for {} servers", enabled_servers.len());
+
+            for server in enabled_servers {
+                // 检查服务器是否已连接
+                let (status, _) = crate::MCP_CLIENT_MANAGER.get_connection_status(&server.name).await;
+                if status == "connected" {
+                    tracing::info!("[Background] Syncing manifests for server: {}", server.name);
+
+                    if let Err(e) = manager.sync_server_manifests(&server.name).await {
+                        tracing::error!("[Background] Failed to sync manifests for server '{}': {}", server.name, e);
+                    } else {
+                        tracing::info!("[Background] Successfully synced manifests for server: {}", server.name);
+                    }
+                } else {
+                    tracing::debug!("[Background] Skipping sync for disconnected server: {}", server.name);
+                }
+
+                // 在同步之间添加小延迟，避免过度占用资源
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+
+            tracing::info!("Background manifest sync completed");
+        });
+
         Ok(())
     }
 }

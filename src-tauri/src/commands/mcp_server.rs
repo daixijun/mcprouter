@@ -86,6 +86,32 @@ pub async fn add_mcp_server(
     let mcp_manager = get_mcp_manager().await?;
     mcp_manager.add_server(&config).await?;
 
+    // 新服务器添加后立即连接并同步
+    let server_name = request.name.clone();
+    let server_config = config.clone();
+    tokio::spawn(async move {
+        tracing::info!("Attempting to connect to newly added server '{}'", server_name);
+        // 连接新服务器
+        match crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, false).await {
+            Ok(_) => {
+                tracing::info!("Successfully connected to new server '{}'", server_name);
+
+                // 连接成功后同步资源
+                match mcp_manager.sync_server_manifests(&server_name).await {
+                    Ok(_) => {
+                        tracing::info!("Successfully synced manifests for new server '{}'", server_name);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to sync manifests for new server '{}': {}", server_name, e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to connect to new server '{}': {}", server_name, e);
+            }
+        }
+    });
+
     Ok(format!("MCP server '{}' added successfully", request.name))
 }
 
@@ -149,13 +175,68 @@ pub async fn toggle_mcp_server(name: String) -> Result<bool> {
     let mcp_manager = get_mcp_manager().await?;
     let new_state = mcp_manager.toggle_mcp_server(&name).await?;
 
+    // 根据新状态执行相应操作
+    if new_state {
+        // 启用：尝试连接并同步
+        if let Some(server) = mcp_manager.get_server_by_name(&name).await? {
+            let server_config = McpServerConfig {
+                name: server.name.clone(),
+                description: server.description,
+                transport: server.transport.parse().unwrap_or(ServiceTransport::Stdio),
+                command: server.command,
+                args: server.args,
+                url: server.url,
+                headers: server.headers,
+                env: server.env,
+                enabled: true,
+            };
+
+            // 异步连接和同步
+            let server_name = name.clone();
+            tokio::spawn(async move {
+                tracing::info!("Attempting to connect to newly enabled server '{}'", server_name);
+                match crate::MCP_CLIENT_MANAGER
+                    .ensure_connection(&server_config, false)
+                    .await {
+                    Ok(_) => {
+                        tracing::info!("Successfully connected to enabled server '{}'", server_name);
+
+                        // 连接成功后同步资源
+                        match mcp_manager.sync_server_manifests(&server_name).await {
+                            Ok(_) => {
+                                tracing::info!("Successfully synced manifests for enabled server '{}'", server_name);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to sync manifests for enabled server '{}': {}", server_name, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to connect to newly enabled server '{}': {}", server_name, e);
+                    }
+                }
+            });
+        }
+    } else {
+        // 禁用：断开连接
+        let server_name = name.clone();
+        tokio::spawn(async move {
+            tracing::info!("Attempting to disconnect disabled server '{}'", server_name);
+            if let Err(e) = crate::MCP_CLIENT_MANAGER.disconnect_server(&server_name).await {
+                tracing::error!("Failed to disconnect server '{}': {}", server_name, e);
+            } else {
+                tracing::info!("Successfully disconnected server '{}'", server_name);
+            }
+        });
+    }
+
     Ok(new_state)
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn list_mcp_servers() -> Result<Vec<McpServerInfo>> {
     let mcp_manager = get_mcp_manager().await?;
-    let servers = mcp_manager.get_all_servers().await?;
+    let servers = mcp_manager.list_servers().await?;
 
     Ok(servers)
 }
@@ -167,7 +248,7 @@ pub async fn list_mcp_servers() -> Result<Vec<McpServerInfo>> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_mcp_server_statistics() -> Result<serde_json::Value> {
     let mcp_manager = get_mcp_manager().await?;
-    let servers = mcp_manager.get_all_servers().await?;
+    let servers = mcp_manager.list_servers().await?;
 
     let mut total_tools = 0;
     let mut total_resources = 0;

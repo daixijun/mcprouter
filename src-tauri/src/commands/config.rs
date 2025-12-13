@@ -52,6 +52,7 @@ pub async fn import_mcp_servers_config(
 
         for (service_name, service_config) in mcp_servers {
             if let Some(service_obj) = service_config.as_object() {
+                tracing::info!("Processing service configuration for '{}'", service_name);
                 // Determine transport type based on available fields
                 let transport =
                     // Priority 1: If url field exists, it's HTTP type
@@ -145,8 +146,14 @@ pub async fn import_mcp_servers_config(
                         let guard = SERVICE_MANAGER.lock().unwrap();
                         guard.as_ref().unwrap().clone()
                     };
+                    tracing::info!("Importing service '{}': transport={:?}, command={:?}, url={:?}",
+                        service_name, service_config.transport, service_config.command, service_config.url);
+
                     match service_manager.add_server(&service_config).await {
-                        Ok(()) => added_servers.push(service_name.clone()),
+                        Ok(()) => {
+                            tracing::info!("Successfully imported service '{}'", service_name);
+                            added_servers.push(service_name.clone());
+                        },
                         Err(e) => {
                             tracing::error!("Failed to import service '{}': {}", service_name, e);
                             // Continue with other services even if one fails
@@ -156,10 +163,25 @@ pub async fn import_mcp_servers_config(
             }
         }
 
+        // Get service manager for auto-connect
+        let service_manager = {
+            let guard = SERVICE_MANAGER.lock().unwrap();
+            guard.as_ref().unwrap().clone()
+        };
+
         if added_servers.is_empty() {
-            return Err(crate::error::McpError::InvalidConfiguration(
-                "No valid services found in configuration".to_string(),
-            ));
+            let error_msg = format!(
+                "No valid services found in configuration. Processed {} service(s). This may be because some services already exist. Check logs for detailed error information.",
+                mcp_servers.len()
+            );
+            tracing::error!("{}", error_msg);
+            return Err(crate::error::McpError::InvalidConfiguration(error_msg));
+        }
+
+        // Trigger auto-connect for newly added/updated servers
+        tracing::info!("Triggering auto-connect for imported servers");
+        if let Err(e) = service_manager.auto_connect_enabled_services().await {
+            tracing::error!("Failed to auto-connect services after import: {}", e);
         }
 
         Ok(format!(

@@ -813,3 +813,35 @@ pub struct AvailablePermissions {
     pub prompts: Vec<PermissionItem>,
     pub prompt_templates: Option<Vec<PermissionItem>>,
 }
+
+// ============================================================================
+// 初始化状态管理相关类型
+// ============================================================================
+
+/// 初始化状态枚举
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum InitializationState {
+    /// 未开始
+    NotStarted,
+    /// 数据库连接中
+    DatabaseConnecting,
+    /// 数据库迁移中
+    DatabaseMigrating,
+    /// 管理器已创建
+    ManagersCreated,
+    /// 服务加载中
+    ServicesLoading,
+    /// 服务连接中
+    ServicesConnecting,
+    /// 初始化完成
+    Completed,
+}
+
+/// 初始化进度信息
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InitializationProgress {
+    pub current_state: InitializationState,
+    pub progress_percentage: u8,
+    pub message: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}

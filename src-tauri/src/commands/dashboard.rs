@@ -19,7 +19,7 @@ pub enum AggregatorStatus {
 pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
     // Get actual service statistics
     let service_manager = crate::wait_for_service_manager().await?;
-    let services = service_manager.get_all_servers().await?;
+    let services = service_manager.list_servers().await?;
     let enabled_services = services.iter().filter(|s| s.enabled).count();
 
     // Calculate healthy services count (connected services)
@@ -52,7 +52,7 @@ pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
 
     // Get the total number of configured services directly from the manager
     let service_manager = crate::wait_for_service_manager().await?;
-    let mcp_servers = service_manager.get_all_servers().await?;
+    let mcp_servers = service_manager.list_servers().await?;
     let total_services = mcp_servers.len();
 
     // Get the current server configuration

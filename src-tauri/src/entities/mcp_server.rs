@@ -41,13 +41,6 @@ pub struct Model {
     /// 是否启用
     pub enabled: bool,
 
-    /// 服务器版本
-    pub version: Option<String>,
-
-    /// 最后版本检查时间
-    #[sea_orm(column_type = "TimestampWithTimeZone")]
-    pub last_version_check: Option<ChronoDateTimeWithTimeZone>,
-
     /// 创建时间
     #[sea_orm(column_type = "TimestampWithTimeZone")]
     pub created_at: ChronoDateTimeWithTimeZone,
@@ -175,8 +168,6 @@ impl Default for Model {
             headers: None,
             env: None,
             enabled: true,
-            version: None,
-            last_version_check: None,
             created_at: chrono::Utc::now().into(),
             updated_at: chrono::Utc::now().into(),
         }

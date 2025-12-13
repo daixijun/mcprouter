@@ -28,6 +28,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
+futures = "0.3"
 tokio-tungstenite = "0.24"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 uuid = { version = "1.0", features = ["v4", "v7", "serde"] }

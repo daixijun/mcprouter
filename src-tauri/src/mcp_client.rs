@@ -746,6 +746,36 @@ impl McpClientManager {
         }
     }
 
+    /// Disconnect a specific server, handling both STDIO and HTTP types properly
+    pub async fn disconnect_server(&self, server_name: &str) -> Result<()> {
+        let mut connections = self.connections.write().await;
+
+        if let Some(mut connection) = connections.remove(server_name) {
+            tracing::info!("Disconnecting server '{}'", server_name);
+
+            // Close the MCP client if it exists
+            if let Some(client) = connection.client.take() {
+                // Drop the client to trigger cleanup
+                drop(client);
+                tracing::info!("Closed MCP client for server '{}'", server_name);
+            }
+
+            // Clear server info
+            connection.server_info = None;
+
+            // Update connection status
+            connection.status.is_connected = false;
+            connection.status.is_connecting = false;
+            connection.status.error_message = Some("Disconnected by user".to_string());
+
+            tracing::info!("Successfully disconnected server '{}'", server_name);
+        } else {
+            tracing::warn!("Server '{}' not found in active connections", server_name);
+        }
+
+        Ok(())
+    }
+
     /// Try to reconnect to a specific service
     pub async fn try_reconnect(&self, service_config: &McpServerConfig) -> Result<bool> {
         let service_name = &service_config.name;
@@ -776,5 +806,18 @@ impl McpClientManager {
                 Ok(false)
             }
         }
+    }
+
+    /// 获取已连接服务器的版本信息
+    pub async fn get_server_version(&self, server_name: &str) -> Option<String> {
+        let connections = self.connections.read().await;
+        if let Some(connection) = connections.get(server_name) {
+            if connection.status.is_connected {
+                if let Some(ref server_info) = connection.server_info {
+                    return Some(server_info.server_info.version.clone());
+                }
+            }
+        }
+        None
     }
 }

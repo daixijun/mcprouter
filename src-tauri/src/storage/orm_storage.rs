@@ -314,7 +314,7 @@ impl Storage {
     /// 批量更新服务器工具
     pub async fn upsert_server_tools(
         &self,
-        _server_id: &str,
+        server_id: &str,
         tools: Vec<mcp_tool::ActiveModel>,
     ) -> Result<(), StorageError> {
         let txn =
@@ -322,10 +322,19 @@ impl Storage {
                 StorageError::Database(format!("Failed to begin transaction: {}", e))
             })?;
 
-        for tool in tools {
-            tool.insert(&txn)
+        // First, delete existing tools for this server
+        crate::entities::mcp_tool::Entity::delete_many()
+            .filter(crate::entities::mcp_tool::Column::ServerId.eq(server_id))
+            .exec(&txn)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to delete existing tools: {}", e)))?;
+
+        // Then insert the new tools using insert_many to avoid RecordNotFound errors
+        if !tools.is_empty() {
+            crate::entities::mcp_tool::Entity::insert_many(tools)
+                .exec(&txn)
                 .await
-                .map_err(|e| StorageError::Database(format!("Failed to insert: {}", e)))?;
+                .map_err(|e| StorageError::Database(format!("Failed to insert tools: {}", e)))?;
         }
 
         txn.commit()
@@ -338,7 +347,7 @@ impl Storage {
     /// 批量更新服务器资源
     pub async fn upsert_server_resources(
         &self,
-        _server_id: &str,
+        server_id: &str,
         resources: Vec<mcp_resource::ActiveModel>,
     ) -> Result<(), StorageError> {
         let txn =
@@ -346,11 +355,19 @@ impl Storage {
                 StorageError::Database(format!("Failed to begin transaction: {}", e))
             })?;
 
-        for resource in resources {
-            resource
-                .insert(&txn)
+        // First, delete existing resources for this server
+        crate::entities::mcp_resource::Entity::delete_many()
+            .filter(crate::entities::mcp_resource::Column::ServerId.eq(server_id))
+            .exec(&txn)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to delete existing resources: {}", e)))?;
+
+        // Then insert the new resources using insert_many to avoid RecordNotFound errors
+        if !resources.is_empty() {
+            crate::entities::mcp_resource::Entity::insert_many(resources)
+                .exec(&txn)
                 .await
-                .map_err(|e| StorageError::Database(format!("Failed to insert: {}", e)))?;
+                .map_err(|e| StorageError::Database(format!("Failed to insert resources: {}", e)))?;
         }
 
         txn.commit()
@@ -363,7 +380,7 @@ impl Storage {
     /// 批量更新服务器提示词
     pub async fn upsert_server_prompts(
         &self,
-        _server_id: &str,
+        server_id: &str,
         prompts: Vec<mcp_prompt::ActiveModel>,
     ) -> Result<(), StorageError> {
         let txn =
@@ -371,11 +388,19 @@ impl Storage {
                 StorageError::Database(format!("Failed to begin transaction: {}", e))
             })?;
 
-        for prompt in prompts {
-            prompt
-                .insert(&txn)
+        // First, delete existing prompts for this server
+        crate::entities::mcp_prompt::Entity::delete_many()
+            .filter(crate::entities::mcp_prompt::Column::ServerId.eq(server_id))
+            .exec(&txn)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to delete existing prompts: {}", e)))?;
+
+        // Then insert the new prompts using insert_many to avoid RecordNotFound errors
+        if !prompts.is_empty() {
+            crate::entities::mcp_prompt::Entity::insert_many(prompts)
+                .exec(&txn)
                 .await
-                .map_err(|e| StorageError::Database(format!("Failed to insert: {}", e)))?;
+                .map_err(|e| StorageError::Database(format!("Failed to insert prompts: {}", e)))?;
         }
 
         txn.commit()

@@ -6,6 +6,7 @@ use sea_orm_migration::prelude::*;
 
 mod m20240101_000001_create_initial_tables;
 mod m20241212_000002_add_mcp_metadata_fields;
+mod m20250113_remove_version_fields;
 
 pub struct Migrator;
 
@@ -15,6 +16,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20240101_000001_create_initial_tables::Migration),
             Box::new(m20241212_000002_add_mcp_metadata_fields::Migration),
+            Box::new(m20250113_remove_version_fields::Migration),
         ]
     }
 }

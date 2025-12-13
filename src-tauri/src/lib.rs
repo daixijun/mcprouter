@@ -35,24 +35,104 @@ struct SingleInstancePayload {
     cwd: String,
 }
 
-/// Wait for SERVICE_MANAGER to be initialized (with timeout)
+/// Get initialization state instance
+async fn get_initialization_state() -> std::sync::Arc<tokio::sync::RwLock<InitializationState>> {
+    INIT_STATE
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::RwLock::new(InitializationState::NotStarted)))
+        .clone()
+}
+
+/// Update initialization state
+async fn update_initialization_state(state: InitializationState) {
+    if let Some(init_state) = INIT_STATE.get() {
+        *init_state.write().await = state.clone();
+        tracing::info!("Initialization state updated: {:?}", state);
+    }
+}
+
+/// Get service manager (with timeout and progressive waiting)
 pub async fn wait_for_service_manager() -> Result<Arc<McpServerManager>, crate::error::McpError> {
-    let mut attempts = 0;
-    let max_attempts = 50; // 5 seconds max
+    wait_for_service_manager_with_progress().await
+}
 
-    while attempts < max_attempts {
-        {
-            let guard = SERVICE_MANAGER.lock().map_err(|e| {
-                crate::error::McpError::Internal(format!("Failed to lock SERVICE_MANAGER: {}", e))
-            })?;
+/// Service manager waiting method with progress feedback
+pub async fn wait_for_service_manager_with_progress() -> Result<Arc<McpServerManager>, crate::error::McpError> {
+    let mut last_state = InitializationState::NotStarted;
+    let mut progress_logged = std::collections::HashSet::new();
 
-            if let Some(ref manager) = *guard {
-                return Ok(manager.clone());
+    // 30 seconds total timeout, supports progressive loading
+    for attempt in 0..300 {
+        // Check initialization state
+        let init_state = get_initialization_state().await;
+        let current_state = (*init_state.read().await).clone();
+
+            // Log on state change
+            if current_state != last_state {
+                tracing::info!("Initialization progress: {:?}", current_state);
+                last_state = current_state.clone();
             }
-        }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        attempts += 1;
+            // Provide different progress feedback based on state
+            match current_state {
+                InitializationState::NotStarted => {
+                    // Initialization not started, no special handling needed
+                },
+                InitializationState::DatabaseConnecting => {
+                    // Database connecting
+                },
+                InitializationState::DatabaseMigrating => {
+                    // Database migrating
+                },
+                InitializationState::ManagersCreated => {
+                    // Return immediately after manager creation, don't wait for full initialization
+                    if !progress_logged.contains("managers_created") {
+                        tracing::info!("✅ Managers created, basic functionality available");
+                        progress_logged.insert("managers_created".to_string());
+                    }
+                },
+                InitializationState::ServicesLoading => {
+                    // Services loading
+                },
+                InitializationState::ServicesConnecting => {
+                    // Services connecting
+                },
+                InitializationState::Completed => {
+                    if !progress_logged.contains("completed") {
+                        tracing::info!("✅ All services initialization completed");
+                        progress_logged.insert("completed".to_string());
+                    }
+                }
+            }
+
+            // Try to get service manager
+            if let Ok(guard) = SERVICE_MANAGER.lock() {
+                if let Some(ref manager) = *guard {
+                    // Return immediately after manager creation, don't wait for full initialization
+                    if matches!(current_state, InitializationState::ManagersCreated | InitializationState::Completed) {
+                        return Ok(manager.clone());
+                    }
+                }
+            }
+
+        // Progressive backoff: more frequent checks initially, less frequent later
+        let sleep_duration = if attempt < 50 {
+            Duration::from_millis(100) // First 5 seconds: 100ms intervals
+        } else if attempt < 150 {
+            Duration::from_millis(200) // 5-15 seconds: 200ms intervals
+        } else {
+            Duration::from_millis(500) // After 15 seconds: 500ms intervals
+        };
+
+        tokio::time::sleep(sleep_duration).await;
+    }
+
+    // Partial initialization failed, but basic manager might be available
+    tracing::warn!("Initialization timeout, attempting to get partially available service manager");
+    if let Ok(guard) = SERVICE_MANAGER.lock() {
+        if let Some(ref manager) = *guard {
+            tracing::info!("✅ Obtained basic service manager (some features may not be available)");
+            return Ok(manager.clone());
+        }
     }
 
     Err(crate::error::McpError::Internal(
@@ -86,6 +166,10 @@ pub async fn wait_for_token_manager(
 // Global state - use MCP Server Manager
 static SERVICE_MANAGER: std::sync::Mutex<Option<Arc<McpServerManager>>> =
     std::sync::Mutex::new(None);
+
+// Global initialization state tracking
+static INIT_STATE: std::sync::OnceLock<std::sync::Arc<tokio::sync::RwLock<InitializationState>>> =
+    std::sync::OnceLock::new();
 
 static MCP_CLIENT_MANAGER: std::sync::LazyLock<Arc<McpClientManager>> = std::sync::LazyLock::new(
     || {
@@ -523,6 +607,9 @@ pub async fn run() {
 
             // Spawn async initialization
             tokio::spawn(async move {
+                // 更新状态：开始数据库连接
+                update_initialization_state(crate::types::InitializationState::DatabaseConnecting).await;
+
                 match crate::storage::StorageManager::new(storage_config, sql_log_for_init, log_level_for_init).await {
                     Ok(storage_manager) => {
                         tracing::info!("SeaORM database initialized successfully");
@@ -675,6 +762,9 @@ async fn initialize_managers(
     mcp_client_manager: Arc<McpClientManager>,
     server_config: Arc<ServerConfig>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // 更新状态：开始数据库连接（实际上已经连接，但开始迁移）
+    update_initialization_state(crate::types::InitializationState::DatabaseMigrating).await;
+
     // Stage 2a: Initialize MCP Server Manager
     tracing::info!("Initializing MCP Server Manager");
     let mcp_server_manager: Arc<crate::mcp_manager::McpServerManager> = {
@@ -693,6 +783,9 @@ async fn initialize_managers(
         let mut service_manager_guard = SERVICE_MANAGER.lock().unwrap();
         *service_manager_guard = Some(mcp_server_manager.clone());
     }
+
+    // 更新状态：管理器已创建
+    update_initialization_state(crate::types::InitializationState::ManagersCreated).await;
 
     // Stage 2b: Initialize Token Manager
     tracing::info!("Token Manager initialized");
@@ -781,19 +874,63 @@ async fn create_and_start_aggregator(
 
 /// Load and connect MCP services
 async fn load_and_connect_services(mcp_server_manager: Arc<crate::mcp_manager::McpServerManager>) {
-    tracing::info!("Loading MCP services from SQLite database");
+    tracing::info!("Starting services initialization");
+
+    // Update initialization state: start service loading
+    update_initialization_state(crate::types::InitializationState::ServicesLoading).await;
+
+    // Phase 1: Load service configuration
     match mcp_server_manager.load_mcp_servers().await {
         Ok(_) => {
-            tracing::info!("MCP services loaded");
-
-            // Auto-connect all enabled services
-            tracing::info!("Auto-connect enabled services");
-            if let Err(e) = mcp_server_manager.auto_connect_enabled_services().await {
-                tracing::error!("Failed to auto-connect services: {}", e);
-            }
+            tracing::info!("✅ Service configuration loaded successfully");
         }
         Err(e) => {
             tracing::error!("Failed to load services: {}", e);
+            return;
         }
     }
+
+    // Update initialization state: start service connection
+    update_initialization_state(crate::types::InitializationState::ServicesConnecting).await;
+
+    // Phase 2: Batched connection (async execution)
+    let manager_for_connection = mcp_server_manager.clone();
+    tokio::spawn(async move {
+        tracing::info!("Phase 1: Starting batched connection to enabled services");
+        if let Err(e) = manager_for_connection.auto_connect_enabled_services_batched().await {
+            // Ignore "Method not found" errors as they are normal for some MCP services
+            let error_str = e.to_string();
+            if error_str.contains("Method not found") || error_str.contains("-32601") {
+                tracing::debug!("Method not found error during batched connection (ignoring): {}", e);
+            } else {
+                tracing::error!("Batched connection failed: {}", e);
+            }
+        } else {
+            tracing::info!("✅ Phase 1 completed: Service connection started");
+        }
+    });
+
+    // Phase 3: Background manifest sync (delayed start, low priority)
+    let manager_for_sync = mcp_server_manager.clone();
+    tokio::spawn(async move {
+        // Wait for connection tasks to make progress before starting sync
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        tracing::info!("Phase 2: Starting background manifest sync");
+        if let Err(e) = manager_for_sync.sync_all_manifests_background().await {
+            // Ignore "Method not found" errors as they are normal for some MCP services
+            let error_str = e.to_string();
+            if error_str.contains("Method not found") || error_str.contains("-32601") {
+                tracing::debug!("Method not found error during background sync (ignoring): {}", e);
+            } else {
+                tracing::error!("Background manifest sync startup failed: {}", e);
+            }
+        } else {
+            tracing::info!("✅ Phase 2 completed: Manifest sync running in background");
+        }
+
+        // Mark initialization as fully completed
+        update_initialization_state(crate::types::InitializationState::Completed).await;
+        tracing::info!("🎉 All services initialization process completed");
+    });
 }
