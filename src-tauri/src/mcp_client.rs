@@ -15,8 +15,9 @@ use tokio::sync::RwLock;
 fn create_http_reqwest_client(
     custom_headers: Option<&HashMap<String, String>>,
 ) -> Result<reqwest::Client> {
+    let user_agent = crate::commands::app_info::get_user_agent_static();
     let mut client_builder = reqwest::Client::builder()
-        .user_agent("mcprouter/1.0")
+        .user_agent(user_agent)
         .timeout(Duration::from_secs(30));
 
     // Add default headers for HTTP transport

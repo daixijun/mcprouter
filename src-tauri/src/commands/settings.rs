@@ -364,6 +364,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
             MCP_CLIENT_MANAGER.clone(),
             server_config,
             token_manager,
+            app.clone(),
         ));
 
         // Update global aggregator state

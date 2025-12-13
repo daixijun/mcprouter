@@ -597,6 +597,7 @@ pub async fn run() {
             let config_dir_for_init = config_dir.clone();
             let mcp_client_manager_for_init = mcp_client_manager.clone();
             let server_config_for_init = server_config.clone();
+            let app_for_init = app.handle().clone();
 
             // Stage 1: Initialize SeaORM database and managers asynchronously
             let db_path = config_dir_for_init.join("mcprouter.db");
@@ -615,7 +616,7 @@ pub async fn run() {
                         tracing::info!("SeaORM database initialized successfully");
 
                         // Initialize managers
-                        match initialize_managers(storage_manager, mcp_client_manager_for_init, server_config_for_init).await {
+                        match initialize_managers(storage_manager, mcp_client_manager_for_init, server_config_for_init, app_for_init).await {
                             Ok(_) => {
                                 tracing::info!("All managers initialized successfully");
                             }
@@ -703,6 +704,11 @@ pub async fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // App Info Commands
+            get_app_info,
+            get_app_version,
+            get_app_name,
+            // Config Commands
             get_config,
             get_theme,
             set_theme,
@@ -761,6 +767,7 @@ async fn initialize_managers(
     storage_manager: crate::storage::StorageManager,
     mcp_client_manager: Arc<McpClientManager>,
     server_config: Arc<ServerConfig>,
+    app: tauri::AppHandle,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 更新状态：开始数据库连接（实际上已经连接，但开始迁移）
     update_initialization_state(crate::types::InitializationState::DatabaseMigrating).await;
@@ -821,6 +828,7 @@ async fn initialize_managers(
             mcp_client_manager,
             server_config,
             token_manager_for_agg,
+            app.clone(),
         )
         .await;
     });
@@ -839,6 +847,7 @@ async fn create_and_start_aggregator(
     mcp_client_manager: Arc<McpClientManager>,
     server_config: Arc<ServerConfig>,
     token_manager: Arc<crate::token_manager::TokenManager>,
+    app: tauri::AppHandle,
 ) {
     tracing::info!("Creating and starting MCP aggregator");
 
@@ -848,6 +857,7 @@ async fn create_and_start_aggregator(
         mcp_client_manager,
         server_config,
         token_manager,
+        app,
     );
 
     // Store the aggregator in the global variable

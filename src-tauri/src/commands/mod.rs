@@ -1,4 +1,5 @@
 // API Key module removed
+pub mod app_info;
 pub mod config;
 pub mod dashboard;
 pub mod marketplace;
@@ -10,6 +11,7 @@ pub mod tool;
 
 // Re-export all command functions
 // API Key commands removed
+pub use app_info::*;
 pub use config::*;
 pub use dashboard::*;
 pub use marketplace::*;
