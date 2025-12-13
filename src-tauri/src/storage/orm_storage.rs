@@ -7,8 +7,9 @@ use crate::storage::StorageError;
 use crate::types::{McpServerConfig, ServiceTransport, Token};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, Set, TransactionTrait,
+    QueryFilter, QueryOrder, Set, Statement, TransactionTrait,
 };
+use sea_orm_migration::MigratorTrait;
 use tracing::info;
 use uuid::Uuid;
 
@@ -36,6 +37,29 @@ impl Storage {
         let db = Database::connect(options)
             .await
             .map_err(|e| StorageError::Database(format!("Failed to connect to database: {}", e)))?;
+
+        // 执行数据库迁移
+        match crate::migration::Migrator::up(&db, None).await {
+            Ok(_) => {
+                tracing::info!("Database migrations completed successfully in Storage::new()");
+            },
+            Err(e) => {
+                let error_msg = e.to_string();
+
+                if error_msg.contains("index") && error_msg.contains("already exists") {
+                    tracing::warn!("Migration index conflict detected: {}. Continuing...", error_msg);
+
+                    if let Err(verify_err) = verify_database_schema(&db).await {
+                        return Err(StorageError::Database(format!(
+                            "Migration failed and schema verification failed: {}\nVerification error: {}",
+                            error_msg, verify_err
+                        )));
+                    }
+                } else {
+                    return Err(StorageError::Database(format!("Failed to run migrations: {}", e)));
+                }
+            }
+        }
 
         // 应用性能优化设置
         Self::apply_performance_settings(&db).await?;
@@ -919,5 +943,43 @@ impl Storage {
             allowed_prompt_templates: Some(vec![]),
         })
     }
+}
+
+/// 验证数据库模式是否可用
+async fn verify_database_schema(db: &DatabaseConnection) -> Result<(), String> {
+    // List of tables we expect to exist
+    let expected_tables = vec![
+        "tokens",
+        "mcp_servers",
+        "mcp_server_tools",
+        "mcp_server_resources",
+        "mcp_server_prompts",
+        "permissions",
+    ];
+
+    // Check each table exists
+    for table_name in expected_tables {
+        let result = db.query_one(Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            format!("SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", table_name)
+        )).await.map_err(|e| format!("Failed to check table {}: {}", table_name, e))?;
+
+        if result.is_none() {
+            return Err(format!("Required table '{}' does not exist", table_name));
+        }
+    }
+
+    // Check that we can perform basic queries
+    let test_query = db.query_all(Statement::from_string(
+        sea_orm::DatabaseBackend::Sqlite,
+        "SELECT COUNT(*) as count FROM tokens".to_string()
+    )).await.map_err(|e| format!("Failed to query tokens table: {}", e))?;
+
+    if test_query.is_empty() {
+        return Err("Cannot query tokens table".to_string());
+    }
+
+    tracing::info!("Database schema verification passed in Storage");
+    Ok(())
 }
 

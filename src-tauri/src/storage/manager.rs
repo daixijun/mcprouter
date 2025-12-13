@@ -3,7 +3,6 @@ use crate::error::{McpError, Result};
 use crate::storage::orm_storage::Storage;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use sea_orm_migration::prelude::*;
 
 /// Simple storage configuration
 #[derive(Debug, Clone)]
@@ -51,46 +50,14 @@ impl StorageManager {
     pub async fn new(config: StorageConfig, sql_log: bool, log_level: log::LevelFilter) -> Result<Self> {
         let database_url = config.database_url();
 
-        // Run migrations first with better error handling
-        let db = sea_orm::Database::connect(&database_url)
-            .await
-            .map_err(|e| McpError::DatabaseConnectionError(format!("Failed to connect to database for migrations: {}", e)))?;
-
-        // Run migrations with better error handling for existing indexes
-        match crate::migration::Migrator::up(&db, None).await {
-            Ok(_) => {
-                tracing::info!("SeaORM migrations completed successfully");
-            },
-            Err(e) => {
-                let error_msg = e.to_string();
-
-                // Check if this is an index already exists error
-                if error_msg.contains("index") && error_msg.contains("already exists") {
-                    tracing::warn!("Migration index conflict detected: {}. This might be safe to continue.", error_msg);
-                    tracing::info!("Attempting to verify database schema...");
-
-                    // Try to verify the database is in a usable state
-                    if let Err(verify_err) = verify_database_schema(&db).await {
-                        return Err(McpError::DatabaseInitializationError(format!(
-                            "Migration failed with index conflict and schema verification failed: {}\nVerification error: {}",
-                            error_msg, verify_err
-                        )));
-                    }
-
-                    tracing::info!("Database schema verification passed, continuing despite migration warnings");
-                } else {
-                    return Err(McpError::DatabaseInitializationError(format!("Failed to run SeaORM migrations: {}", e)));
-                }
-            }
-        }
-
+        // Storage::new() 内部会自动执行迁移
         let orm_storage = Storage::new(&database_url, sql_log, log_level)
             .await
             .map_err(|e| McpError::DatabaseConnectionError(format!("Failed to initialize SeaORM: {}", e)))?;
 
         let orm_storage = Arc::new(orm_storage);
 
-        tracing::info!("Using SeaORM storage backend");
+        tracing::info!("Using SeaORM storage backend with automatic migrations");
 
         Ok(Self {
             orm_storage,
@@ -149,45 +116,6 @@ impl StorageManager {
     // TODO: Add more token management methods if needed
 }
 
-/// Verify that the database schema is in a usable state
-async fn verify_database_schema(db: &sea_orm::DatabaseConnection) -> std::result::Result<(), String> {
-    use sea_orm::{ConnectionTrait, Statement};
-
-    // List of tables we expect to exist
-    let expected_tables = vec![
-        "tokens",
-        "mcp_servers",
-        "mcp_server_tools",
-        "mcp_server_resources",
-        "mcp_server_prompts",
-        "permissions",
-    ];
-
-    // Check each table exists
-    for table_name in expected_tables {
-        let result = db.query_one(Statement::from_string(
-            sea_orm::DatabaseBackend::Sqlite,
-            format!("SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", table_name)
-        )).await.map_err(|e| format!("Failed to check table {}: {}", table_name, e))?;
-
-        if result.is_none() {
-            return Err(format!("Required table '{}' does not exist", table_name));
-        }
-    }
-
-    // Check that we can perform basic queries
-    let test_query = db.query_all(Statement::from_string(
-        sea_orm::DatabaseBackend::Sqlite,
-        "SELECT COUNT(*) as count FROM tokens".to_string()
-    )).await.map_err(|e| format!("Failed to query tokens table: {}", e))?;
-
-    if test_query.is_empty() {
-        return Err("Cannot query tokens table".to_string());
-    }
-
-    tracing::info!("Database schema verification passed");
-    Ok(())
-}
 
 /// Storage health information
 #[derive(Debug, Clone)]
