@@ -84,10 +84,10 @@ impl Model {
     pub fn get_display_name(&self) -> &str {
         self.title
             .as_deref()
-            .or_else(|| self.name.as_deref())
+            .or(self.name.as_deref())
             .unwrap_or_else(|| {
                 // 从 URI 中提取最后部分作为显示名称
-                self.uri.split('/').last().unwrap_or(&self.uri)
+                self.uri.split('/').next_back().unwrap_or(&self.uri)
             })
     }
 

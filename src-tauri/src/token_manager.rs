@@ -229,7 +229,7 @@ impl TokenManager {
                 expires_at: token.expires_at,
                 is_expired: token
                     .expires_at
-                    .map_or(false, |expires_at| expires_at < now),
+                    .is_some_and(|expires_at| expires_at < now),
             })
             .collect();
 
@@ -365,7 +365,7 @@ impl TokenManager {
         let enabled = tokens.iter().filter(|t| t.enabled).count() as u64;
         let expired = tokens
             .iter()
-            .filter(|t| t.expires_at.map_or(false, |expires_at| expires_at < now))
+            .filter(|t| t.expires_at.is_some_and(|expires_at| expires_at < now))
             .count() as u64;
 
         stats.insert("total".to_string(), total);
@@ -522,7 +522,7 @@ impl TokenManager {
         let expired_tokens: Vec<String> = tokens
             .into_iter()
             .filter_map(|t| {
-                if t.expires_at.map_or(false, |expires_at| expires_at < now) {
+                if t.expires_at.is_some_and(|expires_at| expires_at < now) {
                     Some(t.id)
                 } else {
                     None
@@ -619,7 +619,7 @@ impl TokenManager {
             usage_count: token.usage_count,
             is_expired: token
                 .expires_at
-                .map_or(false, |expires_at| expires_at < now),
+                .is_some_and(|expires_at| expires_at < now),
             enabled: token.enabled,
             allowed_tools,
             allowed_resources,

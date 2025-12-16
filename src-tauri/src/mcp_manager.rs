@@ -396,7 +396,7 @@ impl McpServerManager {
                                 resource
                                     .uri
                                     .split('/')
-                                    .last()
+                                    .next_back()
                                     .unwrap_or(&resource.uri)
                                     .to_string()
                             });
@@ -974,9 +974,8 @@ impl McpServerManager {
 
                     // Convert to McpServerConfig
                     let transport = raw_server.server_type.parse()
-                        .map_err(|e| {
+                        .inspect_err(|&e| {
                             tracing::error!("Failed to parse transport type '{}' for server '{}': {}", raw_server.server_type, server.name, e);
-                            e
                         })
                         .unwrap_or_else(|_| {
                             tracing::warn!("Using default transport type Stdio for server '{}' due to parse failure", server.name);
@@ -1214,9 +1213,8 @@ impl McpServerManager {
         for server in enabled_servers {
             // 构建服务器配置
             let transport = server.server_type.parse()
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     tracing::error!("Failed to parse transport type '{}' for server '{}': {}", server.server_type, server.name, e);
-                    e
                 })
                 .unwrap_or_else(|_| {
                     tracing::warn!("Using default transport type Stdio for server '{}' due to parse failure", server.name);

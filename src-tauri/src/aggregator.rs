@@ -235,7 +235,7 @@ impl McpAggregator {
         Ok(ListToolsResult {
             meta: None,
             tools: slice,
-            next_cursor: next_cursor,
+            next_cursor,
         })
     }
 
@@ -276,7 +276,7 @@ impl McpAggregator {
         Ok(ListResourcesResult {
             meta: None,
             resources: slice,
-            next_cursor: next_cursor,
+            next_cursor,
         })
     }
 
@@ -317,7 +317,7 @@ impl McpAggregator {
         Ok(ListPromptsResult {
             meta: None,
             prompts: slice,
-            next_cursor: next_cursor,
+            next_cursor,
         })
     }
 
@@ -696,7 +696,7 @@ impl McpAggregator {
                 name: name.clone(),
                 title: None,
                 description: Some(description),
-                mime_type: mime_type,
+                mime_type,
                 size: None,
                 icons: None,
                 meta: None,

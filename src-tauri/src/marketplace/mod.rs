@@ -31,6 +31,12 @@ pub struct MarketplaceClient {
     pub(crate) http: Client,
 }
 
+impl Default for MarketplaceClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MarketplaceClient {
     pub fn new() -> Self {
         let client = Client::builder()

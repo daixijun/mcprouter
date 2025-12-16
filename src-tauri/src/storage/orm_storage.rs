@@ -152,7 +152,6 @@ impl Storage {
             enabled: Set(config.enabled),
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
-            ..Default::default()
         };
 
         let result = server_model.insert(&self.db).await.map_err(|e| {
@@ -611,7 +610,6 @@ impl Storage {
                     .unwrap_or(now)
                     .into()
             })),
-            ..Default::default()
         };
 
         let result = token_model.insert(&self.db).await.map_err(|e| {
