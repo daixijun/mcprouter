@@ -24,12 +24,15 @@ import {
   Wrench,
   XCircle,
 } from 'lucide-react'
+import { WarningOutlined } from '@ant-design/icons'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ToolManager from '../components/ToolManager'
 import { McpServerService } from '../services/mcp-server-service'
+import { ToolManagerService } from '../services/tool-manager-service'
 import { useAntdConfig } from '../components/AntdConfigProvider'
-import type { McpServerInfo } from '../types'
+import { useAppContext } from '../contexts/AppContext'
+import type { McpServerInfo, ToolStartupStatus } from '../types'
 
 const { TextArea } = Input
 const { Title, Text } = Typography
@@ -44,6 +47,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const { t } = useTranslation()
   const { notification, message } = App.useApp()
   const { theme } = useAntdConfig()
+  const { setActiveTab } = useAppContext()
   const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([])
   const [showAddService, setShowAddService] = useState(false)
   const [showEditService, setShowEditService] = useState(false)
@@ -72,9 +76,22 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const [jsonConfig, setJsonConfig] = useState('')
   const [jsonError, setJsonError] = useState('')
 
+  // Tool startup status
+  const [toolStartupStatus, setToolStartupStatus] = useState<ToolStartupStatus | null>(null)
+
   useEffect(() => {
     fetchMcpServers()
+    checkToolStartupStatus()
   }, [])
+
+  const checkToolStartupStatus = async () => {
+    try {
+      const status = await ToolManagerService.getToolStartupStatus()
+      setToolStartupStatus(status)
+    } catch (error) {
+      console.error('Failed to check tool startup status:', error)
+    }
+  }
 
   const fetchMcpServers = async () => {
     setLoading(true)
@@ -606,9 +623,69 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     )
   }
 
+  // Create tool status alert
+  const renderToolStatusAlert = () => {
+    if (!toolStartupStatus || toolStartupStatus.missing_tools.length === 0) {
+      return null
+    }
+
+    const needsPython = !toolStartupStatus.python_available
+
+    return (
+      <Flex
+        style={{
+          padding: '12px 16px',
+          backgroundColor: '#fff2f0',
+          border: '1px solid #ffccc7',
+          borderRadius: '6px',
+          marginBottom: '16px'
+        }}
+        gap='small'
+        align='center'
+      >
+        <WarningOutlined
+          style={{
+            color: '#ff4d4f',
+            fontSize: '16px'
+          }}
+        />
+        <Flex vertical gap='small' flex={1}>
+          <Text strong style={{ color: '#cf1322' }}>
+            {needsPython
+              ? t('mcp_server.tool_status.python_and_tools_missing')
+              : t('mcp_server.tool_status.tools_missing')}
+          </Text>
+          <Text style={{ color: '#a8071a' }}>
+            {needsPython
+              ? t('mcp_server.tool_status.python_and_tools_description', {
+                  tools: toolStartupStatus.missing_tools.join(', ')
+                })
+              : t('mcp_server.tool_status.tools_description', {
+                  tools: toolStartupStatus.missing_tools.join(', ')
+                })}
+          </Text>
+        </Flex>
+        <Button
+          type='primary'
+          danger
+          size='small'
+          onClick={() => {
+            // Navigate to settings page using app navigation
+            setActiveTab('settings')
+          }}
+        >
+          {t('mcp_server.tool_status.go_to_settings')}
+        </Button>
+      </Flex>
+    )
+  }
+
   return (
     <>
       <Flex vertical gap='middle' style={{ height: '100%', overflowY: 'auto' }}>
+        {/* Tool Status Alert */}
+        {renderToolStatusAlert()}
+
         {/* Add Service Button */}
         <Flex justify='flex-end'>
           <Space>
