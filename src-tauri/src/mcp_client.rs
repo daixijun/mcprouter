@@ -6,6 +6,7 @@ use rmcp::model::Tool;
 use rmcp::service::ServiceExt;
 use rmcp::transport::child_process::TokioChildProcess;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
@@ -59,17 +60,29 @@ fn create_http_reqwest_client(
         .map_err(|e| McpError::ConnectionError(e.to_string()))
 }
 
-#[derive(Clone)]
 pub struct McpClientManager {
     connections: Arc<RwLock<HashMap<String, McpConnection>>>,
     connection_cache_ttl: std::time::Duration,
+    tool_manager: Arc<crate::tool_manager::ToolManager>,
+}
+
+impl Clone for McpClientManager {
+    fn clone(&self) -> Self {
+        Self {
+            connections: Arc::clone(&self.connections),
+            connection_cache_ttl: self.connection_cache_ttl,
+            tool_manager: Arc::clone(&self.tool_manager),
+        }
+    }
 }
 
 impl McpClientManager {
     pub fn new(_config: AppConfig) -> Self {
+        let tool_manager = Arc::new(crate::tool_manager::ToolManager::new());
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
             connection_cache_ttl: std::time::Duration::from_secs(300),
+            tool_manager,
         }
     }
 
@@ -142,7 +155,7 @@ impl McpClientManager {
         connection
     }
 
-    /// Create STDIO connection using rmcp 0.8.3
+    /// Create STDIO connection using managed tools
     async fn create_stdio_connection(
         &self,
         service_config: &McpServerConfig,
@@ -151,30 +164,98 @@ impl McpClientManager {
             McpError::InvalidConfiguration("STDIO service requires command".to_string())
         })?;
 
-        let args = service_config.args.as_ref().cloned().unwrap_or_default();
+        // Initialize tool manager and ensure tools are available
+        self.tool_manager.initialize().await?;
+        self.tool_manager.ensure_tools_for_command(command).await?;
+
+        // Get original args from config
+        let original_args = service_config.args.as_ref().cloned().unwrap_or_default();
+
+        // For npx commands, we need to combine command and args before conversion
+        let (converted_command, final_args) = {
+            let first_word = command.split_whitespace().next().unwrap_or("");
+            if first_word == "npx" {
+                // Combine command and args into a single command string
+                let full_command = if original_args.is_empty() {
+                    command.to_string()
+                } else {
+                    format!("{} {}", command, original_args.join(" "))
+                };
+
+                // Convert the full command
+                let converted = self.tool_manager.convert_command(&full_command);
+
+                // Parse converted command and filter arguments
+                let converted_parts: Vec<&str> = converted.split_whitespace().collect();
+                if converted_parts.len() >= 3 && converted_parts[0] == "bun" && converted_parts[1] == "x" {
+                    let mut filtered_args = Vec::new();
+                    for arg in converted_parts.iter() {
+                        let arg_lower = arg.to_lowercase();
+                        // Skip "bun" and -y/--yes, keep x and everything else
+                        if *arg != "bun" && arg_lower != "-y" && arg_lower != "--yes" {
+                            filtered_args.push(arg.to_string());
+                        } else if *arg != "bun" {
+                            tracing::debug!("Removed npx-specific argument '{}' when converting to bun x", arg);
+                        }
+                    }
+                    (converted, filtered_args)
+                } else {
+                    // If converted command doesn't start with "bun x", use converted as command and empty args
+                    (converted, vec![])
+                }
+            } else {
+                // Non-npx commands: use regular conversion and keep original args
+                (self.tool_manager.convert_command(command), original_args)
+            }
+        };
+
         let mut env_vars = service_config.env.clone().unwrap_or_default();
 
+        // *** 新增：加载 Shell 环境变量 ***
+        match crate::shell_environment::ShellEnvironment::load_environment().await {
+            Ok(shell_env) => {
+                // 合并环境变量（shell 环境优先）
+                for (key, value) in shell_env {
+                    env_vars.insert(key, value);
+                }
+                tracing::debug!("Loaded shell environment variables");
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load shell environment, using current process env: {}", e);
+                // 继续使用当前进程环境变量
+            }
+        }
+
+        // Get the executable path
+        let executable_path = {
+            let first_word = command.split_whitespace().next().unwrap_or("");
+            if first_word == "npx" && converted_command.starts_with("bun x") {
+                // For converted npx commands, use bun executable
+                self.tool_manager.get_executable_path("bun").await
+                    .unwrap_or_else(|_| {
+                        tracing::warn!("Tool not found in managed directory, falling back to system PATH");
+                        PathBuf::from("bun")
+                    })
+            } else {
+                // For other commands, use regular path resolution
+                self.tool_manager.get_executable_path(&converted_command).await
+                    .unwrap_or_else(|_| {
+                        tracing::warn!("Tool not found in managed directory, falling back to system PATH");
+                        PathBuf::from(converted_command.split_whitespace().next().unwrap_or(&converted_command))
+                    })
+            }
+        };
+
         // Load settings and apply environment configuration
-        let mut resolved_command = command.clone();
         if let Ok(config) = crate::config::AppConfig::load() {
             if let Some(settings) = config.settings {
-                // Check if we have a custom path for this command
-                let command_name = command.split_whitespace().next().unwrap_or(command);
-                if let Some(custom_path) = settings.command_paths.get(command_name) {
-                    tracing::debug!(
-                        "Using custom path for command '{}': {}",
-                        command_name,
-                        custom_path
-                    );
-                    resolved_command = custom_path.clone();
-                }
-
                 // Apply environment variables based on command type
-                if command.starts_with("uvx") || command.starts_with("uv") {
+                let first_word = command.split_whitespace().next().unwrap_or("");
+                if first_word == "uvx" || first_word == "uv" {
                     if let Some(uv_index_url) = settings.uv_index_url {
                         env_vars.insert("UV_INDEX_URL".to_string(), uv_index_url);
                     }
-                } else if command.starts_with("npx") || command.starts_with("npm") {
+                } else if first_word == "npx" || first_word == "npm" {
                     if let Some(npm_registry) = settings.npm_registry {
                         env_vars.insert("NPM_CONFIG_REGISTRY".to_string(), npm_registry);
                     }
@@ -182,11 +263,12 @@ impl McpClientManager {
             }
         }
 
-        tracing::debug!("Creating STDIO MCP service: {}", service_config.name);
+        tracing::debug!("Creating STDIO MCP service: {} (converted to: {}), args: {:?}",
+            service_config.name, converted_command, final_args);
 
         // Create transport
-        let mut command_builder = Command::new(resolved_command);
-        command_builder.args(&args);
+        let mut command_builder = Command::new(executable_path);
+        command_builder.args(&final_args);
         for (key, value) in env_vars {
             command_builder.env(key, value);
         }
