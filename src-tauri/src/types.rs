@@ -845,3 +845,82 @@ pub struct InitializationProgress {
     pub message: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
+
+// ============================================================================
+// 工具管理相关类型
+// ============================================================================
+
+/// 工具状态枚举
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolStatus {
+    Installed,
+    NotInstalled,
+    Installing,
+    Error(String),
+    Outdated,
+}
+
+impl serde::Serialize for ToolStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ToolStatus::Installed => serializer.serialize_str("Installed"),
+            ToolStatus::NotInstalled => serializer.serialize_str("NotInstalled"),
+            ToolStatus::Installing => serializer.serialize_str("Installing"),
+            ToolStatus::Error(msg) => serializer.serialize_str(&format!("Error({})", msg)),
+            ToolStatus::Outdated => serializer.serialize_str("Outdated"),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ToolStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "Installed" => Ok(ToolStatus::Installed),
+            "NotInstalled" => Ok(ToolStatus::NotInstalled),
+            "Installing" => Ok(ToolStatus::Installing),
+            "Outdated" => Ok(ToolStatus::Outdated),
+            _ if s.starts_with("Error(") => {
+                let msg = s.strip_prefix("Error(").unwrap_or("");
+                let msg = msg.strip_suffix(")").unwrap_or("");
+                Ok(ToolStatus::Error(msg.to_string()))
+            }
+            _ => Ok(ToolStatus::Error("Unknown status".to_string())),
+        }
+    }
+}
+
+/// 工具信息结构
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolInfo {
+    pub name: String,           // "Bun", "UV", "UVX"
+    pub full_name: String,      // "Bun JavaScript Runtime", "UV Package Manager", "UVX Package Executor"
+    pub path: String,           // Path to the tool executable
+    pub version: Option<String>, // Auto-detected version
+    pub status: ToolStatus,
+    pub last_check: Option<String>, // ISO timestamp
+    pub python_required: bool,  // Whether Python runtime is required
+}
+
+/// Python 运行时信息
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PythonRuntimeInfo {
+    pub available: bool,
+    pub version: Option<String>,
+}
+
+/// 工具启动状态
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolStartupStatus {
+    pub bun_installed: bool,
+    pub uv_installed: bool,
+    pub uvx_installed: bool,
+    pub python_available: bool,
+    pub missing_tools: Vec<String>,
+}

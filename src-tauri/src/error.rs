@@ -82,6 +82,21 @@ pub enum McpError {
     #[error("Tool error: {0}")]
     ToolError(String),
 
+    #[error("Tool not found: {0}")]
+    ToolNotFound(String),
+
+    #[error("Download error: {0}")]
+    DownloadError(String),
+
+    #[error("Invalid tool: {0}")]
+    InvalidTool(String),
+
+    #[error("Unsupported platform: {0}")]
+    UnsupportedPlatform(String),
+
+    #[error("Runtime error: {0}")]
+    RuntimeError(String),
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
@@ -99,6 +114,9 @@ pub enum McpError {
 
     #[error("Database error: {0}")]
     DatabaseError(String),
+
+    #[error("Shell environment error: {0}")]
+    ShellError(String),
 }
 
 // SQLx support removed during migration to config files
