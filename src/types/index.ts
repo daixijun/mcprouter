@@ -191,7 +191,6 @@ export interface AppConfig {
     }
     uvIndexUrl?: string
     npmRegistry?: string
-    commandPaths?: Record<string, string>
   }
 }
 
@@ -229,7 +228,6 @@ export interface SystemSettings {
     }
     uv_index_url?: string
     npm_registry?: string
-    command_paths?: Record<string, string>
   }
 }
 
@@ -357,4 +355,39 @@ export interface ValidationResult {
   valid: boolean
   token_info?: Token
   message: string
+}
+
+// Tool Management Types
+export interface ToolInfo {
+  name: string           // "Bun", "UV", "UVX"
+  full_name: string      // "Bun JavaScript Runtime", "UV Package Manager", "UVX Package Executor"
+  path: string           // Path to the tool executable
+  version?: string       // Auto-detected version
+  status: ToolStatus
+  last_check?: string    // ISO timestamp
+  python_required: boolean  // Whether Python runtime is required
+}
+
+export type ToolStatus = "Installed" | "NotInstalled" | "Installing" | "Error" | "Outdated"
+
+export const ToolStatus = {
+  Installed: "Installed" as const,
+  NotInstalled: "NotInstalled" as const,
+  Installing: "Installing" as const,
+  Error: "Error" as const,
+  Outdated: "Outdated" as const,
+}
+
+export interface PythonRuntimeInfo {
+  available: boolean
+  version?: string
+}
+
+// Tool Startup Status
+export interface ToolStartupStatus {
+  bun_installed: boolean
+  uv_installed: boolean
+  uvx_installed: boolean
+  python_available: boolean
+  missing_tools: string[]
 }
