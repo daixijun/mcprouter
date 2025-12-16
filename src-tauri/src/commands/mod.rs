@@ -8,6 +8,7 @@ pub mod permission_management;
 pub mod settings;
 pub mod token_management;
 pub mod tool;
+pub mod tool_manager;
 
 // Re-export all command functions
 // API Key commands removed
@@ -21,3 +22,4 @@ pub use permission_management::*;
 pub use settings::*;
 pub use token_management::*;
 pub use tool::*;
+pub use tool_manager::*;

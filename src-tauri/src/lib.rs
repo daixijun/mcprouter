@@ -6,8 +6,10 @@ pub mod error;
 pub mod marketplace;
 pub mod mcp_client;
 pub mod mcp_manager;
+pub mod shell_environment;
 pub mod storage;
 pub mod token_manager;
+pub mod tool_manager;
 pub mod types;
 
 // SeaORM 实体模块
@@ -640,6 +642,9 @@ pub async fn run() {
             // Add AGGREGATOR to Tauri app state for permission management
             app.manage(AGGREGATOR.clone());
 
+            // Add ToolManager to Tauri app state
+            app.manage(commands::tool_manager::ToolManagerState::new());
+
             // Ensure tray visibility based on config at startup
             let tray_enabled_start = config
                 .settings
@@ -756,6 +761,13 @@ pub async fn run() {
             update_token_permission,
             // Permission Management Commands
             list_available_permissions,
+            // Tool Manager Commands
+            get_tools_info,
+            get_tool_info,
+            install_all_tools,
+            install_tool,
+            check_python_runtime,
+            get_tool_startup_status,
             // Language Management Commands (temporarily disabled)
         ])
         .run(tauri::generate_context!())
