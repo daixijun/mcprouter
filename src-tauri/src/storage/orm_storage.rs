@@ -7,7 +7,7 @@ use crate::storage::StorageError;
 use crate::types::{McpServerConfig, ServiceTransport, Token};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, Set, Statement, TransactionTrait,
+    QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use sea_orm_migration::MigratorTrait;
 use tracing::info;
@@ -42,22 +42,12 @@ impl Storage {
         match crate::migration::Migrator::up(&db, None).await {
             Ok(_) => {
                 tracing::info!("Database migrations completed successfully in Storage::new()");
-            },
+            }
             Err(e) => {
-                let error_msg = e.to_string();
-
-                if error_msg.contains("index") && error_msg.contains("already exists") {
-                    tracing::warn!("Migration index conflict detected: {}. Continuing...", error_msg);
-
-                    if let Err(verify_err) = verify_database_schema(&db).await {
-                        return Err(StorageError::Database(format!(
-                            "Migration failed and schema verification failed: {}\nVerification error: {}",
-                            error_msg, verify_err
-                        )));
-                    }
-                } else {
-                    return Err(StorageError::Database(format!("Failed to run migrations: {}", e)));
-                }
+                return Err(StorageError::Database(format!(
+                    "Failed to run migrations: {}",
+                    e
+                )));
             }
         }
 
@@ -94,10 +84,6 @@ impl Storage {
         Ok(())
     }
 
-    // ============================================================================
-    // 基础 CRUD 操作（简化版）
-    // ============================================================================
-
     /// 获取所有 MCP 服务器
     pub async fn list_mcp_servers(&self) -> Result<Vec<mcp_server::Model>, StorageError> {
         let servers = McpServer::find()
@@ -125,10 +111,18 @@ impl Storage {
         Ok(server)
     }
 
-    /// 添加 MCP 服务器
+    /// 添加 MCP 服务
     pub async fn add_mcp_server(&self, config: &McpServerConfig) -> Result<String, StorageError> {
         let server_id = Uuid::now_v7().to_string();
         let now = chrono::Utc::now();
+
+        // 第一步：预先检查是否已存在（避免插入时抛出唯一约束错误）
+        if let Some(_existing) = self.get_mcp_server(&config.name).await? {
+            return Err(StorageError::AlreadyExists(format!(
+                "MCP 服务 '{}' 已存在",
+                config.name
+            )));
+        }
 
         let server_model = mcp_server::ActiveModel {
             id: Set(server_id.clone()),
@@ -154,15 +148,27 @@ impl Storage {
             updated_at: Set(now.into()),
         };
 
-        let result = server_model.insert(&self.db).await.map_err(|e| {
-            if e.to_string().contains("UNIQUE constraint failed") {
-                StorageError::AlreadyExists(format!("MCP 服务器 '{}' already exists", config.name))
-            } else {
-                StorageError::Database(format!("Failed to add: {}", e))
+        // 执行插入操作
+        let result = match server_model.insert(&self.db).await {
+            Ok(r) => {
+                info!("Successfully added MCP server: {}", config.name);
+                r
             }
-        })?;
+            Err(e) => {
+                let error_str = e.to_string();
+                // 其他所有错误
+                tracing::error!(
+                    target: "orm_storage",
+                    "add_mcp_server failed for '{}': {}",
+                    config.name, error_str
+                );
+                return Err(StorageError::Database(format!(
+                    "Failed to add: {}",
+                    error_str
+                )));
+            }
+        };
 
-        info!("Successfully added MCP server: {}", config.name);
         Ok(result.id)
     }
 
@@ -326,7 +332,9 @@ impl Storage {
             .filter(crate::entities::mcp_tool::Column::ServerId.eq(server_id))
             .exec(&txn)
             .await
-            .map_err(|e| StorageError::Database(format!("Failed to delete existing tools: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Database(format!("Failed to delete existing tools: {}", e))
+            })?;
 
         // Then insert the new tools using insert_many to avoid RecordNotFound errors
         if !tools.is_empty() {
@@ -359,14 +367,18 @@ impl Storage {
             .filter(crate::entities::mcp_resource::Column::ServerId.eq(server_id))
             .exec(&txn)
             .await
-            .map_err(|e| StorageError::Database(format!("Failed to delete existing resources: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Database(format!("Failed to delete existing resources: {}", e))
+            })?;
 
         // Then insert the new resources using insert_many to avoid RecordNotFound errors
         if !resources.is_empty() {
             crate::entities::mcp_resource::Entity::insert_many(resources)
                 .exec(&txn)
                 .await
-                .map_err(|e| StorageError::Database(format!("Failed to insert resources: {}", e)))?;
+                .map_err(|e| {
+                    StorageError::Database(format!("Failed to insert resources: {}", e))
+                })?;
         }
 
         txn.commit()
@@ -392,7 +404,9 @@ impl Storage {
             .filter(crate::entities::mcp_prompt::Column::ServerId.eq(server_id))
             .exec(&txn)
             .await
-            .map_err(|e| StorageError::Database(format!("Failed to delete existing prompts: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Database(format!("Failed to delete existing prompts: {}", e))
+            })?;
 
         // Then insert the new prompts using insert_many to avoid RecordNotFound errors
         if !prompts.is_empty() {
@@ -967,42 +981,3 @@ impl Storage {
         })
     }
 }
-
-/// 验证数据库模式是否可用
-async fn verify_database_schema(db: &DatabaseConnection) -> Result<(), String> {
-    // List of tables we expect to exist
-    let expected_tables = vec![
-        "tokens",
-        "mcp_servers",
-        "mcp_server_tools",
-        "mcp_server_resources",
-        "mcp_server_prompts",
-        "permissions",
-    ];
-
-    // Check each table exists
-    for table_name in expected_tables {
-        let result = db.query_one(Statement::from_string(
-            sea_orm::DatabaseBackend::Sqlite,
-            format!("SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", table_name)
-        )).await.map_err(|e| format!("Failed to check table {}: {}", table_name, e))?;
-
-        if result.is_none() {
-            return Err(format!("Required table '{}' does not exist", table_name));
-        }
-    }
-
-    // Check that we can perform basic queries
-    let test_query = db.query_all(Statement::from_string(
-        sea_orm::DatabaseBackend::Sqlite,
-        "SELECT COUNT(*) as count FROM tokens".to_string()
-    )).await.map_err(|e| format!("Failed to query tokens table: {}", e))?;
-
-    if test_query.is_empty() {
-        return Err("Cannot query tokens table".to_string());
-    }
-
-    tracing::info!("Database schema verification passed in Storage");
-    Ok(())
-}
-

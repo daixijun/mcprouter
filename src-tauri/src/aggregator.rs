@@ -437,11 +437,56 @@ impl McpAggregator {
         let ttl = self.mcp_server_manager.get_tools_cache_ttl_seconds();
         let updated_count: usize = entries.iter().map(|e| e.0.len() + e.1.len()).sum();
         let latest = std::time::SystemTime::now();
+
+        // Get connected servers count
+        let servers = self
+            .mcp_server_manager
+            .list_servers()
+            .await
+            .unwrap_or_default();
+        let connected_servers = servers.iter().filter(|s| s.status == "connected").count();
+        let total_servers = servers.len();
+
         serde_json::json!({
             "status": "running",
             "message": "Aggregator initialized",
+            "server_stats": { "total": total_servers, "connected": connected_servers },
             "tool_cache": { "enabled": true, "entries": total, "ttl_seconds": ttl, "tools_total": updated_count, "last_updated": latest.duration_since(std::time::UNIX_EPOCH).ok().map(|d| format!("{}", d.as_secs())) }
         })
+    }
+
+    /// Handle service connection status changes
+    pub async fn handle_service_status_change(&self, service_id: &str, is_connected: bool) {
+        tracing::info!(
+            "Service '{}' connection status changed to: {}",
+            service_id,
+            if is_connected {
+                "connected"
+            } else {
+                "disconnected"
+            }
+        );
+
+        // If service connected, refresh its tools/resources/prompts
+        if is_connected {
+            tracing::info!(
+                "Refreshing tools/resources/prompts for service '{}'",
+                service_id
+            );
+
+            // Refresh can be done asynchronously in background
+            let manager = self.mcp_server_manager.clone();
+            let service_id_clone = service_id.to_string();
+            tokio::spawn(async move {
+                if let Err(e) = manager.sync_server_manifests(&service_id_clone).await {
+                    tracing::warn!(
+                        "Failed to refresh manifests for service '{}': {}",
+                        service_id_clone,
+                        e
+                    );
+                }
+            });
+        }
     }
 
     /// 根据权限过滤工具列表
@@ -965,6 +1010,27 @@ impl ServerHandler for McpAggregator {
             original_name
         );
 
+        // Check if the server is connected first
+        let (connection_status, error_message) = self
+            .mcp_client_manager
+            .get_connection_status(&server_name)
+            .await;
+        if connection_status != "connected" {
+            let error_msg = format!(
+                "Server '{}' is not available (status: {}). {}",
+                server_name,
+                connection_status,
+                error_message
+                    .unwrap_or("Please check the server configuration and status.".to_string())
+            );
+            tracing::warn!("{} while calling tool '{}'", error_msg, original_name);
+            return Err(RmcpErrorData::new(
+                ErrorCode(503), // Service Unavailable
+                error_msg,
+                None,
+            ));
+        }
+
         // Use the MCP client manager to call the tool
         let arguments = request.arguments.map(|args| args.into_iter().collect());
         match self
@@ -987,8 +1053,15 @@ impl ServerHandler for McpAggregator {
                     server_name,
                     e
                 );
+                let error_code = if e.to_string().contains("Service not found") {
+                    ErrorCode(404)
+                } else if e.to_string().contains("Service not connected") {
+                    ErrorCode(503)
+                } else {
+                    ErrorCode(500)
+                };
                 Err(RmcpErrorData::new(
-                    ErrorCode(500),
+                    error_code,
                     format!("Failed to call tool: {}", e),
                     None,
                 ))
@@ -1149,6 +1222,27 @@ impl ServerHandler for McpAggregator {
             original_name
         );
 
+        // Check if the server is connected first
+        let (connection_status, error_message) = self
+            .mcp_client_manager
+            .get_connection_status(&server_name)
+            .await;
+        if connection_status != "connected" {
+            let error_msg = format!(
+                "Server '{}' is not available (status: {}). {}",
+                server_name,
+                connection_status,
+                error_message
+                    .unwrap_or("Please check the server configuration and status.".to_string())
+            );
+            tracing::warn!("{} while getting prompt '{}'", error_msg, original_name);
+            return Err(RmcpErrorData::new(
+                ErrorCode(503), // Service Unavailable
+                error_msg,
+                None,
+            ));
+        }
+
         // Use the MCP client manager to get the prompt
         let arguments = request.arguments.map(|args| {
             args.into_iter()
@@ -1191,8 +1285,15 @@ impl ServerHandler for McpAggregator {
                     server_name,
                     e
                 );
+                let error_code = if e.to_string().contains("Service not found") {
+                    ErrorCode(404)
+                } else if e.to_string().contains("Service not connected") {
+                    ErrorCode(503)
+                } else {
+                    ErrorCode(500)
+                };
                 Err(RmcpErrorData::new(
-                    ErrorCode(500),
+                    error_code,
                     format!("Failed to get prompt: {}", e),
                     None,
                 ))
@@ -1355,6 +1456,27 @@ impl ServerHandler for McpAggregator {
             original_uri
         );
 
+        // Check if the server is connected first
+        let (connection_status, error_message) = self
+            .mcp_client_manager
+            .get_connection_status(&server_name)
+            .await;
+        if connection_status != "connected" {
+            let error_msg = format!(
+                "Server '{}' is not available (status: {}). {}",
+                server_name,
+                connection_status,
+                error_message
+                    .unwrap_or("Please check the server configuration and status.".to_string())
+            );
+            tracing::warn!("{} while reading resource '{}'", error_msg, original_uri);
+            return Err(RmcpErrorData::new(
+                ErrorCode(503), // Service Unavailable
+                error_msg,
+                None,
+            ));
+        }
+
         // Use the MCP client manager to read the resource
         match self
             .mcp_client_manager
@@ -1376,8 +1498,15 @@ impl ServerHandler for McpAggregator {
                     server_name,
                     e
                 );
+                let error_code = if e.to_string().contains("Service not found") {
+                    ErrorCode(404)
+                } else if e.to_string().contains("Service not connected") {
+                    ErrorCode(503)
+                } else {
+                    ErrorCode(500)
+                };
                 Err(RmcpErrorData::new(
-                    ErrorCode(500),
+                    error_code,
                     format!("Failed to read resource: {}", e),
                     None,
                 ))

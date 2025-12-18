@@ -155,8 +155,18 @@ pub async fn import_mcp_servers_config(
                             added_servers.push(service_name.clone());
                         },
                         Err(e) => {
-                            tracing::error!("Failed to import service '{}': {}", service_name, e);
-                            // Continue with other services even if one fails
+                            // 区分不同类型的错误
+                            let error_msg = e.to_string();
+                            if error_msg.contains("已存在")
+                                || error_msg.contains("already exists")
+                                || error_msg.contains("UNIQUE constraint") {
+                                // 服务已存在，视为成功导入，避免误报
+                                tracing::warn!("Service '{}' already exists in database, treating as imported", service_name);
+                                added_servers.push(service_name.clone());
+                            } else {
+                                tracing::error!("Failed to import service '{}': {}", service_name, e);
+                                // 继续处理其他服务
+                            }
                         }
                     }
                 }

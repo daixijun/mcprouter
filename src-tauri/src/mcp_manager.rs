@@ -344,7 +344,6 @@ impl McpServerManager {
         Ok(())
     }
 
-    
     /// List available permissions for a given resource type
     pub async fn list_available_permissions(&self, resource_type: &str) -> Result<Vec<String>> {
         // Get all enabled servers
@@ -616,7 +615,11 @@ impl McpServerManager {
                         description: resource.description,
                         mime_type: resource.mime_type,
                         enabled: resource.enabled,
-                        meta: if meta == serde_json::Value::Object(serde_json::Map::new()) { None } else { Some(meta) },
+                        meta: if meta == serde_json::Value::Object(serde_json::Map::new()) {
+                            None
+                        } else {
+                            Some(meta)
+                        },
                         created_at: resource.created_at.to_string(),
                         updated_at: resource.updated_at.to_string(),
                     }
@@ -677,10 +680,32 @@ impl McpServerManager {
                         name: tool.name,
                         description: tool.description.unwrap_or_default(),
                         enabled: tool.enabled,
-                        input_schema: if input_schema == serde_json::Value::Object(serde_json::Map::new()) { None } else { Some(input_schema) },
-                        output_schema: if output_schema == serde_json::Value::Object(serde_json::Map::new()) { None } else { Some(output_schema) },
-                        annotations: if annotations == serde_json::Value::Object(serde_json::Map::new()) { None } else { Some(annotations) },
-                        meta: if meta == serde_json::Value::Object(serde_json::Map::new()) { None } else { Some(meta) },
+                        input_schema: if input_schema
+                            == serde_json::Value::Object(serde_json::Map::new())
+                        {
+                            None
+                        } else {
+                            Some(input_schema)
+                        },
+                        output_schema: if output_schema
+                            == serde_json::Value::Object(serde_json::Map::new())
+                        {
+                            None
+                        } else {
+                            Some(output_schema)
+                        },
+                        annotations: if annotations
+                            == serde_json::Value::Object(serde_json::Map::new())
+                        {
+                            None
+                        } else {
+                            Some(annotations)
+                        },
+                        meta: if meta == serde_json::Value::Object(serde_json::Map::new()) {
+                            None
+                        } else {
+                            Some(meta)
+                        },
                         created_at: tool.created_at.to_string(),
                         updated_at: tool.updated_at.to_string(),
                     }
@@ -735,11 +760,21 @@ impl McpServerManager {
                             description: arg.description,
                             required: arg.required,
                             argument_type: match arg.argument_type {
-                                crate::entities::mcp_prompt::PromptArgumentType::String => "string".to_string(),
-                                crate::entities::mcp_prompt::PromptArgumentType::Number => "number".to_string(),
-                                crate::entities::mcp_prompt::PromptArgumentType::Boolean => "boolean".to_string(),
-                                crate::entities::mcp_prompt::PromptArgumentType::Array => "array".to_string(),
-                                crate::entities::mcp_prompt::PromptArgumentType::Object => "object".to_string(),
+                                crate::entities::mcp_prompt::PromptArgumentType::String => {
+                                    "string".to_string()
+                                }
+                                crate::entities::mcp_prompt::PromptArgumentType::Number => {
+                                    "number".to_string()
+                                }
+                                crate::entities::mcp_prompt::PromptArgumentType::Boolean => {
+                                    "boolean".to_string()
+                                }
+                                crate::entities::mcp_prompt::PromptArgumentType::Array => {
+                                    "array".to_string()
+                                }
+                                crate::entities::mcp_prompt::PromptArgumentType::Object => {
+                                    "object".to_string()
+                                }
                             },
                         })
                         .collect();
@@ -749,8 +784,16 @@ impl McpServerManager {
                         name: prompt_name,
                         description: prompt.description,
                         enabled: prompt.enabled,
-                        arguments: if mcp_arguments.is_empty() { None } else { Some(mcp_arguments) },
-                        meta: if meta == serde_json::Value::Object(serde_json::Map::new()) { None } else { Some(meta) },
+                        arguments: if mcp_arguments.is_empty() {
+                            None
+                        } else {
+                            Some(mcp_arguments)
+                        },
+                        meta: if meta == serde_json::Value::Object(serde_json::Map::new()) {
+                            None
+                        } else {
+                            Some(meta)
+                        },
                         created_at: prompt.created_at.to_string(),
                         updated_at: prompt.updated_at.to_string(),
                     }
@@ -790,7 +833,6 @@ impl McpServerManager {
         }
     }
 
-    
     /// Update server with proper connection management
     pub async fn update_server(&self, name: &str, config: &McpServerConfig) -> Result<()> {
         // 获取旧配置用于比较
@@ -803,12 +845,20 @@ impl McpServerManager {
         // 断开旧连接（如果需要重连）
         if should_reconnect {
             if let Err(e) = crate::MCP_CLIENT_MANAGER.disconnect_server(name).await {
-                tracing::warn!("Failed to disconnect server '{}' before update: {}", name, e);
+                tracing::warn!(
+                    "Failed to disconnect server '{}' before update: {}",
+                    name,
+                    e
+                );
             }
 
             // 清理旧缓存
             if let Err(e) = self.clear_server_cache(name).await {
-                tracing::warn!("Failed to clear cache for server '{}' during update: {}", name, e);
+                tracing::warn!(
+                    "Failed to clear cache for server '{}' during update: {}",
+                    name,
+                    e
+                );
             }
         }
 
@@ -823,23 +873,43 @@ impl McpServerManager {
             let manager = self.clone();
 
             tokio::spawn(async move {
-                tracing::info!("Attempting to reconnect to updated server '{}'", server_name);
-                match crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, true).await {
+                tracing::info!(
+                    "Attempting to reconnect to updated server '{}'",
+                    server_name
+                );
+                match crate::MCP_CLIENT_MANAGER
+                    .ensure_connection(&server_config, true)
+                    .await
+                {
                     Ok(_) => {
-                        tracing::info!("Successfully reconnected to updated server '{}'", server_name);
+                        tracing::info!(
+                            "Successfully reconnected to updated server '{}'",
+                            server_name
+                        );
 
                         // 连接成功后同步资源
                         match manager.sync_server_manifests(&server_name).await {
                             Ok(_) => {
-                                tracing::info!("Successfully synced manifests for updated server '{}'", server_name);
+                                tracing::info!(
+                                    "Successfully synced manifests for updated server '{}'",
+                                    server_name
+                                );
                             }
                             Err(e) => {
-                                tracing::error!("Failed to sync manifests for updated server '{}': {}", server_name, e);
+                                tracing::error!(
+                                    "Failed to sync manifests for updated server '{}': {}",
+                                    server_name,
+                                    e
+                                );
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Failed to reconnect to updated server '{}': {}", server_name, e);
+                        tracing::error!(
+                            "Failed to reconnect to updated server '{}': {}",
+                            server_name,
+                            e
+                        );
                     }
                 }
             });
@@ -849,9 +919,15 @@ impl McpServerManager {
     }
 
     /// 判断是否需要重新连接
-    async fn should_reconnect(&self, old_server: &crate::entities::mcp_server::Model, new_config: &McpServerConfig) -> bool {
+    async fn should_reconnect(
+        &self,
+        old_server: &crate::entities::mcp_server::Model,
+        new_config: &McpServerConfig,
+    ) -> bool {
         // 检查关键配置是否改变
-        let transport_changed = old_server.server_type.parse::<crate::types::ServiceTransport>()
+        let transport_changed = old_server
+            .server_type
+            .parse::<crate::types::ServiceTransport>()
             .map(|t| t != new_config.transport)
             .unwrap_or(true); // 解析失败，认为有变化
 
@@ -861,7 +937,9 @@ impl McpServerManager {
 
         // 检查 args 是否改变
         let args_changed = {
-            let old_args = old_server.args.as_ref()
+            let old_args = old_server
+                .args
+                .as_ref()
                 .and_then(|a| serde_json::from_str::<Vec<String>>(a).ok())
                 .unwrap_or_default();
             old_args != new_config.args.as_ref().cloned().unwrap_or_default()
@@ -956,10 +1034,28 @@ impl McpServerManager {
     }
 
     /// Auto connect enabled services (real implementation)
+    ///
+    /// 注意：此方法会忽略 list_servers 过程中的错误，只记录日志
+    /// 避免因为一个服务器的连接问题导致整个导入流程失败
     pub async fn auto_connect_enabled_services(&self) -> Result<()> {
-        let servers = self.list_servers().await?;
+        // 使用更宽容的方式获取服务器列表，避免因单个服务器查询失败导致所有操作终止
+        let servers = match self.list_servers().await {
+            Ok(servers) => servers,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to list servers for auto-connect: {}. \
+                    This might be due to newly inserted data not fully committed. \
+                    Skipping auto-connect for now.",
+                    e
+                );
+                // 不返回错误，因为数据已成功写入，连接可以稍后手动触发
+                return Ok(());
+            }
+        };
+
         let total_servers = servers.len();
         let mut connected_count = 0;
+        let mut failed_count = 0;
 
         for server in &servers {
             if server.enabled && server.status == "disconnected" {
@@ -1029,15 +1125,33 @@ impl McpServerManager {
                             connected_count += 1;
 
                             // After successful connection, sync tools/resources/prompts
-                            if let Err(e) = self.sync_server_manifests(&server.name).await {
-                                tracing::error!("Failed to sync manifests for server '{}': {}", server.name, e);
-                            }
+                            // 使用非阻塞方式，避免同步阶段失败影响整体
+                            let server_name = server.name.clone();
+                            let manager = self.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = manager.sync_server_manifests(&server_name).await {
+                                    tracing::warn!(
+                                        target: "auto_connect",
+                                        "Background sync failed for '{}': {} (will retry later)",
+                                        server_name, e
+                                    );
+                                }
+                            });
                         }
                         Err(e) => {
-                            tracing::error!("Failed to connect to server '{}': {}", server.name, e);
+                            failed_count += 1;
+                            tracing::warn!(
+                                target: "auto_connect",
+                                "Failed to connect to server '{}' (attempt {}): {}",
+                                server.name,
+                                failed_count,
+                                e
+                            );
+                            // 继续处理其他服务器，一个失败不应阻止其他连接
                         }
                     }
                 } else {
+                    failed_count += 1;
                     tracing::warn!(
                         "Server '{}' configuration not found for connection",
                         server.name
@@ -1046,11 +1160,20 @@ impl McpServerManager {
             }
         }
 
-        tracing::info!(
-            "Auto-connect completed. Connected to {} out of {} enabled services",
-            connected_count,
-            total_servers
-        );
+        if failed_count > 0 {
+            tracing::warn!(
+                "Auto-connect completed: {} connected, {} failed out of {} total servers",
+                connected_count,
+                failed_count,
+                total_servers
+            );
+        } else {
+            tracing::info!(
+                "Auto-connect completed. Connected to {} out of {} enabled services",
+                connected_count,
+                total_servers
+            );
+        }
         Ok(())
     }
 
@@ -1059,46 +1182,87 @@ impl McpServerManager {
         tracing::info!("Syncing manifests for server: {}", server_name);
 
         // Get server info from database to find server_id
-        let raw_server = self.get_raw_server_by_name(server_name).await?
-            .ok_or_else(|| crate::error::McpError::NotFound(format!("Server '{}' not found", server_name)))?;
+        let raw_server = self
+            .get_raw_server_by_name(server_name)
+            .await?
+            .ok_or_else(|| {
+                crate::error::McpError::NotFound(format!("Server '{}' not found", server_name))
+            })?;
 
         // Get tools from MCP client and save to database
         match crate::MCP_CLIENT_MANAGER.list_tools(server_name).await {
             Ok(tools) => {
-                tracing::info!("Retrieved {} tools from server '{}'", tools.len(), server_name);
+                tracing::info!(
+                    "Retrieved {} tools from server '{}'",
+                    tools.len(),
+                    server_name
+                );
 
                 // Convert tools to database models
-                let tool_models: Vec<crate::entities::mcp_tool::ActiveModel> = tools.into_iter()
-                    .map(|tool| {
-                        crate::entities::mcp_tool::ActiveModel {
-                            id: Set(uuid::Uuid::now_v7().to_string()),
-                            server_id: Set(raw_server.id.clone()),
-                            name: Set(tool.name.to_string()),
-                            description: Set(tool.description.map(|d| d.to_string())),
-                            input_schema: Set(serde_json::to_string(&tool.input_schema).ok()),
-                            output_schema: Set(serde_json::to_string(&tool.output_schema).ok()),
-                            annotations: Set(serde_json::to_value(&tool.annotations).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
-                            meta: Set(serde_json::to_value(&tool.meta).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
-                            enabled: Set(true),
-                            created_at: Set(chrono::Utc::now().into()),
-                            updated_at: Set(chrono::Utc::now().into()),
-                            ..Default::default()
-                        }
+                let tool_models: Vec<crate::entities::mcp_tool::ActiveModel> = tools
+                    .into_iter()
+                    .map(|tool| crate::entities::mcp_tool::ActiveModel {
+                        id: Set(uuid::Uuid::now_v7().to_string()),
+                        server_id: Set(raw_server.id.clone()),
+                        name: Set(tool.name.to_string()),
+                        description: Set(tool.description.map(|d| d.to_string())),
+                        input_schema: Set(serde_json::to_string(&tool.input_schema).ok()),
+                        output_schema: Set(serde_json::to_string(&tool.output_schema).ok()),
+                        annotations: Set(serde_json::to_value(&tool.annotations)
+                            .ok()
+                            .and_then(|v| {
+                                if v.is_null() {
+                                    None
+                                } else {
+                                    Some(serde_json::to_string(&v).ok())
+                                }
+                            })
+                            .flatten()),
+                        meta: Set(serde_json::to_value(&tool.meta)
+                            .ok()
+                            .and_then(|v| {
+                                if v.is_null() {
+                                    None
+                                } else {
+                                    Some(serde_json::to_string(&v).ok())
+                                }
+                            })
+                            .flatten()),
+                        enabled: Set(true),
+                        created_at: Set(chrono::Utc::now().into()),
+                        updated_at: Set(chrono::Utc::now().into()),
+                        ..Default::default()
                     })
                     .collect();
 
                 let tool_count = tool_models.len();
-                if let Err(e) = self.orm_storage.upsert_server_tools(&raw_server.id, tool_models).await {
+                if let Err(e) = self
+                    .orm_storage
+                    .upsert_server_tools(&raw_server.id, tool_models)
+                    .await
+                {
                     tracing::error!("Failed to save tools for server '{}': {}", server_name, e);
                 } else {
-                    tracing::info!("Successfully saved {} tools for server '{}'", tool_count, server_name);
+                    tracing::info!(
+                        "Successfully saved {} tools for server '{}'",
+                        tool_count,
+                        server_name
+                    );
                 }
             }
             Err(e) => {
                 if should_ignore_mcp_error(&e) {
-                    tracing::debug!("Server '{}' does not support tools method (ignoring): {}", server_name, e);
+                    tracing::debug!(
+                        "Server '{}' does not support tools method (ignoring): {}",
+                        server_name,
+                        e
+                    );
                 } else {
-                    tracing::error!("Failed to retrieve tools from server '{}': {}", server_name, e);
+                    tracing::error!(
+                        "Failed to retrieve tools from server '{}': {}",
+                        server_name,
+                        e
+                    );
                 }
             }
         }
@@ -1106,39 +1270,71 @@ impl McpServerManager {
         // Get resources from MCP client and save to database
         match crate::MCP_CLIENT_MANAGER.list_resources(server_name).await {
             Ok(resources) => {
-                tracing::info!("Retrieved {} resources from server '{}'", resources.len(), server_name);
+                tracing::info!(
+                    "Retrieved {} resources from server '{}'",
+                    resources.len(),
+                    server_name
+                );
 
                 // Convert resources to database models
-                let resource_models: Vec<crate::entities::mcp_resource::ActiveModel> = resources.into_iter()
-                    .map(|resource| {
-                        crate::entities::mcp_resource::ActiveModel {
-                            id: Set(uuid::Uuid::now_v7().to_string()),
-                            server_id: Set(raw_server.id.clone()),
-                            name: Set(Some(resource.name.to_string())),
-                            description: Set(resource.description.clone()),
-                            uri: Set(resource.uri.clone()),
-                            mime_type: Set(resource.mime_type.clone()),
-                            meta: Set(serde_json::to_value(&resource.meta).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
-                            enabled: Set(true),
-                            created_at: Set(chrono::Utc::now().into()),
-                            updated_at: Set(chrono::Utc::now().into()),
-                            ..Default::default()
-                        }
+                let resource_models: Vec<crate::entities::mcp_resource::ActiveModel> = resources
+                    .into_iter()
+                    .map(|resource| crate::entities::mcp_resource::ActiveModel {
+                        id: Set(uuid::Uuid::now_v7().to_string()),
+                        server_id: Set(raw_server.id.clone()),
+                        name: Set(Some(resource.name.to_string())),
+                        description: Set(resource.description.clone()),
+                        uri: Set(resource.uri.clone()),
+                        mime_type: Set(resource.mime_type.clone()),
+                        meta: Set(serde_json::to_value(&resource.meta)
+                            .ok()
+                            .and_then(|v| {
+                                if v.is_null() {
+                                    None
+                                } else {
+                                    Some(serde_json::to_string(&v).ok())
+                                }
+                            })
+                            .flatten()),
+                        enabled: Set(true),
+                        created_at: Set(chrono::Utc::now().into()),
+                        updated_at: Set(chrono::Utc::now().into()),
+                        ..Default::default()
                     })
                     .collect();
 
                 let resource_count = resource_models.len();
-                if let Err(e) = self.orm_storage.upsert_server_resources(&raw_server.id, resource_models).await {
-                    tracing::error!("Failed to save resources for server '{}': {}", server_name, e);
+                if let Err(e) = self
+                    .orm_storage
+                    .upsert_server_resources(&raw_server.id, resource_models)
+                    .await
+                {
+                    tracing::error!(
+                        "Failed to save resources for server '{}': {}",
+                        server_name,
+                        e
+                    );
                 } else {
-                    tracing::info!("Successfully saved {} resources for server '{}'", resource_count, server_name);
+                    tracing::info!(
+                        "Successfully saved {} resources for server '{}'",
+                        resource_count,
+                        server_name
+                    );
                 }
             }
             Err(e) => {
                 if should_ignore_mcp_error(&e) {
-                    tracing::debug!("Server '{}' does not support resources method (ignoring): {}", server_name, e);
+                    tracing::debug!(
+                        "Server '{}' does not support resources method (ignoring): {}",
+                        server_name,
+                        e
+                    );
                 } else {
-                    tracing::error!("Failed to retrieve resources from server '{}': {}", server_name, e);
+                    tracing::error!(
+                        "Failed to retrieve resources from server '{}': {}",
+                        server_name,
+                        e
+                    );
                 }
             }
         }
@@ -1146,38 +1342,66 @@ impl McpServerManager {
         // Get prompts from MCP client and save to database
         match crate::MCP_CLIENT_MANAGER.list_prompts(server_name).await {
             Ok(prompts) => {
-                tracing::info!("Retrieved {} prompts from server '{}'", prompts.len(), server_name);
+                tracing::info!(
+                    "Retrieved {} prompts from server '{}'",
+                    prompts.len(),
+                    server_name
+                );
 
                 // Convert prompts to database models
-                let prompt_models: Vec<crate::entities::mcp_prompt::ActiveModel> = prompts.into_iter()
-                    .map(|prompt| {
-                        crate::entities::mcp_prompt::ActiveModel {
-                            id: Set(uuid::Uuid::now_v7().to_string()),
-                            server_id: Set(raw_server.id.clone()),
-                            name: Set(prompt.name.to_string()),
-                            description: Set(prompt.description),
-                            arguments: Set(serde_json::to_string(&prompt.arguments).ok()),
-                            meta: Set(serde_json::to_value(&prompt.meta).ok().and_then(|v| if v.is_null() { None } else { Some(serde_json::to_string(&v).ok()) }).flatten()),
-                            enabled: Set(true),
-                            created_at: Set(chrono::Utc::now().into()),
-                            updated_at: Set(chrono::Utc::now().into()),
-                            ..Default::default()
-                        }
+                let prompt_models: Vec<crate::entities::mcp_prompt::ActiveModel> = prompts
+                    .into_iter()
+                    .map(|prompt| crate::entities::mcp_prompt::ActiveModel {
+                        id: Set(uuid::Uuid::now_v7().to_string()),
+                        server_id: Set(raw_server.id.clone()),
+                        name: Set(prompt.name.to_string()),
+                        description: Set(prompt.description),
+                        arguments: Set(serde_json::to_string(&prompt.arguments).ok()),
+                        meta: Set(serde_json::to_value(&prompt.meta)
+                            .ok()
+                            .and_then(|v| {
+                                if v.is_null() {
+                                    None
+                                } else {
+                                    Some(serde_json::to_string(&v).ok())
+                                }
+                            })
+                            .flatten()),
+                        enabled: Set(true),
+                        created_at: Set(chrono::Utc::now().into()),
+                        updated_at: Set(chrono::Utc::now().into()),
+                        ..Default::default()
                     })
                     .collect();
 
                 let prompt_count = prompt_models.len();
-                if let Err(e) = self.orm_storage.upsert_server_prompts(&raw_server.id, prompt_models).await {
+                if let Err(e) = self
+                    .orm_storage
+                    .upsert_server_prompts(&raw_server.id, prompt_models)
+                    .await
+                {
                     tracing::error!("Failed to save prompts for server '{}': {}", server_name, e);
                 } else {
-                    tracing::info!("Successfully saved {} prompts for server '{}'", prompt_count, server_name);
+                    tracing::info!(
+                        "Successfully saved {} prompts for server '{}'",
+                        prompt_count,
+                        server_name
+                    );
                 }
             }
             Err(e) => {
                 if should_ignore_mcp_error(&e) {
-                    tracing::debug!("Server '{}' does not support prompts method (ignoring): {}", server_name, e);
+                    tracing::debug!(
+                        "Server '{}' does not support prompts method (ignoring): {}",
+                        server_name,
+                        e
+                    );
                 } else {
-                    tracing::error!("Failed to retrieve prompts from server '{}': {}", server_name, e);
+                    tracing::error!(
+                        "Failed to retrieve prompts from server '{}': {}",
+                        server_name,
+                        e
+                    );
                 }
             }
         }
@@ -1194,30 +1418,40 @@ impl McpServerManager {
         const CONNECTION_TIMEOUT: Duration = Duration::from_secs(15);
 
         let servers = self.orm_storage.list_mcp_servers().await?;
-        let enabled_servers: Vec<_> = servers
-            .iter()
-            .filter(|s| s.enabled)
-            .collect();
+        let enabled_servers: Vec<_> = servers.iter().filter(|s| s.enabled).collect();
 
         if enabled_servers.is_empty() {
             tracing::info!("No enabled servers to connect");
             return Ok(());
         }
 
-        tracing::info!("Starting batched connection to {} enabled servers", enabled_servers.len());
+        tracing::info!(
+            "Starting batched connection to {} enabled servers",
+            enabled_servers.len()
+        );
 
         let semaphore = Arc::new(Semaphore::new(BATCH_SIZE));
         let mut tasks = Vec::new();
-          let server_count = enabled_servers.len();
+        let server_count = enabled_servers.len();
 
         for server in enabled_servers {
             // 构建服务器配置
-            let transport = server.server_type.parse()
+            let transport = server
+                .server_type
+                .parse()
                 .inspect_err(|&e| {
-                    tracing::error!("Failed to parse transport type '{}' for server '{}': {}", server.server_type, server.name, e);
+                    tracing::error!(
+                        "Failed to parse transport type '{}' for server '{}': {}",
+                        server.server_type,
+                        server.name,
+                        e
+                    );
                 })
                 .unwrap_or_else(|_| {
-                    tracing::warn!("Using default transport type Stdio for server '{}' due to parse failure", server.name);
+                    tracing::warn!(
+                        "Using default transport type Stdio for server '{}' due to parse failure",
+                        server.name
+                    );
                     crate::types::ServiceTransport::Stdio
                 });
 
@@ -1260,14 +1494,20 @@ impl McpServerManager {
 
                 match tokio::time::timeout(
                     CONNECTION_TIMEOUT,
-                    crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, false)
-                ).await {
+                    crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, false),
+                )
+                .await
+                {
                     Ok(Ok(_)) => {
                         tracing::info!("[Batch] Successfully connected to server: {}", server_name);
                         // 连接成功，但不立即同步清单（留给后台任务）
                     }
                     Ok(Err(e)) => {
-                        tracing::warn!("[Batch] Failed to connect to server '{}': {}", server_name, e);
+                        tracing::warn!(
+                            "[Batch] Failed to connect to server '{}': {}",
+                            server_name,
+                            e
+                        );
                     }
                     Err(_) => {
                         tracing::warn!("[Batch] Connection timeout for server: {}", server_name);
@@ -1290,10 +1530,7 @@ impl McpServerManager {
     /// 此方法在后台异步同步所有已连接服务器的工具、资源和提示词
     pub async fn sync_all_manifests_background(&self) -> Result<()> {
         let servers = self.orm_storage.list_mcp_servers().await?;
-        let enabled_servers: Vec<_> = servers
-            .into_iter()
-            .filter(|s| s.enabled)
-            .collect();
+        let enabled_servers: Vec<_> = servers.into_iter().filter(|s| s.enabled).collect();
 
         if enabled_servers.is_empty() {
             return Ok(());
@@ -1304,21 +1541,36 @@ impl McpServerManager {
 
         let manager = self.clone();
         tokio::spawn(async move {
-            tracing::info!("Starting background manifest sync for {} servers", enabled_servers.len());
+            tracing::info!(
+                "Starting background manifest sync for {} servers",
+                enabled_servers.len()
+            );
 
             for server in enabled_servers {
                 // 检查服务器是否已连接
-                let (status, _) = crate::MCP_CLIENT_MANAGER.get_connection_status(&server.name).await;
+                let (status, _) = crate::MCP_CLIENT_MANAGER
+                    .get_connection_status(&server.name)
+                    .await;
                 if status == "connected" {
                     tracing::info!("[Background] Syncing manifests for server: {}", server.name);
 
                     if let Err(e) = manager.sync_server_manifests(&server.name).await {
-                        tracing::error!("[Background] Failed to sync manifests for server '{}': {}", server.name, e);
+                        tracing::error!(
+                            "[Background] Failed to sync manifests for server '{}': {}",
+                            server.name,
+                            e
+                        );
                     } else {
-                        tracing::info!("[Background] Successfully synced manifests for server: {}", server.name);
+                        tracing::info!(
+                            "[Background] Successfully synced manifests for server: {}",
+                            server.name
+                        );
                     }
                 } else {
-                    tracing::debug!("[Background] Skipping sync for disconnected server: {}", server.name);
+                    tracing::debug!(
+                        "[Background] Skipping sync for disconnected server: {}",
+                        server.name
+                    );
                 }
 
                 // 在同步之间添加小延迟，避免过度占用资源

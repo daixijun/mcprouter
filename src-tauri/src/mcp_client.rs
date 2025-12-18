@@ -187,7 +187,10 @@ impl McpClientManager {
 
                 // Parse converted command and filter arguments
                 let converted_parts: Vec<&str> = converted.split_whitespace().collect();
-                if converted_parts.len() >= 3 && converted_parts[0] == "bun" && converted_parts[1] == "x" {
+                if converted_parts.len() >= 3
+                    && converted_parts[0] == "bun"
+                    && converted_parts[1] == "x"
+                {
                     let mut filtered_args = Vec::new();
                     for arg in converted_parts.iter() {
                         let arg_lower = arg.to_lowercase();
@@ -195,7 +198,10 @@ impl McpClientManager {
                         if *arg != "bun" && arg_lower != "-y" && arg_lower != "--yes" {
                             filtered_args.push(arg.to_string());
                         } else if *arg != "bun" {
-                            tracing::debug!("Removed npx-specific argument '{}' when converting to bun x", arg);
+                            tracing::debug!(
+                                "Removed npx-specific argument '{}' when converting to bun x",
+                                arg
+                            );
                         }
                     }
                     (converted, filtered_args)
@@ -221,7 +227,10 @@ impl McpClientManager {
                 tracing::debug!("Loaded shell environment variables");
             }
             Err(e) => {
-                tracing::warn!("Failed to load shell environment, using current process env: {}", e);
+                tracing::warn!(
+                    "Failed to load shell environment, using current process env: {}",
+                    e
+                );
                 // 继续使用当前进程环境变量
             }
         }
@@ -231,17 +240,30 @@ impl McpClientManager {
             let first_word = command.split_whitespace().next().unwrap_or("");
             if first_word == "npx" && converted_command.starts_with("bun x") {
                 // For converted npx commands, use bun executable
-                self.tool_manager.get_executable_path("bun").await
+                self.tool_manager
+                    .get_executable_path("bun")
+                    .await
                     .unwrap_or_else(|_| {
-                        tracing::warn!("Tool not found in managed directory, falling back to system PATH");
+                        tracing::warn!(
+                            "Tool not found in managed directory, falling back to system PATH"
+                        );
                         PathBuf::from("bun")
                     })
             } else {
                 // For other commands, use regular path resolution
-                self.tool_manager.get_executable_path(&converted_command).await
+                self.tool_manager
+                    .get_executable_path(&converted_command)
+                    .await
                     .unwrap_or_else(|_| {
-                        tracing::warn!("Tool not found in managed directory, falling back to system PATH");
-                        PathBuf::from(converted_command.split_whitespace().next().unwrap_or(&converted_command))
+                        tracing::warn!(
+                            "Tool not found in managed directory, falling back to system PATH"
+                        );
+                        PathBuf::from(
+                            converted_command
+                                .split_whitespace()
+                                .next()
+                                .unwrap_or(&converted_command),
+                        )
                     })
             }
         };
@@ -263,8 +285,12 @@ impl McpClientManager {
             }
         }
 
-        tracing::debug!("Creating STDIO MCP service: {} (converted to: {}), args: {:?}",
-            service_config.name, converted_command, final_args);
+        tracing::debug!(
+            "Creating STDIO MCP service: {} (converted to: {}), args: {:?}",
+            service_config.name,
+            converted_command,
+            final_args
+        );
 
         // Create transport
         let mut command_builder = Command::new(executable_path);
