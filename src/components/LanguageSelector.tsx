@@ -23,7 +23,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   showLabel = false,
   placement = 'bottomLeft',
 }) => {
-  const { i18n, t } = useTranslation()
+  const { i18n } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { message } = AntdApp.useApp()
@@ -39,10 +39,10 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
       await i18n.changeLanguage(newLanguage)
       // Save language preference to backend
       await invoke('save_language_preference', { language: newLanguage })
-      message.success(t('common.language.changed_success'))
+      message.success(i18n.t('common.language.changed_success'))
       setDropdownOpen(false) // 成功后关闭
     } catch (error) {
-      message.error(t('common.language.change_failed'))
+      message.error(i18n.t('common.language.change_failed'))
       console.error('Language change failed:', error)
     } finally {
       setLoading(false)
