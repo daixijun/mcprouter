@@ -847,13 +847,18 @@ impl ServerHandler for McpAggregator {
         tracing::info!("=== List Tools Handler ===");
         tracing::info!("Request parameters: {:?}", request);
 
-        // For now, if authentication is disabled, return all tools
+        // If authentication is disabled, return all tools without pagination
         tracing::info!("Authentication enabled: {}", self.config.is_auth_enabled());
         if !self.config.is_auth_enabled() {
             tracing::info!("Authentication disabled, returning all tools");
-            // Direct data retrieval and pagination logic for tools when auth is disabled
+            // Direct data retrieval - return all tools when auth is disabled
             let tools = self.fetch_tools_from_database().await?;
-            return self.apply_pagination_tools(tools, request).await;
+            tracing::info!("Successfully listed {} tools (no pagination)", tools.len());
+            return Ok(ListToolsResult {
+                meta: None,
+                tools,
+                next_cursor: None,
+            });
         }
 
         // Create AuthContext from RequestContext
@@ -1076,12 +1081,20 @@ impl ServerHandler for McpAggregator {
     ) -> Result<ListPromptsResult, RmcpErrorData> {
         tracing::debug!("List prompts request received");
 
-        // If authentication is disabled, return all prompts
+        // If authentication is disabled, return all prompts without pagination
         if !self.config.is_auth_enabled() {
             tracing::info!("Authentication disabled, returning all prompts");
-            // Direct data retrieval and pagination logic for prompts when auth is disabled
+            // Direct data retrieval - return all prompts when auth is disabled
             let prompts = self.fetch_prompts_from_database().await?;
-            return self.apply_pagination_prompts(prompts, request).await;
+            tracing::info!(
+                "Successfully listed {} prompts (no pagination)",
+                prompts.len()
+            );
+            return Ok(ListPromptsResult {
+                meta: None,
+                prompts,
+                next_cursor: None,
+            });
         }
 
         // Create AuthContext for permission validation
@@ -1308,12 +1321,20 @@ impl ServerHandler for McpAggregator {
     ) -> Result<ListResourcesResult, RmcpErrorData> {
         tracing::debug!("List resources request received");
 
-        // If authentication is disabled, return all resources
+        // If authentication is disabled, return all resources without pagination
         if !self.config.is_auth_enabled() {
             tracing::info!("Authentication disabled, returning all resources");
-            // Direct data retrieval and pagination logic for resources when auth is disabled
+            // Direct data retrieval - return all resources when auth is disabled
             let resources = self.fetch_resources_from_database().await?;
-            return self.apply_pagination_resources(resources, request).await;
+            tracing::info!(
+                "Successfully listed {} resources (no pagination)",
+                resources.len()
+            );
+            return Ok(ListResourcesResult {
+                meta: None,
+                resources,
+                next_cursor: None,
+            });
         }
 
         // Create AuthContext for permission validation

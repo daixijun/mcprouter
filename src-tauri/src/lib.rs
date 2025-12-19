@@ -544,7 +544,7 @@ pub async fn run() {
     });
 
     // 2) Prepare log plugin from config BEFORE any other operations
-    let (log_level, log_file_name, sql_log_enabled) = if let Some(ref logging) = config.logging {
+    let (log_level, _, sql_log_enabled) = if let Some(ref logging) = config.logging {
         let level = match logging.level.to_lowercase().as_str() {
             "trace" => log::LevelFilter::Trace,
             "debug" => log::LevelFilter::Debug,
@@ -565,11 +565,8 @@ pub async fn run() {
         (log::LevelFilter::Info, None, false)
     };
 
-    // Use a single, explicit log target
-    // Ensure the file name doesn't already have .log extension to avoid duplication
-    let final_log_name = log_file_name
-        .clone()
-        .unwrap_or_else(|| "mcprouter".to_string());
+    // Use a fixed log file name
+    let final_log_name = "mcprouter".to_string();
 
     let log_builder =
         tauri_plugin_log::Builder::new()

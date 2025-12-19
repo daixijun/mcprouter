@@ -4,7 +4,6 @@ import {
   Button,
   Col,
   Flex,
-  Input,
   InputNumber,
   Row,
   Select,
@@ -232,163 +231,167 @@ const Settings: React.FC = memo(() => {
             key: 'server',
             label: t('settings.server.title'),
             children: (
-              <Card>
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} md={12}>
-                    <Text strong>{t('settings.server.host')}</Text>
-                    <Select
-                      value={settings.server.host}
-                      onChange={(value: string) =>
-                        handleServerSettingChange('host', value)
-                      }
-                      loading={loadingIPs}
-                      style={{ width: '100%', marginTop: '4px' }}
-                      placeholder={t('settings.server.select_host')}
-                      options={localIPs.map((ip) => ({ value: ip, label: ip }))}
-                    />
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Text strong>{t('settings.server.port')}</Text>
-                    <InputNumber
-                      value={settings.server.port}
-                      onChange={(value: number | null) =>
-                        handleServerSettingChange('port', value || 0)
-                      }
-                      min={1}
-                      max={65535}
-                      style={{ width: '100%', marginTop: '4px' }}
-                    />
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Text strong>{t('settings.server.max_connections')}</Text>
-                    <InputNumber
-                      value={settings.server.max_connections}
-                      onChange={(value: number | null) =>
-                        handleServerSettingChange('max_connections', value || 0)
-                      }
-                      min={1}
-                      max={1000}
-                      style={{ width: '100%', marginTop: '4px' }}
-                    />
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Text strong>{t('settings.server.timeout')}</Text>
-                    <InputNumber
-                      value={settings.server.timeout_seconds}
-                      onChange={(value: number | null) =>
-                        handleServerSettingChange('timeout_seconds', value || 0)
-                      }
-                      min={1}
-                      max={300}
-                      style={{ width: '100%', marginTop: '4px' }}
-                    />
-                  </Col>
-                  <Col xs={24}>
-                    <Flex justify='space-between' align='center'>
-                      <div>
-                        <Text strong>{t('settings.server.auth.title')}</Text>
-                        <Text
-                          type='secondary'
-                          style={{
-                            fontSize: '14px',
-                            display: 'block',
-                            marginTop: '2px',
-                          }}>
-                          {t('settings.server.auth.description')}
+              <div>
+                {/* Server Settings */}
+                <Card
+                  title={t('settings.server.title')}
+                  style={{ marginBottom: '16px' }}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} md={12}>
+                      <Text strong>{t('settings.server.host')}</Text>
+                      <Select
+                        value={settings.server.host}
+                        onChange={(value: string) =>
+                          handleServerSettingChange('host', value)
+                        }
+                        loading={loadingIPs}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        placeholder={t('settings.server.select_host')}
+                        options={localIPs.map((ip) => ({
+                          value: ip,
+                          label: ip,
+                        }))}
+                      />
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Text strong>{t('settings.server.port')}</Text>
+                      <InputNumber
+                        value={settings.server.port}
+                        onChange={(value: number | null) =>
+                          handleServerSettingChange('port', value || 0)
+                        }
+                        min={1}
+                        max={65535}
+                        style={{ width: '100%', marginTop: '4px' }}
+                      />
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Text strong>{t('settings.server.max_connections')}</Text>
+                      <InputNumber
+                        value={settings.server.max_connections}
+                        onChange={(value: number | null) =>
+                          handleServerSettingChange(
+                            'max_connections',
+                            value || 0,
+                          )
+                        }
+                        min={1}
+                        max={1000}
+                        style={{ width: '100%', marginTop: '4px' }}
+                      />
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Text strong>{t('settings.server.timeout')}</Text>
+                      <InputNumber
+                        value={settings.server.timeout_seconds}
+                        onChange={(value: number | null) =>
+                          handleServerSettingChange(
+                            'timeout_seconds',
+                            value || 0,
+                          )
+                        }
+                        min={1}
+                        max={300}
+                        style={{ width: '100%', marginTop: '4px' }}
+                      />
+                    </Col>
+                    <Col xs={24}>
+                      <Flex justify='space-between' align='center'>
+                        <div>
+                          <Text strong>{t('settings.server.auth.title')}</Text>
+                          <Text
+                            type='secondary'
+                            style={{
+                              fontSize: '14px',
+                              display: 'block',
+                              marginTop: '2px',
+                            }}>
+                            {t('settings.server.auth.description')}
+                          </Text>
+                        </div>
+                        <Switch
+                          checked={settings.server.auth || false}
+                          onChange={async (checked: boolean) => {
+                            // 先更新本地状态
+                            const newSettings = {
+                              ...settings,
+                              server: {
+                                ...settings.server,
+                                auth: checked,
+                              },
+                            }
+                            setSettings(newSettings)
+
+                            // 立即保存设置
+                            try {
+                              const { ConfigService } = await import(
+                                '../services/config-service'
+                              )
+                              await ConfigService.saveSystemSettings(
+                                newSettings,
+                              )
+                              message.success(
+                                t('settings.messages.auth_settings_saved'),
+                              )
+                            } catch (error) {
+                              console.error(
+                                'Failed to save auth setting:',
+                                error,
+                              )
+                              message.error(
+                                t('settings.errors.save_auth_settings_failed'),
+                              )
+                              // 如果保存失败，恢复原来的状态
+                              setSettings(settings)
+                            }
+                          }}
+                        />
+                      </Flex>
+                    </Col>
+                  </Row>
+                </Card>
+
+                {/* Logging Settings */}
+                <Card title={t('settings.logging.title')}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} md={12}>
+                      <Text strong>{t('settings.logging.level')}</Text>
+                      <Select
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={settings.logging.level}
+                        onChange={(value: string) =>
+                          handleLoggingSettingChange('level', value)
+                        }
+                        options={[
+                          { value: 'trace', label: 'Trace' },
+                          { value: 'debug', label: 'Debug' },
+                          { value: 'info', label: 'Info' },
+                          { value: 'warn', label: 'Warning' },
+                          { value: 'error', label: 'Error' },
+                        ]}
+                      />
+                    </Col>
+                  </Row>
+                  <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+                    <Col xs={24} md={12}>
+                      <Space>
+                        <Switch
+                          checked={settings.logging.sql_log}
+                          onChange={(checked: boolean) =>
+                            handleLoggingSettingChange('sql_log', checked)
+                          }
+                        />
+                        <Text strong>{t('settings.logging.sql_log')}</Text>
+                      </Space>
+                      <div style={{ marginTop: '4px' }}>
+                        <Text type='secondary' style={{ fontSize: '12px' }}>
+                          {t('settings.logging.sql_log_description')}
                         </Text>
                       </div>
-                      <Switch
-                        checked={settings.server.auth || false}
-                        onChange={async (checked: boolean) => {
-                          // 先更新本地状态
-                          const newSettings = {
-                            ...settings,
-                            server: {
-                              ...settings.server,
-                              auth: checked,
-                            },
-                          }
-                          setSettings(newSettings)
-
-                          // 立即保存设置
-                          try {
-                            const { ConfigService } = await import(
-                              '../services/config-service'
-                            )
-                            await ConfigService.saveSystemSettings(newSettings)
-                            message.success(
-                              t('settings.messages.auth_settings_saved'),
-                            )
-                          } catch (error) {
-                            console.error('Failed to save auth setting:', error)
-                            message.error(
-                              t('settings.errors.save_auth_settings_failed'),
-                            )
-                            // 如果保存失败，恢复原来的状态
-                            setSettings(settings)
-                          }
-                        }}
-                      />
-                    </Flex>
-                  </Col>
-                </Row>
-              </Card>
-            ),
-          },
-          {
-            key: 'logging',
-            label: t('settings.logging.title'),
-            children: (
-              <Card>
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} md={12}>
-                    <Text strong>{t('settings.logging.level')}</Text>
-                    <Select
-                      style={{ width: '100%', marginTop: '4px' }}
-                      value={settings.logging.level}
-                      onChange={(value: string) =>
-                        handleLoggingSettingChange('level', value)
-                      }
-                      options={[
-                        { value: 'trace', label: 'Trace' },
-                        { value: 'debug', label: 'Debug' },
-                        { value: 'info', label: 'Info' },
-                        { value: 'warn', label: 'Warning' },
-                        { value: 'error', label: 'Error' },
-                      ]}
-                    />
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Text strong>{t('settings.logging.file_name')}</Text>
-                    <Input
-                      value={settings.logging.file_name}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        handleLoggingSettingChange('file_name', e.target.value)
-                      }
-                      placeholder='mcp-router.log'
-                      style={{ marginTop: '4px' }}
-                    />
-                  </Col>
-                </Row>
-                <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
-                  <Col xs={24} md={12}>
-                    <Space>
-                      <Switch
-                        checked={settings.logging.sql_log}
-                        onChange={(checked: boolean) =>
-                          handleLoggingSettingChange('sql_log', checked)
-                        }
-                      />
-                      <Text strong>{t('settings.logging.sql_log')}</Text>
-                    </Space>
-                    <div style={{ marginTop: '4px' }}>
-                      <Text type='secondary' style={{ fontSize: '12px' }}>
-                        {t('settings.logging.sql_log_description')}
-                      </Text>
-                    </div>
-                  </Col>
-                </Row>
-              </Card>
+                    </Col>
+                  </Row>
+                </Card>
+              </div>
             ),
           },
           {
@@ -501,7 +504,7 @@ const Settings: React.FC = memo(() => {
       />
 
       {/* Bottom Save Button */}
-      {['server', 'logging'].includes(activeTab) && (
+      {['server'].includes(activeTab) && (
         <div
           style={{
             marginTop: 'auto',

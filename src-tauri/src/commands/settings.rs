@@ -265,12 +265,8 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 logging_mut.level = level.clone();
             }
 
-            // file_name as string (optional)
-            if let Some(Value::String(file_name)) = logging_obj.get("file_name") {
-                logging_mut.file_name = Some(file_name.clone());
-            } else if let Some(Value::Null) = logging_obj.get("file_name") {
-                logging_mut.file_name = None;
-            }
+            // Use fixed log file name, ignoring any input value
+            logging_mut.file_name = Some("mcprouter".to_string());
         }
 
         // Server config

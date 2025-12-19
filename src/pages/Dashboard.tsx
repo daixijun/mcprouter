@@ -44,6 +44,21 @@ const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [currentUptime, setCurrentUptime] = useState<string>('-')
 
+  // Settings 状态管理
+  const [settings, setSettings] = useState({
+    server: {
+      host: '127.0.0.1',
+      port: 8000,
+      max_connections: 100,
+      timeout_seconds: 30,
+      auth: false,
+    },
+    logging: {
+      level: 'info' as const,
+      sql_log: false,
+    },
+  })
+
   // Token 状态管理
   const [tokens, setTokens] = useState<TokenForDashboard[]>([])
   const [selectedTokenId, setSelectedTokenId] = useState<string | undefined>()
@@ -56,13 +71,19 @@ const Dashboard: React.FC = () => {
       setIsLoading(true)
 
       // 并行加载所有数据
-      const [statsResult] = await Promise.allSettled([
+      const [statsResult, settingsResult] = await Promise.allSettled([
         invoke<DashboardStats>('get_dashboard_stats'),
+        invoke<any>('get_settings'),
       ])
 
       // 处理统计数据
       if (statsResult.status === 'fulfilled') {
         setStats(statsResult.value)
+      }
+
+      // 处理设置数据
+      if (settingsResult.status === 'fulfilled') {
+        setSettings(settingsResult.value)
       }
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
@@ -73,20 +94,29 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadDashboardData()
-    loadTokens()
   }, [])
+
+  // 当 auth 设置变化时，重新加载或清理 tokens
+  useEffect(() => {
+    if (settings.server.auth) {
+      loadTokens()
+    } else {
+      setTokens([])
+      setSelectedTokenId(undefined)
+    }
+  }, [settings.server.auth])
 
   // 加载 Token 列表
   const loadTokens = async () => {
     try {
       setIsTokensLoading(true)
-      const tokenList = await invoke<TokenForDashboard[]>('get_tokens_for_dashboard')
+      const tokenList = await invoke<TokenForDashboard[]>(
+        'get_tokens_for_dashboard',
+      )
       setTokens(tokenList)
 
       // 如果有可用的 token，选择第一个有效的
-      const availableTokens = tokenList.filter(
-        (token) => !token.is_expired,
-      )
+      const availableTokens = tokenList.filter((token) => !token.is_expired)
       if (availableTokens.length > 0 && !selectedTokenId) {
         setSelectedTokenId(availableTokens[0].id)
       }
@@ -164,11 +194,12 @@ const Dashboard: React.FC = () => {
       mcprouter: {
         type: 'http',
         url: stats.aggregator?.endpoint || '',
-        ...(selectedToken && {
-          headers: {
-            Authorization: `Bearer ${selectedToken.token}`,
-          },
-        }),
+        ...(settings.server.auth &&
+          selectedToken && {
+            headers: {
+              Authorization: `Bearer ${selectedToken.token}`,
+            },
+          }),
       },
     },
   }
@@ -183,9 +214,10 @@ const Dashboard: React.FC = () => {
       | 'vscode',
   ) => {
     const endpoint = stats.aggregator?.endpoint || ''
-    const authHeaders = selectedToken
-      ? { Authorization: `Bearer ${selectedToken.token}` }
-      : {}
+    const authHeaders =
+      settings.server.auth && selectedToken
+        ? { Authorization: `Bearer ${selectedToken.token}` }
+        : {}
 
     switch (client) {
       case 'cherrystudio':
@@ -194,7 +226,8 @@ const Dashboard: React.FC = () => {
             mcprouter: {
               type: 'streamableHttp',
               baseUrl: endpoint,
-              ...(selectedToken && { headers: authHeaders }),
+              ...(settings.server.auth &&
+                selectedToken && { headers: authHeaders }),
             },
           },
         }
@@ -208,7 +241,8 @@ const Dashboard: React.FC = () => {
           name: 'mcprouter',
           type: 'streamable_http',
           url: endpoint,
-          ...(selectedToken && { headers: authHeaders }),
+          ...(settings.server.auth &&
+            selectedToken && { headers: authHeaders }),
         }
         return `cursor://anysphere.cursor-deeplink/mcp/install?name=mcprouter&config=${btoa(
           JSON.stringify(cursorConfig),
@@ -219,7 +253,8 @@ const Dashboard: React.FC = () => {
           name: 'mcprouter',
           url: endpoint,
           type: 'http',
-          ...(selectedToken && { headers: authHeaders }),
+          ...(settings.server.auth &&
+            selectedToken && { headers: authHeaders }),
         }
         return `vscode:mcp/install?${encodeURIComponent(
           JSON.stringify(vscodeConfig),
@@ -336,119 +371,125 @@ const Dashboard: React.FC = () => {
         }
         loading={isLoading}>
         <div className='w-full space-y-3'>
-          {/* Token 选择区域 */}
-          <div
-            className='flex items-center justify-between p-3 rounded border'
-            style={{
-              backgroundColor: state.isDarkMode ? '#1f2937' : '#f9fafb',
-              borderColor: state.isDarkMode ? '#374151' : '#e5e7eb',
-            }}>
-            <div className='flex items-center space-x-3 flex-1'>
-              <Key
-                size={16}
-                className={state.isDarkMode ? 'text-blue-400' : 'text-blue-600'}
-              />
-              <Text className='font-medium'>{t('dashboard.token.title')}</Text>
-              <Select
-                value={selectedTokenId}
-                onChange={handleTokenChange}
-                open={tokenDropdownOpen}
-                onOpenChange={setTokenDropdownOpen}
-                placeholder={
-                  tokens.length === 0
-                    ? t('dashboard.token.no_available')
-                    : t('dashboard.token.select')
-                }
-                loading={isTokensLoading}
-                disabled={tokens.length === 0}
-                style={{ width: 200 }}
-                className='flex-1 max-w-xs'>
-                <Select.Option value={undefined} key='no-token'>
-                  <Space>
-                    <span style={{ color: '#8c8c8c' }}>
-                      {t('dashboard.token.none')}
-                    </span>
-                  </Space>
-                </Select.Option>
-                {tokens.map((token) => (
-                  <Select.Option
-                    value={token.id}
-                    key={token.id}
-                    disabled={token.is_expired}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        width: '100%',
-                        minWidth: 0, // 防止 flex 子项溢出
-                        gap: '8px', // 确保间隔
-                      }}>
+          {/* Token 选择区域 - 仅当认证开启时显示 */}
+          {settings.server.auth && (
+            <div
+              className='flex items-center justify-between p-3 rounded border'
+              style={{
+                backgroundColor: state.isDarkMode ? '#1f2937' : '#f9fafb',
+                borderColor: state.isDarkMode ? '#374151' : '#e5e7eb',
+              }}>
+              <div className='flex items-center space-x-3 flex-1'>
+                <Key
+                  size={16}
+                  className={
+                    state.isDarkMode ? 'text-blue-400' : 'text-blue-600'
+                  }
+                />
+                <Text className='font-medium'>
+                  {t('dashboard.token.title')}
+                </Text>
+                <Select
+                  value={selectedTokenId}
+                  onChange={handleTokenChange}
+                  open={tokenDropdownOpen}
+                  onOpenChange={setTokenDropdownOpen}
+                  placeholder={
+                    tokens.length === 0
+                      ? t('dashboard.token.no_available')
+                      : t('dashboard.token.select')
+                  }
+                  loading={isTokensLoading}
+                  disabled={tokens.length === 0}
+                  style={{ width: 200 }}
+                  className='flex-1 max-w-xs'>
+                  <Select.Option value={undefined} key='no-token'>
+                    <Space>
+                      <span style={{ color: '#8c8c8c' }}>
+                        {t('dashboard.token.none')}
+                      </span>
+                    </Space>
+                  </Select.Option>
+                  {tokens.map((token) => (
+                    <Select.Option
+                      value={token.id}
+                      key={token.id}
+                      disabled={token.is_expired}>
                       <div
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          flex: 1,
-                          minWidth: 0,
-                          overflow: 'hidden',
+                          justifyContent: 'space-between',
+                          width: '100%',
+                          minWidth: 0, // 防止 flex 子项溢出
+                          gap: '8px', // 确保间隔
                         }}>
                         <div
                           style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            backgroundColor: getTokenStatusColor(token),
-                            flexShrink: 0, // 防止被压缩
-                            marginRight: 8,
-                          }}
-                        />
+                            display: 'flex',
+                            alignItems: 'center',
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                          }}>
+                          <div
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              backgroundColor: getTokenStatusColor(token),
+                              flexShrink: 0, // 防止被压缩
+                              marginRight: 8,
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontWeight: 500,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                            }}>
+                            {token.name}
+                          </span>
+                        </div>
                         <span
                           style={{
-                            fontWeight: 500,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            flex: 1,
+                            fontSize: 12,
+                            color: '#8c8c8c',
+                            flexShrink: 0, // 防止被压缩
+                            marginLeft: 8,
                           }}>
-                          {token.name}
+                          {formatTokenExpiration(token)}
                         </span>
                       </div>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: '#8c8c8c',
-                          flexShrink: 0, // 防止被压缩
-                          marginLeft: 8,
-                        }}>
-                        {formatTokenExpiration(token)}
-                      </span>
+                    </Select.Option>
+                  ))}
+                </Select>
+                {selectedToken && (
+                  <Tooltip
+                    title={t('dashboard.token.selected_tooltip', {
+                      name: getSelectedToken()?.name,
+                    })}>
+                    <div className='ml-3 text-sm text-green-600 dark:text-green-400'>
+                      ✓ {t('dashboard.token.configured')}
                     </div>
-                  </Select.Option>
-                ))}
-              </Select>
-              {selectedToken && (
-                <Tooltip
-                  title={t('dashboard.token.selected_tooltip', {
-                    name: getSelectedToken()?.name,
-                  })}>
-                  <div className='ml-3 text-sm text-green-600 dark:text-green-400'>
-                    ✓ {t('dashboard.token.configured')}
-                  </div>
-                </Tooltip>
+                  </Tooltip>
+                )}
+              </div>
+              {tokens.length === 0 && (
+                <Button
+                  type='primary'
+                  size='small'
+                  onClick={() => {
+                    // 可以在这里添加跳转到 Token 管理页面的逻辑
+                    message.info(t('dashboard.token.create_hint'))
+                  }}>
+                  创建 Token
+                </Button>
               )}
             </div>
-            {tokens.length === 0 && (
-              <Button
-                type='primary'
-                size='small'
-                onClick={() => {
-                  // 可以在这里添加跳转到 Token 管理页面的逻辑
-                  message.info(t('dashboard.token.create_hint'))
-                }}>
-                创建 Token
-              </Button>
-            )}
-          </div>
+          )}
 
           <div className='relative'>
             <div
@@ -591,9 +632,26 @@ const Dashboard: React.FC = () => {
               </div>
               <div className='flex justify-between items-center'>
                 <Text type='secondary'>
-                  {t('dashboard.aggregator.connected_services')}:
+                  {t('dashboard.aggregator.auth_status')}:
                 </Text>
-                <Text strong>{stats.aggregator?.connected_services || 0}</Text>
+                <div className='flex items-center space-x-2'>
+                  <div
+                    className='w-2 h-2 rounded-full'
+                    style={{
+                      backgroundColor: settings.server.auth
+                        ? '#52c41a'
+                        : '#ff4d4f',
+                    }}
+                  />
+                  <Text
+                    style={{
+                      color: settings.server.auth ? '#52c41a' : '#ff4d4f',
+                    }}>
+                    {settings.server.auth
+                      ? t('dashboard.aggregator.auth_enabled')
+                      : t('dashboard.aggregator.auth_disabled')}
+                  </Text>
+                </div>
               </div>
             </Space>
           </div>
