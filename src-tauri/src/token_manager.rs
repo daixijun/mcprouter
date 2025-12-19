@@ -3,6 +3,7 @@
 use crate::error::{McpError, Result};
 use crate::storage::orm_storage::Storage;
 use crate::types::{PermissionType, PermissionValidationResult, Token};
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -34,9 +35,8 @@ pub struct TokenForDashboard {
     pub is_expired: bool,
 }
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use chrono::Utc;
+use rand::Rng;
 use uuid::Uuid;
 
 /// Token Manager
@@ -58,17 +58,52 @@ impl TokenManager {
 
     /// Generate a secure random token
     pub fn generate_token(&self) -> String {
-        // Use UUID v7 for better randomness and sortable timestamps
-        let uuid = Uuid::now_v7();
-        let token_bytes = uuid.as_bytes();
-        URL_SAFE_NO_PAD.encode(token_bytes)
+        // Generate a token that meets the specified format requirements
+        // Format: mcp-<64-character random string>
+        // The random string must: start with a letter, contain uppercase, lowercase, numbers, hyphens, and underscores
+
+        // Define the character sets
+        const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        const ALPHANUMERIC_SYMBOLS: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+        let mut rng = rand::rng();
+        let mut token = String::with_capacity(6 + 64); // "mcp-" + 64 chars
+
+        // Add fixed prefix
+        token.push_str("mcp-");
+
+        // First character must be a letter
+        let first_char = ALPHABET[rng.random_range(0..ALPHABET.len())];
+        token.push(first_char as char);
+
+        // Generate remaining 63 characters from the full character set
+        for _ in 1..64 {
+            let char = ALPHANUMERIC_SYMBOLS[rng.random_range(0..ALPHANUMERIC_SYMBOLS.len())];
+            token.push(char as char);
+        }
+
+        token
     }
 
     /// Create a new token with generated value
-    pub async fn create(&self, name: String, description: Option<String>) -> Result<TokenInfo> {
+    pub async fn create(
+        &self,
+        name: String,
+        description: Option<String>,
+        allowed_tools: Option<Vec<String>>,
+        allowed_resources: Option<Vec<String>>,
+        allowed_prompts: Option<Vec<String>>,
+        allowed_prompt_templates: Option<Vec<String>>,
+        expires_in: Option<u64>,
+    ) -> Result<TokenInfo> {
         let token_value = self.generate_token();
         let now = Utc::now();
         let id = Uuid::now_v7().to_string();
+
+        // Calculate expires_at based on expires_in
+        let expires_at =
+            expires_in.map(|seconds| (now + Duration::seconds(seconds as i64)).timestamp() as u64);
 
         let token = Token {
             id: id.clone(),
@@ -79,17 +114,68 @@ impl TokenManager {
             enabled: true,
             last_used_at: None,
             usage_count: 0,
-            expires_at: None, // TODO: Make configurable
-            allowed_tools: Some(vec![]),
-            allowed_resources: Some(vec![]),
-            allowed_prompts: Some(vec![]),
-            allowed_prompt_templates: Some(vec![]),
+            expires_at,
+            allowed_tools: allowed_tools.clone().or(Some(vec![])),
+            allowed_resources: allowed_resources.clone().or(Some(vec![])),
+            allowed_prompts: allowed_prompts.clone().or(Some(vec![])),
+            allowed_prompt_templates: allowed_prompt_templates.clone().or(Some(vec![])),
         };
 
         self.orm_storage
             .create_token(&token)
             .await
             .map_err(|e| McpError::ValidationError(format!("Failed to create token: {}", e)))?;
+
+        // Store permissions in database
+        if let Some(tools) = &allowed_tools {
+            for tool in tools {
+                self.orm_storage
+                    .add_permission(&token.id, "tool", tool)
+                    .await
+                    .map_err(|e| {
+                        McpError::ValidationError(format!("Failed to add tool permission: {}", e))
+                    })?;
+            }
+        }
+
+        if let Some(resources) = &allowed_resources {
+            for resource in resources {
+                self.orm_storage
+                    .add_permission(&token.id, "resource", resource)
+                    .await
+                    .map_err(|e| {
+                        McpError::ValidationError(format!(
+                            "Failed to add resource permission: {}",
+                            e
+                        ))
+                    })?;
+            }
+        }
+
+        if let Some(prompts) = &allowed_prompts {
+            for prompt in prompts {
+                self.orm_storage
+                    .add_permission(&token.id, "prompt", prompt)
+                    .await
+                    .map_err(|e| {
+                        McpError::ValidationError(format!("Failed to add prompt permission: {}", e))
+                    })?;
+            }
+        }
+
+        if let Some(prompt_templates) = &allowed_prompt_templates {
+            for template in prompt_templates {
+                self.orm_storage
+                    .add_permission(&token.id, "prompt_template", template)
+                    .await
+                    .map_err(|e| {
+                        McpError::ValidationError(format!(
+                            "Failed to add prompt template permission: {}",
+                            e
+                        ))
+                    })?;
+            }
+        }
 
         self.convert_to_token_info(&token).await
     }
@@ -227,9 +313,7 @@ impl TokenManager {
                 name: token.name,
                 token: token.value,
                 expires_at: token.expires_at,
-                is_expired: token
-                    .expires_at
-                    .is_some_and(|expires_at| expires_at < now),
+                is_expired: token.expires_at.is_some_and(|expires_at| expires_at < now),
             })
             .collect();
 
@@ -617,9 +701,7 @@ impl TokenManager {
             expires_at: token.expires_at,
             last_used_at: token.last_used_at,
             usage_count: token.usage_count,
-            is_expired: token
-                .expires_at
-                .is_some_and(|expires_at| expires_at < now),
+            is_expired: token.expires_at.is_some_and(|expires_at| expires_at < now),
             enabled: token.enabled,
             allowed_tools,
             allowed_resources,
@@ -628,7 +710,6 @@ impl TokenManager {
         })
     }
 }
-
 
 impl From<TokenInfo> for Token {
     fn from(token_info: TokenInfo) -> Self {

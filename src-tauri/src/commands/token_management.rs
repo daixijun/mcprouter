@@ -19,7 +19,15 @@ pub async fn create_token(request: CreateTokenRequest) -> Result<CreateTokenResp
     let token_manager = crate::wait_for_token_manager().await?;
 
     let token_info = token_manager
-        .create(request.name, request.description)
+        .create(
+            request.name,
+            request.description,
+            request.allowed_tools,
+            request.allowed_resources,
+            request.allowed_prompts,
+            request.allowed_prompt_templates,
+            request.expires_in,
+        )
         .await?;
 
     // Get the actual token value from storage
@@ -71,25 +79,25 @@ pub async fn list_tokens() -> Result<Vec<TokenInfo>> {
 }
 
 /// Delete a token
-#[tauri::command]
-pub async fn delete_token(id: String) -> Result<String> {
+#[tauri::command(rename_all = "snake_case")]
+pub async fn delete_token(token_id: String) -> Result<String> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
-    token_manager.delete(&id).await?;
+    token_manager.delete(&token_id).await?;
 
-    Ok(format!("Token '{}' deleted successfully", id))
+    Ok(format!("Token '{}' deleted successfully", token_id))
 }
 
 /// Toggle token enabled status
 #[tauri::command]
-pub async fn toggle_token(id: String) -> Result<bool> {
+pub async fn toggle_token(token_id: String) -> Result<bool> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
-    let enabled = token_manager.toggle_token(&id).await?;
+    let is_enabled = token_manager.toggle_token(&token_id).await?;
 
-    Ok(enabled)
+    Ok(is_enabled)
 }
 
 /// Get token statistics

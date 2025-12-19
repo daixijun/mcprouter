@@ -626,15 +626,21 @@ impl Storage {
             })),
         };
 
-        let result = token_model.insert(&self.db).await.map_err(|e| {
-            if e.to_string().contains("UNIQUE constraint failed") {
-                StorageError::AlreadyExists(format!("Token '{}' already exists", token.name))
-            } else {
-                StorageError::Database(format!("Failed to create: {}", e))
-            }
-        })?;
+        let token_id = token.id.clone();
+        let models = vec![token_model];
 
-        Ok(result.id)
+        token::Entity::insert_many(models)
+            .exec(&self.db)
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("UNIQUE constraint failed") {
+                    StorageError::AlreadyExists(format!("Token '{}' already exists", token.name))
+                } else {
+                    StorageError::Database(format!("Failed to create: {}", e))
+                }
+            })?;
+
+        Ok(token_id)
     }
 
     /// 根据 ID 获取 Token
@@ -812,17 +818,22 @@ impl Storage {
                 updated_at: Set(chrono::Utc::now().into()),
             };
 
-            permission_model.insert(&self.db).await.map_err(|e| {
-                let error_msg = e.to_string();
-                if error_msg.contains("UNIQUE constraint failed") {
-                    StorageError::Database(format!(
-                        "permission already exists: token={}, type={}, path={}",
-                        token_id, resource_type, resource_path
-                    ))
-                } else {
-                    StorageError::Database(format!("Failed to add: {}", error_msg))
-                }
-            })?;
+            let models = vec![permission_model];
+
+            permission::Entity::insert_many(models)
+                .exec(&self.db)
+                .await
+                .map_err(|e| {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("UNIQUE constraint failed") {
+                        StorageError::Database(format!(
+                            "permission already exists: token={}, type={}, path={}",
+                            token_id, resource_type, resource_path
+                        ))
+                    } else {
+                        StorageError::Database(format!("Failed to add: {}", error_msg))
+                    }
+                })?;
 
             tracing::info!(
                 "Successfully created new permission: token={}, type={}, path={}",
@@ -883,8 +894,10 @@ impl Storage {
                 updated_at: Set(chrono::Utc::now().into()),
             };
 
-            permission_model
-                .insert(&self.db)
+            let models = vec![permission_model];
+
+            permission::Entity::insert_many(models)
+                .exec(&self.db)
                 .await
                 .map_err(|e| {
                     let error_msg = e.to_string();

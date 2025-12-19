@@ -236,7 +236,7 @@ const TokenManagement: React.FC = () => {
 
   const handleDeleteToken = async (tokenId: string) => {
     try {
-      await invoke('delete_token', { tokenId })
+      await invoke('delete_token', { token_id: tokenId })
       message.success(t('token.messages.delete_success'))
       await fetchTokens()
       await fetchStats()
@@ -247,7 +247,7 @@ const TokenManagement: React.FC = () => {
 
   const handleToggleToken = async (tokenId: string, checked: boolean) => {
     try {
-      await invoke('toggle_token', { tokenId })
+      await invoke('toggle_token', { token_id: tokenId })
       const action = checked
         ? t('common.actions.enable')
         : t('common.actions.disable')
@@ -667,9 +667,12 @@ const TokenManagement: React.FC = () => {
           </Space>
         }
         open={createModalVisible}
-        onClose={() => {
+        onClose={async () => {
           setCreateModalVisible(false)
           setCreatedToken(null)
+          // 刷新token列表和统计信息
+          await fetchTokens()
+          await fetchStats()
         }}
         afterOpenChange={(open) => {
           if (open) {
@@ -727,7 +730,7 @@ const TokenManagement: React.FC = () => {
                 </Card>
               ) : (
                 <PermissionSelector
-                  value={{}}
+                  value={form.getFieldValue('permissions') || {}}
                   onChange={(permissions) => {
                     form.setFieldsValue({ permissions })
                   }}
