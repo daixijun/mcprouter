@@ -1,11 +1,10 @@
 use crate::error::{McpError, Result};
-use crate::token_manager::{TokenInfo, TokenForDashboard};
 use crate::token_manager::TokenManager;
+use crate::token_manager::{TokenForDashboard, TokenInfo};
 use crate::types::{
-    PermissionAction,
-    CreateTokenRequest, UpdateTokenRequest, CreateTokenResponse, UpdateTokenResponse,
-    TokenStats, CleanupResult, ValidationResult, UpdateTokenPermissionRequest,
-    SimplePermissionUpdateResponse
+    BatchUpdateTokenPermissionRequest, CleanupResult, CreateTokenRequest, CreateTokenResponse,
+    PermissionAction, SimplePermissionUpdateResponse, TokenStats, UpdateTokenPermissionRequest,
+    UpdateTokenRequest, UpdateTokenResponse, ValidationResult,
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -15,9 +14,7 @@ pub type TokenManagerState = Arc<RwLock<Option<Arc<TokenManager>>>>;
 
 /// Create a new token
 #[tauri::command]
-pub async fn create_token(
-    request: CreateTokenRequest,
-) -> Result<CreateTokenResponse> {
+pub async fn create_token(request: CreateTokenRequest) -> Result<CreateTokenResponse> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
@@ -26,18 +23,20 @@ pub async fn create_token(
         .await?;
 
     // Get the actual token value from storage
-    let token_with_value = token_manager.orm_storage().get_token_by_id(&token_info.id)
+    let token_with_value = token_manager
+        .orm_storage()
+        .get_token_by_id(&token_info.id)
         .await?
         .ok_or_else(|| McpError::ValidationError("Failed to retrieve created token".to_string()))?;
 
-    Ok(CreateTokenResponse { token: token_with_value })
+    Ok(CreateTokenResponse {
+        token: token_with_value,
+    })
 }
 
 /// Update an existing token
 #[tauri::command]
-pub async fn update_token(
-    request: UpdateTokenRequest,
-) -> Result<UpdateTokenResponse> {
+pub async fn update_token(request: UpdateTokenRequest) -> Result<UpdateTokenResponse> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
@@ -73,9 +72,7 @@ pub async fn list_tokens() -> Result<Vec<TokenInfo>> {
 
 /// Delete a token
 #[tauri::command]
-pub async fn delete_token(
-    id: String,
-) -> Result<String> {
+pub async fn delete_token(id: String) -> Result<String> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
@@ -86,9 +83,7 @@ pub async fn delete_token(
 
 /// Toggle token enabled status
 #[tauri::command]
-pub async fn toggle_token(
-    id: String,
-) -> Result<bool> {
+pub async fn toggle_token(id: String) -> Result<bool> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
@@ -134,9 +129,7 @@ pub async fn cleanup_expired_tokens() -> Result<CleanupResult> {
 
 /// Validate a token
 #[tauri::command]
-pub async fn validate_token(
-    token_value: String,
-) -> Result<ValidationResult> {
+pub async fn validate_token(token_value: String) -> Result<ValidationResult> {
     // Use global waiting function instead of Tauri state
     let token_manager = crate::wait_for_token_manager().await?;
 
@@ -196,12 +189,20 @@ pub async fn update_token_permission(
     match request.action {
         PermissionAction::Add => {
             token_manager
-                .add_permission_by_path(&request.token_id, &request.resource_type, &request.resource_path)
+                .add_permission_by_path(
+                    &request.token_id,
+                    &request.resource_type,
+                    &request.resource_path,
+                )
                 .await?
         }
         PermissionAction::Remove => {
             token_manager
-                .remove_permission_by_path(&request.token_id, &request.resource_type, &request.resource_path)
+                .remove_permission_by_path(
+                    &request.token_id,
+                    &request.resource_type,
+                    &request.resource_path,
+                )
                 .await?
         }
     };
@@ -209,6 +210,76 @@ pub async fn update_token_permission(
     Ok(SimplePermissionUpdateResponse {
         success: true,
         message: format!("Successfully {} permission", action_text),
+    })
+}
+
+/// Batch update token permissions
+/// Returns only success/failure status
+#[tauri::command]
+pub async fn batch_update_token_permissions(
+    request: BatchUpdateTokenPermissionRequest,
+) -> Result<SimplePermissionUpdateResponse> {
+    // Use global waiting function instead of Tauri state
+    let token_manager = crate::wait_for_token_manager().await?;
+
+    // 保存权限数量，避免在循环后访问已移动的值
+    let permissions_count = request.permissions.len();
+
+    // 验证请求参数
+    if request.token_id.is_empty() {
+        return Err(crate::error::McpError::ValidationError(
+            "Token ID is required".to_string(),
+        ));
+    }
+
+    if request.permissions.is_empty() {
+        return Err(crate::error::McpError::ValidationError(
+            "Permissions list cannot be empty".to_string(),
+        ));
+    }
+
+    // Process each permission
+    for permission_path in request.permissions {
+        // 验证权限路径格式
+        if !permission_path.contains("__") {
+            return Err(crate::error::McpError::ValidationError(format!(
+                "Invalid permission path format: {}. Expected format: servername__resourcename",
+                permission_path
+            )));
+        }
+
+        match request.action {
+            PermissionAction::Add => {
+                token_manager
+                    .add_permission_by_path(
+                        &request.token_id,
+                        &request.resource_type,
+                        &permission_path,
+                    )
+                    .await?
+            }
+            PermissionAction::Remove => {
+                token_manager
+                    .remove_permission_by_path(
+                        &request.token_id,
+                        &request.resource_type,
+                        &permission_path,
+                    )
+                    .await?
+            }
+        };
+    }
+
+    Ok(SimplePermissionUpdateResponse {
+        success: true,
+        message: format!(
+            "Successfully {} {} permissions",
+            match request.action {
+                PermissionAction::Add => "added",
+                PermissionAction::Remove => "removed",
+            },
+            permissions_count
+        ),
     })
 }
 

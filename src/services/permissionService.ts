@@ -1,19 +1,21 @@
-import React from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import React from 'react'
 import { PermissionType } from '../types/permissions'
 
 export interface PermissionUpdateRequest {
   token_id: string
   permission_type: 'tools' | 'resources' | 'prompts' | 'prompt_templates'
   permission_value: string
+  [key: string]: unknown
 }
 
 // 新的统一权限更新请求类型（与后端保持一致）
 export interface UnifiedPermissionUpdateRequest {
   token_id: string
   resource_type: PermissionType
-  resource_path: string  // 修正：使用 resource_path 而不是 resource_id
+  resource_path: string // 修正：使用 resource_path 而不是 resource_id
   action: 'add' | 'remove'
+  [key: string]: unknown
 }
 
 // TokenPermissionsResponse has been removed - permissions are now included in list_tokens response
@@ -22,6 +24,7 @@ export interface FieldUpdateRequest {
   token_id: string
   field: 'name' | 'description'
   value: string
+  [key: string]: unknown
 }
 
 export interface PermissionUpdateResponse {
@@ -45,7 +48,9 @@ class PermissionService {
   private pendingRequests = new Map<string, AbortController>()
 
   // 添加权限
-  async addPermission(request: PermissionUpdateRequest): Promise<PermissionUpdateResponse> {
+  async addPermission(
+    request: PermissionUpdateRequest,
+  ): Promise<PermissionUpdateResponse> {
     const key = `add_${request.token_id}_${request.permission_type}_${request.permission_value}`
 
     // 取消之前的相同请求
@@ -57,9 +62,12 @@ class PermissionService {
     this.pendingRequests.set(key, controller)
 
     try {
-      const response = await invoke<PermissionUpdateResponse>('add_token_permission', {
-        request
-      })
+      const response = await invoke<PermissionUpdateResponse>(
+        'add_token_permission',
+        {
+          request,
+        },
+      )
       return response
     } finally {
       this.pendingRequests.delete(key)
@@ -67,7 +75,9 @@ class PermissionService {
   }
 
   // 移除权限
-  async removePermission(request: PermissionUpdateRequest): Promise<PermissionUpdateResponse> {
+  async removePermission(
+    request: PermissionUpdateRequest,
+  ): Promise<PermissionUpdateResponse> {
     const key = `remove_${request.token_id}_${request.permission_type}_${request.permission_value}`
 
     // 取消之前的相同请求
@@ -79,9 +89,12 @@ class PermissionService {
     this.pendingRequests.set(key, controller)
 
     try {
-      const response = await invoke<PermissionUpdateResponse>('remove_token_permission', {
-        request
-      })
+      const response = await invoke<PermissionUpdateResponse>(
+        'remove_token_permission',
+        {
+          request,
+        },
+      )
       return response
     } finally {
       this.pendingRequests.delete(key)
@@ -89,7 +102,9 @@ class PermissionService {
   }
 
   // 更新字段
-  async updateField(request: FieldUpdateRequest): Promise<PermissionUpdateResponse> {
+  async updateField(
+    request: FieldUpdateRequest,
+  ): Promise<PermissionUpdateResponse> {
     const key = `field_${request.token_id}_${request.field}`
 
     // 取消之前的相同请求
@@ -101,9 +116,12 @@ class PermissionService {
     this.pendingRequests.set(key, controller)
 
     try {
-      const response = await invoke<PermissionUpdateResponse>('update_token_field', {
-        request
-      })
+      const response = await invoke<PermissionUpdateResponse>(
+        'update_token_field',
+        {
+          request,
+        },
+      )
       return response
     } finally {
       this.pendingRequests.delete(key)
@@ -133,7 +151,7 @@ class PermissionService {
 
   // 字段更新（移除重试逻辑，直接调用基础方法）
   async updateFieldWithoutRetry(
-    request: FieldUpdateRequest
+    request: FieldUpdateRequest,
   ): Promise<PermissionUpdateResponse> {
     try {
       return await this.updateField(request)
@@ -147,10 +165,12 @@ class PermissionService {
   async updateTokenPermission(
     tokenId: string,
     resourceType: PermissionType,
-    resourcePath: string,  // 修正：使用 resourcePath 而不是 resourceId
-    isAdd: boolean
+    resourcePath: string, // 修正：使用 resourcePath 而不是 resourceId
+    isAdd: boolean,
   ): Promise<SimplePermissionUpdateResponse> {
-    const key = `unified_${tokenId}_${resourceType}_${resourcePath}_${isAdd ? 'add' : 'remove'}`
+    const key = `unified_${tokenId}_${resourceType}_${resourcePath}_${
+      isAdd ? 'add' : 'remove'
+    }`
 
     // 取消之前的相同请求
     if (this.pendingRequests.has(key)) {
@@ -165,17 +185,87 @@ class PermissionService {
       const request: UnifiedPermissionUpdateRequest = {
         token_id: tokenId,
         resource_type: resourceType,
-        resource_path: resourcePath,  // 修正：使用 resource_path 而不是 resource_id
-        action: isAdd ? 'add' : 'remove'
+        resource_path: resourcePath, // 修正：使用 resource_path 而不是 resource_id
+        action: isAdd ? 'add' : 'remove',
       }
 
-      const response = await invoke<SimplePermissionUpdateResponse>('update_token_permission', {
-        request
-      })
+      const response = await invoke<SimplePermissionUpdateResponse>(
+        'update_token_permission',
+        {
+          request,
+        },
+      )
       return response
     } finally {
       this.pendingRequests.delete(key)
     }
+  }
+
+  // 批量权限更新方法 - 调用新的后端批量接口
+  async batchUpdateTokenPermissions(
+    requests: Array<{
+      tokenId: string
+      resourceType: PermissionType
+      resourcePath: string
+      isAdd: boolean
+    }>,
+  ): Promise<SimplePermissionUpdateResponse> {
+    // 如果没有请求，直接返回成功
+    if (requests.length === 0) {
+      return {
+        success: true,
+        message: 'No permissions to update',
+      }
+    }
+
+    // 根据 tokenId, resourceType 和 action 对请求进行分组
+    const groupedRequests = requests.reduce<Map<string, typeof requests>>(
+      (acc, req) => {
+        const key = `${req.tokenId}_${req.resourceType}_${
+          req.isAdd ? 'add' : 'remove'
+        }`
+        if (!acc.has(key)) {
+          acc.set(key, [])
+        }
+        acc.get(key)?.push(req)
+        return acc
+      },
+      new Map(),
+    )
+
+    // 依次处理每个分组
+    let finalResponse: SimplePermissionUpdateResponse = {
+      success: true,
+      message: 'All permissions updated successfully',
+    }
+
+    for (const [key, groupRequests] of groupedRequests) {
+      const controller = new AbortController()
+      this.pendingRequests.set(key, controller)
+
+      try {
+        // 构建批量请求
+        const batchRequest = {
+          action: groupRequests[0].isAdd ? 'add' : 'remove',
+          token_id: groupRequests[0].tokenId,
+          resource_type: groupRequests[0].resourceType,
+          permissions: groupRequests.map((req) => req.resourcePath),
+        }
+
+        // 调用批量权限更新接口
+        const response = await invoke<SimplePermissionUpdateResponse>(
+          'batch_update_token_permissions',
+          {
+            request: batchRequest,
+          },
+        )
+        finalResponse = response
+      } finally {
+        this.pendingRequests.delete(key)
+      }
+    }
+
+    return finalResponse
   }
 
   // getTokenPermissions has been removed - permissions are now included in list_tokens response
@@ -185,7 +275,7 @@ class PermissionService {
     tokenId: string,
     permissionType: string,
     permissionValue: string,
-    isAdd: boolean
+    isAdd: boolean,
   ): Promise<SimplePermissionUpdateResponse> {
     // 将字符串类型转换为PermissionType枚举
     let enumPermissionType: PermissionType
@@ -206,7 +296,12 @@ class PermissionService {
         throw new Error(`Invalid permission type: ${permissionType}`)
     }
 
-    return await this.updateTokenPermission(tokenId, enumPermissionType, permissionValue, isAdd)
+    return await this.updateTokenPermission(
+      tokenId,
+      enumPermissionType,
+      permissionValue,
+      isAdd,
+    )
   }
 }
 
@@ -214,19 +309,25 @@ export const permissionService = new PermissionService()
 
 // Hook for managing permission update status
 export function usePermissionUpdateStatus() {
-  const [statusMap, setStatusMap] = React.useState<Map<string, UpdateStatus>>(new Map())
+  const [statusMap, setStatusMap] = React.useState<Map<string, UpdateStatus>>(
+    new Map(),
+  )
 
   const updateStatus = (key: string, updates: Partial<UpdateStatus>) => {
-    setStatusMap(prev => {
+    setStatusMap((prev) => {
       const newMap = new Map(prev)
-      const current = newMap.get(key) || { loading: false, error: null, success: false }
+      const current = newMap.get(key) || {
+        loading: false,
+        error: null,
+        success: false,
+      }
       newMap.set(key, { ...current, ...updates })
       return newMap
     })
   }
 
   const clearStatus = (key: string) => {
-    setStatusMap(prev => {
+    setStatusMap((prev) => {
       const newMap = new Map(prev)
       newMap.delete(key)
       return newMap
@@ -240,6 +341,6 @@ export function usePermissionUpdateStatus() {
   return {
     updateStatus,
     clearStatus,
-    getStatus
+    getStatus,
   }
 }

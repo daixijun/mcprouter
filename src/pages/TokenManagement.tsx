@@ -103,7 +103,7 @@ const TokenManagement: React.FC = () => {
     setLoading(true)
     try {
       const response = await invoke<Token[]>('list_tokens')
-        setTokens(response)
+      setTokens(response)
     } catch (error) {
       message.error(t('token.messages.load_tokens_failed') + ': ' + error)
     } finally {
@@ -124,7 +124,7 @@ const TokenManagement: React.FC = () => {
           total_usage: response.total_usage ?? 0,
           last_used: response.last_used,
         }
-          setStats(stats)
+        setStats(stats)
       } else {
         console.error('Invalid response format:', response)
         setStats({
@@ -143,7 +143,7 @@ const TokenManagement: React.FC = () => {
         retryCount < 3 &&
         String(error).includes('TokenManager not initialized')
       ) {
-          setTimeout(() => fetchStats(retryCount + 1), 1000)
+        setTimeout(() => fetchStats(retryCount + 1), 1000)
         return
       }
 
@@ -311,7 +311,7 @@ const TokenManagement: React.FC = () => {
     }
   }
 
-  // Handle permissions change with individual permission updates
+  // Handle permissions change with batch permission updates
   const handlePermissionChange = async (newPermissions: {
     allowed_tools?: string[]
     allowed_resources?: string[]
@@ -388,36 +388,45 @@ const TokenManagement: React.FC = () => {
         },
       ]
 
-      // 逐个更新权限
-      const updatePromises = []
+      // 收集所有需要更新的权限，准备批量更新
+      const batchRequests = []
       for (const change of changes) {
         // 添加新权限
         for (const permission of change.toAdd) {
-          updatePromises.push(
-            permissionService.updateTokenPermission(
-              editingToken.id,
-              change.resourceType,
-              permission,
-              true, // add
-            ),
-          )
+          batchRequests.push({
+            tokenId: editingToken.id,
+            resourceType: change.resourceType,
+            resourcePath: permission,
+            isAdd: true, // add
+          })
         }
 
         // 移除权限
         for (const permission of change.toRemove) {
-          updatePromises.push(
-            permissionService.updateTokenPermission(
-              editingToken.id,
-              change.resourceType,
-              permission,
-              false, // remove
-            ),
-          )
+          batchRequests.push({
+            tokenId: editingToken.id,
+            resourceType: change.resourceType,
+            resourcePath: permission,
+            isAdd: false, // remove
+          })
         }
       }
 
-      // 等待所有权限更新完成
-      await Promise.all(updatePromises)
+      // 如果没有权限需要更新，直接返回
+      if (batchRequests.length === 0) {
+        // 更新tokens列表中的对应token
+        setTokens((prev) =>
+          prev.map((token) =>
+            token.id === editingToken.id
+              ? { ...token, ...newPermissions }
+              : token,
+          ),
+        )
+        return
+      }
+
+      // 使用批量更新方法处理所有权限变更
+      await permissionService.batchUpdateTokenPermissions(batchRequests)
 
       // 更新tokens列表中的对应token
       setTokens((prev) =>
@@ -427,8 +436,7 @@ const TokenManagement: React.FC = () => {
             : token,
         ),
       )
-
-        } catch (error: any) {
+    } catch (error: any) {
       console.error('Failed to update permissions:', error)
 
       // 错误处理：回滚本地状态

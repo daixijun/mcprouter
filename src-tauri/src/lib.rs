@@ -813,6 +813,7 @@ Initialization process may be partially completed, set managers are still usable
             // Real-time Token Management Commands (已统一到 update_token_permission)
             // 统一的权限更新命令
             update_token_permission,
+            batch_update_token_permissions,
             // Permission Management Commands
             list_available_permissions,
             // Tool Manager Commands

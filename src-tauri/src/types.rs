@@ -92,7 +92,6 @@ pub enum ServiceTransport {
     Http,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct AppConfig {
@@ -557,6 +556,19 @@ pub struct UpdateTokenPermissionRequest {
     pub action: PermissionAction,
 }
 
+/// 批量权限更新请求结构
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchUpdateTokenPermissionRequest {
+    /// 操作类型：添加或移除权限
+    pub action: PermissionAction,
+    /// Token ID
+    pub token_id: String,
+    /// 资源类型
+    pub resource_type: PermissionType,
+    /// 权限列表，格式：servername__resourcename
+    pub permissions: Vec<String>,
+}
+
 /// 权限更新响应
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PermissionUpdateResponse {
@@ -899,13 +911,13 @@ impl<'de> serde::Deserialize<'de> for ToolStatus {
 /// 工具信息结构
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolInfo {
-    pub name: String,           // "Bun", "UV", "UVX"
-    pub full_name: String,      // "Bun JavaScript Runtime", "UV Package Manager", "UVX Package Executor"
-    pub path: String,           // Path to the tool executable
+    pub name: String,            // "Bun", "UV", "UVX"
+    pub full_name: String, // "Bun JavaScript Runtime", "UV Package Manager", "UVX Package Executor"
+    pub path: String,      // Path to the tool executable
     pub version: Option<String>, // Auto-detected version
     pub status: ToolStatus,
     pub last_check: Option<String>, // ISO timestamp
-    pub python_required: bool,  // Whether Python runtime is required
+    pub python_required: bool,      // Whether Python runtime is required
 }
 
 /// Python 运行时信息
