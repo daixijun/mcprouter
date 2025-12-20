@@ -3,7 +3,7 @@
 use crate::error::{McpError, Result};
 use crate::mcp_manager::McpServerManager;
 use crate::types::{
-    McpPromptInfo, McpResourceInfo, McpServerConfig, McpServerInfo, McpToolInfo, ServiceTransport,
+    McpPromptInfo, McpResourceInfo, McpServerConfig, McpServerResult, McpToolInfo, ServiceTransport,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -90,19 +90,32 @@ pub async fn add_mcp_server(
     let server_name = request.name.clone();
     let server_config = config.clone();
     tokio::spawn(async move {
-        tracing::info!("Attempting to connect to newly added server '{}'", server_name);
+        tracing::info!(
+            "Attempting to connect to newly added server '{}'",
+            server_name
+        );
         // 连接新服务器
-        match crate::MCP_CLIENT_MANAGER.ensure_connection(&server_config, false).await {
+        match crate::MCP_CLIENT_MANAGER
+            .ensure_connection(&server_config, false)
+            .await
+        {
             Ok(_) => {
                 tracing::info!("Successfully connected to new server '{}'", server_name);
 
                 // 连接成功后同步资源
                 match mcp_manager.sync_server_manifests(&server_name).await {
                     Ok(_) => {
-                        tracing::info!("Successfully synced manifests for new server '{}'", server_name);
+                        tracing::info!(
+                            "Successfully synced manifests for new server '{}'",
+                            server_name
+                        );
                     }
                     Err(e) => {
-                        tracing::error!("Failed to sync manifests for new server '{}': {}", server_name, e);
+                        tracing::error!(
+                            "Failed to sync manifests for new server '{}': {}",
+                            server_name,
+                            e
+                        );
                     }
                 }
             }
@@ -194,25 +207,43 @@ pub async fn toggle_mcp_server(name: String) -> Result<bool> {
             // 异步连接和同步
             let server_name = name.clone();
             tokio::spawn(async move {
-                tracing::info!("Attempting to connect to newly enabled server '{}'", server_name);
+                tracing::info!(
+                    "Attempting to connect to newly enabled server '{}'",
+                    server_name
+                );
                 match crate::MCP_CLIENT_MANAGER
                     .ensure_connection(&server_config, false)
-                    .await {
+                    .await
+                {
                     Ok(_) => {
-                        tracing::info!("Successfully connected to enabled server '{}'", server_name);
+                        tracing::info!(
+                            "Successfully connected to enabled server '{}'",
+                            server_name
+                        );
 
                         // 连接成功后同步资源
                         match mcp_manager.sync_server_manifests(&server_name).await {
                             Ok(_) => {
-                                tracing::info!("Successfully synced manifests for enabled server '{}'", server_name);
+                                tracing::info!(
+                                    "Successfully synced manifests for enabled server '{}'",
+                                    server_name
+                                );
                             }
                             Err(e) => {
-                                tracing::error!("Failed to sync manifests for enabled server '{}': {}", server_name, e);
+                                tracing::error!(
+                                    "Failed to sync manifests for enabled server '{}': {}",
+                                    server_name,
+                                    e
+                                );
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Failed to connect to newly enabled server '{}': {}", server_name, e);
+                        tracing::error!(
+                            "Failed to connect to newly enabled server '{}': {}",
+                            server_name,
+                            e
+                        );
                     }
                 }
             });
@@ -222,7 +253,10 @@ pub async fn toggle_mcp_server(name: String) -> Result<bool> {
         let server_name = name.clone();
         tokio::spawn(async move {
             tracing::info!("Attempting to disconnect disabled server '{}'", server_name);
-            if let Err(e) = crate::MCP_CLIENT_MANAGER.disconnect_server(&server_name).await {
+            if let Err(e) = crate::MCP_CLIENT_MANAGER
+                .disconnect_server(&server_name)
+                .await
+            {
                 tracing::error!("Failed to disconnect server '{}': {}", server_name, e);
             } else {
                 tracing::info!("Successfully disconnected server '{}'", server_name);
@@ -234,11 +268,14 @@ pub async fn toggle_mcp_server(name: String) -> Result<bool> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn list_mcp_servers() -> Result<Vec<McpServerInfo>> {
+pub async fn list_mcp_servers() -> Result<McpServerResult> {
     let mcp_manager = get_mcp_manager().await?;
-    let servers = mcp_manager.list_servers().await?;
+    let (servers, total_count) = mcp_manager.list_servers(None, None).await?;
 
-    Ok(servers)
+    Ok(McpServerResult {
+        servers,
+        total_count,
+    })
 }
 
 // ============================================================================
@@ -248,7 +285,7 @@ pub async fn list_mcp_servers() -> Result<Vec<McpServerInfo>> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_mcp_server_statistics() -> Result<serde_json::Value> {
     let mcp_manager = get_mcp_manager().await?;
-    let servers = mcp_manager.list_servers().await?;
+    let (servers, _) = mcp_manager.list_servers(None, None).await?;
 
     let mut total_tools = 0;
     let mut total_resources = 0;

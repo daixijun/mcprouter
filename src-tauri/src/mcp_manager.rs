@@ -42,10 +42,18 @@ impl McpServerManager {
     }
 
     /// List all MCP servers
-    pub async fn list_servers(&self) -> Result<Vec<McpServerInfo>> {
-        let servers = self.orm_storage.list_mcp_servers().await.map_err(|e| {
-            crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
-        })?;
+    pub async fn list_servers(
+        &self,
+        page: Option<u32>,
+        page_size: Option<u32>,
+    ) -> Result<(Vec<McpServerInfo>, u64)> {
+        let (servers, total) = self
+            .orm_storage
+            .list_mcp_servers(page, page_size)
+            .await
+            .map_err(|e| {
+                crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
+            })?;
 
         let mut server_infos = Vec::new();
         for s in servers {
@@ -121,7 +129,7 @@ impl McpServerManager {
             });
         }
 
-        Ok(server_infos)
+        Ok((server_infos, total))
     }
 
     /// Get MCP server by name
@@ -236,9 +244,13 @@ impl McpServerManager {
         &self,
     ) -> Result<Vec<(String, String, String, Option<String>, String)>> {
         // Get all tools from database and return with server information
-        let server_infos = self.orm_storage.list_mcp_servers().await.map_err(|e| {
-            crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
-        })?;
+        let (server_infos, _) = self
+            .orm_storage
+            .list_mcp_servers(None, None)
+            .await
+            .map_err(|e| {
+                crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
+            })?;
         let mut all_tools = Vec::new();
 
         for server_info in server_infos {
@@ -271,9 +283,13 @@ impl McpServerManager {
         &self,
     ) -> Result<Vec<(String, String, String, String, Option<String>, String)>> {
         // Get all resources from database and return with server information
-        let server_infos = self.orm_storage.list_mcp_servers().await.map_err(|e| {
-            crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
-        })?;
+        let (server_infos, _) = self
+            .orm_storage
+            .list_mcp_servers(None, None)
+            .await
+            .map_err(|e| {
+                crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
+            })?;
         let mut all_resources = Vec::new();
 
         for server_info in server_infos {
@@ -307,9 +323,13 @@ impl McpServerManager {
         &self,
     ) -> Result<Vec<(String, String, Option<String>, String)>> {
         // Get all prompts from database and return with server information
-        let server_infos = self.orm_storage.list_mcp_servers().await.map_err(|e| {
-            crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
-        })?;
+        let (server_infos, _) = self
+            .orm_storage
+            .list_mcp_servers(None, None)
+            .await
+            .map_err(|e| {
+                crate::error::McpError::DatabaseError(format!("Failed to get servers: {}", e))
+            })?;
         let mut all_prompts = Vec::new();
 
         for server_info in server_infos {
@@ -339,7 +359,7 @@ impl McpServerManager {
 
     pub async fn load_mcp_servers(&self) -> Result<()> {
         tracing::info!("Loading MCP servers...");
-        let servers = self.list_servers().await?;
+        let (servers, _) = self.list_servers(None, None).await?;
         tracing::info!("Loaded {} MCP servers", servers.len());
         Ok(())
     }
@@ -347,7 +367,7 @@ impl McpServerManager {
     /// List available permissions for a given resource type
     pub async fn list_available_permissions(&self, resource_type: &str) -> Result<Vec<String>> {
         // Get all enabled servers
-        let servers = self.list_servers().await?;
+        let (servers, _) = self.list_servers(None, None).await?;
         let mut permissions = Vec::new();
 
         for server in servers {
@@ -445,7 +465,7 @@ impl McpServerManager {
         resource_type: &str,
     ) -> Result<Vec<crate::types::PermissionItem>> {
         // Get all enabled servers
-        let servers = self.list_servers().await?;
+        let (servers, _) = self.list_servers(None, None).await?;
         let mut permission_items = Vec::new();
 
         for server in servers {
@@ -1039,8 +1059,8 @@ impl McpServerManager {
     /// 避免因为一个服务器的连接问题导致整个导入流程失败
     pub async fn auto_connect_enabled_services(&self) -> Result<()> {
         // 使用更宽容的方式获取服务器列表，避免因单个服务器查询失败导致所有操作终止
-        let servers = match self.list_servers().await {
-            Ok(servers) => servers,
+        let servers = match self.list_servers(None, None).await {
+            Ok((servers, _)) => servers,
             Err(e) => {
                 tracing::warn!(
                     "Failed to list servers for auto-connect: {}. \
@@ -1417,7 +1437,7 @@ impl McpServerManager {
         const BATCH_SIZE: usize = 3; // 同时最多连接3个服务器
         const CONNECTION_TIMEOUT: Duration = Duration::from_secs(15);
 
-        let servers = self.orm_storage.list_mcp_servers().await?;
+        let (servers, _) = self.orm_storage.list_mcp_servers(None, None).await?;
         let enabled_servers: Vec<_> = servers.iter().filter(|s| s.enabled).collect();
 
         if enabled_servers.is_empty() {
@@ -1529,7 +1549,7 @@ impl McpServerManager {
     ///
     /// 此方法在后台异步同步所有已连接服务器的工具、资源和提示词
     pub async fn sync_all_manifests_background(&self) -> Result<()> {
-        let servers = self.orm_storage.list_mcp_servers().await?;
+        let (servers, _) = self.orm_storage.list_mcp_servers(None, None).await?;
         let enabled_servers: Vec<_> = servers.into_iter().filter(|s| s.enabled).collect();
 
         if enabled_servers.is_empty() {

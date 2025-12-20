@@ -568,14 +568,14 @@ pub async fn run() {
     // Use a fixed log file name
     let final_log_name = "mcprouter".to_string();
 
-    let log_builder =
-        tauri_plugin_log::Builder::new()
-            .level(log_level)
-            .targets([tauri_plugin_log::Target::new(
-                tauri_plugin_log::TargetKind::LogDir {
-                    file_name: Some(final_log_name),
-                },
-            )]);
+    let log_builder = tauri_plugin_log::Builder::new()
+        .level(log_level)
+        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+        .targets([tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::LogDir {
+                file_name: Some(final_log_name),
+            },
+        )]);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
@@ -984,7 +984,10 @@ async fn load_and_connect_services(mcp_server_manager: Arc<crate::mcp_manager::M
                 tracing::info!("✅ Service configuration loaded successfully");
 
                 // Get server list to track individual service status
-                let servers = manager_for_load.list_servers().await.unwrap_or_default();
+                let (servers, _) = manager_for_load
+                    .list_servers(None, None)
+                    .await
+                    .unwrap_or_default();
                 tracing::info!(
                     "📊 Found {} MCP servers ({} enabled)",
                     servers.len(),
@@ -1018,8 +1021,8 @@ async fn load_and_connect_services(mcp_server_manager: Arc<crate::mcp_manager::M
             tracing::info!("🔌 Phase 1: Starting batched connection to enabled services");
 
             // Get enabled servers count before connection attempt
-            let servers_before = manager_for_connection
-                .list_servers()
+            let (servers_before, _) = manager_for_connection
+                .list_servers(None, None)
                 .await
                 .unwrap_or_default();
             let enabled_servers = servers_before.iter().filter(|s| s.enabled).count();
@@ -1044,8 +1047,8 @@ async fn load_and_connect_services(mcp_server_manager: Arc<crate::mcp_manager::M
                 }
             } else {
                 // Log connection results
-                let servers_after = manager_for_connection
-                    .list_servers()
+                let (servers_after, _) = manager_for_connection
+                    .list_servers(None, None)
                     .await
                     .unwrap_or_default();
                 let connected_count = servers_after

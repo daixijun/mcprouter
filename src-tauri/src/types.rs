@@ -300,6 +300,13 @@ pub struct McpServerInfo {
     pub prompt_template_count: Option<usize>,
 }
 
+/// MCP服务器列表分页结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerResult {
+    pub servers: Vec<McpServerInfo>,
+    pub total_count: u64,
+}
+
 /// MCP服务器工具信息，用于API返回
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -19,7 +19,7 @@ pub enum AggregatorStatus {
 pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
     // Get actual service statistics
     let service_manager = crate::wait_for_service_manager().await?;
-    let services = service_manager.list_servers().await?;
+    let (services, _) = service_manager.list_servers(None, None).await?;
     let enabled_services = services.iter().filter(|s| s.enabled).count();
 
     // Calculate healthy services count (connected services)
@@ -52,7 +52,7 @@ pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
 
     // Get the total number of configured services directly from the manager
     let service_manager = crate::wait_for_service_manager().await?;
-    let mcp_servers = service_manager.list_servers().await?;
+    let (mcp_servers, _) = service_manager.list_servers(None, None).await?;
     let total_services = mcp_servers.len();
 
     // Get the current server configuration
@@ -86,7 +86,10 @@ pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
     // Determine aggregator status
     let aggregator_status = if aggregator_clone.is_some() {
         // Check if aggregator is actually running by looking at its statistics
-        let status_str = aggregator_stats.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let status_str = aggregator_stats
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         tracing::debug!("Aggregator status from statistics: {}", status_str);
 
         match status_str {
@@ -143,7 +146,10 @@ pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
     // For now, consider all prompts as templates since MCP prompts are inherently templatable
     let total_prompt_templates = services
         .iter()
-        .map(|s| s.prompt_template_count.unwrap_or(s.prompt_count.unwrap_or(0)) as u32)
+        .map(|s| {
+            s.prompt_template_count
+                .unwrap_or(s.prompt_count.unwrap_or(0)) as u32
+        })
         .sum::<u32>();
 
     Ok(serde_json::json!({

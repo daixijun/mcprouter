@@ -9,7 +9,8 @@
 
   body {
     height: 100vh;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      sans-serif;
     font-size: 14px;
     overflow: hidden;
   }
@@ -387,4 +388,66 @@
 
 .dark .ant-select-dropdown .ant-select-item-option-selected {
   background-color: rgba(96, 165, 250, 0.25) !important;
+}
+
+/* 分页组件过渡效果 */
+.ant-pagination {
+  transition: var(--theme-transition);
+}
+
+.ant-pagination-item {
+  transition: var(--theme-transition);
+}
+
+.ant-pagination-item:hover {
+  transform: translateY(-1px);
+}
+
+.ant-pagination-item a {
+  transition: var(--theme-transition);
+}
+
+.ant-pagination-item-active a {
+  background-color: var(--theme-primary);
+  border-color: var(--theme-primary);
+  color: white;
+}
+
+/* 表格行过渡效果 */
+.ant-table-tbody > tr {
+  transition: var(--theme-transition);
+}
+
+.ant-table-tbody > tr:hover > td {
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.dark .ant-table-tbody > tr:hover > td {
+  background-color: rgba(96, 165, 250, 0.1);
+}
+
+/* 加载状态过渡效果 */
+.ant-table-loading {
+  transition: var(--theme-transition);
+}
+
+/* 分页大小选择器过渡效果 */
+.ant-pagination-options-size-changer {
+  transition: var(--theme-transition);
+}
+
+.ant-pagination-options-size-changer:hover {
+  transform: translateY(-1px);
+}
+
+/* 确保分页组件在不同屏幕尺寸下都能正常显示 */
+@media (max-width: 640px) {
+  .ant-pagination {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .ant-pagination-options {
+    margin-top: 0.5rem;
+  }
 }

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { McpServerInfo, McpResourceInfo } from '../types'
+import type { McpResourceInfo, McpServerResult } from '../types'
 
 export class McpServerService {
   // MCP Server Management
@@ -64,15 +64,10 @@ export class McpServerService {
   }
 
   static async toggleMcpServer(name: string): Promise<boolean> {
-    try {
-      return await invoke('toggle_mcp_server', { name })
-    } catch (error) {
-      // Re-throw the error to ensure it propagates to the caller
-      throw error
-    }
+    return await invoke('toggle_mcp_server', { name })
   }
 
-  static async listMcpServers(): Promise<McpServerInfo[]> {
+  static async listMcpServers(): Promise<McpServerResult> {
     return invoke('list_mcp_servers')
   }
 
@@ -81,7 +76,9 @@ export class McpServerService {
   }
 
   // MCP Resources Management
-  static async listMcpServerResources(serverName: string): Promise<McpResourceInfo[]> {
+  static async listMcpServerResources(
+    serverName: string,
+  ): Promise<McpResourceInfo[]> {
     return invoke('list_mcp_server_resources', { server_name: serverName })
   }
 }

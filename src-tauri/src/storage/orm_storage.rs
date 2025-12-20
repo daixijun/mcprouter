@@ -7,7 +7,7 @@ use crate::storage::StorageError;
 use crate::types::{McpServerConfig, ServiceTransport, Token};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, Set, TransactionTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 use sea_orm_migration::MigratorTrait;
 use tracing::info;
@@ -84,17 +84,32 @@ impl Storage {
         Ok(())
     }
 
-    /// 获取所有 MCP 服务器
-    pub async fn list_mcp_servers(&self) -> Result<Vec<mcp_server::Model>, StorageError> {
+    /// 获取 MCP 服务器列表（支持分页）
+    pub async fn list_mcp_servers(
+        &self,
+        page: Option<u32>,
+        page_size: Option<u32>,
+    ) -> Result<(Vec<mcp_server::Model>, u64), StorageError> {
+        // 获取总记录数
+        let total = McpServer::find()
+            .count(&self.db)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to count MCP servers: {}", e)))?;
+
+        // 如果没有提供分页参数，返回所有记录
+        let page = page.unwrap_or(1);
+        let page_size = page_size.unwrap_or(20);
+        let offset = (page - 1) * page_size;
+
         let servers = McpServer::find()
             .order_by_asc(McpServerColumn::Name)
+            .offset(Some(u64::from(offset)))
+            .limit(Some(u64::from(page_size)))
             .all(&self.db)
             .await
-            .map_err(|e| {
-                StorageError::Database(format!("Failed to query all MCP servers: {}", e))
-            })?;
+            .map_err(|e| StorageError::Database(format!("Failed to query MCP servers: {}", e)))?;
 
-        Ok(servers)
+        Ok((servers, total))
     }
 
     /// 根据名称获取 MCP 服务器

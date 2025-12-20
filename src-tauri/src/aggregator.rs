@@ -441,11 +441,11 @@ impl McpAggregator {
         // Get connected servers count
         let servers = self
             .mcp_server_manager
-            .list_servers()
+            .list_servers(None, None)
             .await
             .unwrap_or_default();
-        let connected_servers = servers.iter().filter(|s| s.status == "connected").count();
-        let total_servers = servers.len();
+        let connected_servers = servers.0.iter().filter(|s| s.status == "connected").count();
+        let total_servers = servers.0.len();
 
         serde_json::json!({
             "status": "running",

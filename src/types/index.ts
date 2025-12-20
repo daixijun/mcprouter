@@ -165,6 +165,13 @@ export interface MarketplaceServiceResult {
   has_more: boolean
 }
 
+// MCP server result type for pagination
+export interface McpServerResult {
+  servers: McpServerInfo[]
+  total_count: number
+  has_more: boolean
+}
+
 // 便于单独引用安装命令类型
 export type InstallCommand = MarketplaceService['install_command']
 
@@ -359,23 +366,28 @@ export interface ValidationResult {
 
 // Tool Management Types
 export interface ToolInfo {
-  name: string           // "Bun", "UV", "UVX"
-  full_name: string      // "Bun JavaScript Runtime", "UV Package Manager", "UVX Package Executor"
-  path: string           // Path to the tool executable
-  version?: string       // Auto-detected version
+  name: string // "Bun", "UV", "UVX"
+  full_name: string // "Bun JavaScript Runtime", "UV Package Manager", "UVX Package Executor"
+  path: string // Path to the tool executable
+  version?: string // Auto-detected version
   status: ToolStatus
-  last_check?: string    // ISO timestamp
-  python_required: boolean  // Whether Python runtime is required
+  last_check?: string // ISO timestamp
+  python_required: boolean // Whether Python runtime is required
 }
 
-export type ToolStatus = "Installed" | "NotInstalled" | "Installing" | "Error" | "Outdated"
+export type ToolStatus =
+  | 'Installed'
+  | 'NotInstalled'
+  | 'Installing'
+  | 'Error'
+  | 'Outdated'
 
 export const ToolStatus = {
-  Installed: "Installed" as const,
-  NotInstalled: "NotInstalled" as const,
-  Installing: "Installing" as const,
-  Error: "Error" as const,
-  Outdated: "Outdated" as const,
+  Installed: 'Installed' as const,
+  NotInstalled: 'NotInstalled' as const,
+  Installing: 'Installing' as const,
+  Error: 'Error' as const,
+  Outdated: 'Outdated' as const,
 }
 
 export interface PythonRuntimeInfo {

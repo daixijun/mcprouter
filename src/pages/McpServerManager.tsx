@@ -1,3 +1,4 @@
+import { WarningOutlined } from '@ant-design/icons'
 import {
   App,
   Button,
@@ -24,14 +25,13 @@ import {
   Wrench,
   XCircle,
 } from 'lucide-react'
-import { WarningOutlined } from '@ant-design/icons'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAntdConfig } from '../components/AntdConfigProvider'
 import ToolManager from '../components/ToolManager'
+import { useAppContext } from '../contexts/AppContext'
 import { McpServerService } from '../services/mcp-server-service'
 import { ToolManagerService } from '../services/tool-manager-service'
-import { useAntdConfig } from '../components/AntdConfigProvider'
-import { useAppContext } from '../contexts/AppContext'
 import type { McpServerInfo, ToolStartupStatus } from '../types'
 
 const { TextArea } = Input
@@ -57,6 +57,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const [showToolsModal, setShowToolsModal] = useState(false)
   const [selectedServiceForTools, setSelectedServiceForTools] =
     useState<McpServerInfo | null>(null)
+
   const [newServiceConfig, setNewServiceConfig] = useState({
     name: '',
     description: '',
@@ -77,7 +78,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const [jsonError, setJsonError] = useState('')
 
   // Tool startup status
-  const [toolStartupStatus, setToolStartupStatus] = useState<ToolStartupStatus | null>(null)
+  const [toolStartupStatus, setToolStartupStatus] =
+    useState<ToolStartupStatus | null>(null)
 
   useEffect(() => {
     fetchMcpServers()
@@ -96,8 +98,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
   const fetchMcpServers = async () => {
     setLoading(true)
     try {
-      const servers = await McpServerService.listMcpServers()
-      setMcpServers(servers)
+      const result = await McpServerService.listMcpServers()
+      setMcpServers(result.servers)
     } catch (error) {
       console.error('Failed to fetch MCP servers:', error)
       message.error(t('mcp_server.messages.fetch_servers_failed'))
@@ -638,15 +640,14 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           backgroundColor: '#fff2f0',
           border: '1px solid #ffccc7',
           borderRadius: '6px',
-          marginBottom: '16px'
+          marginBottom: '16px',
         }}
         gap='small'
-        align='center'
-      >
+        align='center'>
         <WarningOutlined
           style={{
             color: '#ff4d4f',
-            fontSize: '16px'
+            fontSize: '16px',
           }}
         />
         <Flex vertical gap='small' flex={1}>
@@ -658,10 +659,10 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           <Text style={{ color: '#a8071a' }}>
             {needsPython
               ? t('mcp_server.tool_status.python_and_tools_description', {
-                  tools: toolStartupStatus.missing_tools.join(', ')
+                  tools: toolStartupStatus.missing_tools.join(', '),
                 })
               : t('mcp_server.tool_status.tools_description', {
-                  tools: toolStartupStatus.missing_tools.join(', ')
+                  tools: toolStartupStatus.missing_tools.join(', '),
                 })}
           </Text>
         </Flex>
@@ -672,8 +673,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           onClick={() => {
             // Navigate to settings page using app navigation
             setActiveTab('settings')
-          }}
-        >
+          }}>
           {t('mcp_server.tool_status.go_to_settings')}
         </Button>
       </Flex>
@@ -689,7 +689,9 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
         {/* Add Service Button */}
         <Flex justify='flex-end'>
           <Space>
-            <Button icon={<RotateCcw size={16} />} onClick={fetchMcpServers}>
+            <Button
+              icon={<RotateCcw size={16} />}
+              onClick={() => fetchMcpServers()}>
               {t('mcp_server.actions.refresh')}
             </Button>
             <Button
@@ -708,7 +710,9 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
           rowKey='name'
           loading={loading}
           scroll={{ x: 1200 }}
-          pagination={false}
+          pagination={{
+            showTotal: (total) => t('common.pagination.total', { total }),
+          }}
           sticky
           size='small'
           locale={{
@@ -965,7 +969,8 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
                     fontSize: '12px',
                     marginTop: '4px',
                     display: 'block',
-                    color: theme?.token?.colorTextTertiary || 'rgba(0, 0, 0, 0.45)',
+                    color:
+                      theme?.token?.colorTextTertiary || 'rgba(0, 0, 0, 0.45)',
                   }}
                   dangerouslySetInnerHTML={{
                     __html: t('mcp_server.form.json_config_help'),
@@ -1043,7 +1048,7 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
               }
               options={[
                 { value: 'stdio', label: t('mcp_server.protocol_types.stdio') },
-                                { value: 'http', label: t('mcp_server.protocol_types.http') },
+                { value: 'http', label: t('mcp_server.protocol_types.http') },
               ]}
               style={{ marginTop: '4px', width: '100%' }}
             />
