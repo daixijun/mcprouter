@@ -1,6 +1,6 @@
 use crate::error::{McpError, Result};
 use crate::token_manager::TokenManager;
-use crate::token_manager::{TokenForDashboard, TokenInfo};
+use crate::token_manager::{CreateTokenParams, TokenForDashboard, TokenInfo};
 use crate::types::{
     BatchUpdateTokenPermissionRequest, CleanupResult, CreateTokenRequest, CreateTokenResponse,
     PermissionAction, SimplePermissionUpdateResponse, TokenStats, UpdateTokenPermissionRequest,
@@ -19,15 +19,15 @@ pub async fn create_token(request: CreateTokenRequest) -> Result<CreateTokenResp
     let token_manager = crate::wait_for_token_manager().await?;
 
     let token_info = token_manager
-        .create(
-            request.name,
-            request.description,
-            request.allowed_tools,
-            request.allowed_resources,
-            request.allowed_prompts,
-            request.allowed_prompt_templates,
-            request.expires_in,
-        )
+        .create(CreateTokenParams {
+            name: request.name,
+            description: request.description,
+            allowed_tools: request.allowed_tools,
+            allowed_resources: request.allowed_resources,
+            allowed_prompts: request.allowed_prompts,
+            allowed_prompt_templates: request.allowed_prompt_templates,
+            expires_in: request.expires_in,
+        })
         .await?;
 
     // Get the actual token value from storage

@@ -39,6 +39,18 @@ use base64::Engine;
 use rand::Rng;
 use uuid::Uuid;
 
+/// Parameters for creating a new token
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTokenParams {
+    pub name: String,
+    pub description: Option<String>,
+    pub allowed_tools: Option<Vec<String>>,
+    pub allowed_resources: Option<Vec<String>>,
+    pub allowed_prompts: Option<Vec<String>>,
+    pub allowed_prompt_templates: Option<Vec<String>>,
+    pub expires_in: Option<u64>,
+}
+
 /// Token Manager
 #[derive(Debug)]
 pub struct TokenManager {
@@ -87,38 +99,30 @@ impl TokenManager {
     }
 
     /// Create a new token with generated value
-    pub async fn create(
-        &self,
-        name: String,
-        description: Option<String>,
-        allowed_tools: Option<Vec<String>>,
-        allowed_resources: Option<Vec<String>>,
-        allowed_prompts: Option<Vec<String>>,
-        allowed_prompt_templates: Option<Vec<String>>,
-        expires_in: Option<u64>,
-    ) -> Result<TokenInfo> {
+    pub async fn create(&self, params: CreateTokenParams) -> Result<TokenInfo> {
         let token_value = self.generate_token();
         let now = Utc::now();
         let id = Uuid::now_v7().to_string();
 
         // Calculate expires_at based on expires_in
-        let expires_at =
-            expires_in.map(|seconds| (now + Duration::seconds(seconds as i64)).timestamp() as u64);
+        let expires_at = params
+            .expires_in
+            .map(|seconds| (now + Duration::seconds(seconds as i64)).timestamp() as u64);
 
         let token = Token {
             id: id.clone(),
-            name,
+            name: params.name,
             value: token_value,
-            description,
+            description: params.description,
             created_at: now.timestamp() as u64,
             enabled: true,
             last_used_at: None,
             usage_count: 0,
             expires_at,
-            allowed_tools: allowed_tools.clone().or(Some(vec![])),
-            allowed_resources: allowed_resources.clone().or(Some(vec![])),
-            allowed_prompts: allowed_prompts.clone().or(Some(vec![])),
-            allowed_prompt_templates: allowed_prompt_templates.clone().or(Some(vec![])),
+            allowed_tools: params.allowed_tools.clone().or(Some(vec![])),
+            allowed_resources: params.allowed_resources.clone().or(Some(vec![])),
+            allowed_prompts: params.allowed_prompts.clone().or(Some(vec![])),
+            allowed_prompt_templates: params.allowed_prompt_templates.clone().or(Some(vec![])),
         };
 
         self.orm_storage
@@ -127,7 +131,7 @@ impl TokenManager {
             .map_err(|e| McpError::ValidationError(format!("Failed to create token: {}", e)))?;
 
         // Store permissions in database
-        if let Some(tools) = &allowed_tools {
+        if let Some(tools) = &params.allowed_tools {
             for tool in tools {
                 self.orm_storage
                     .add_permission(&token.id, "tool", tool)
@@ -138,7 +142,7 @@ impl TokenManager {
             }
         }
 
-        if let Some(resources) = &allowed_resources {
+        if let Some(resources) = &params.allowed_resources {
             for resource in resources {
                 self.orm_storage
                     .add_permission(&token.id, "resource", resource)
@@ -152,7 +156,7 @@ impl TokenManager {
             }
         }
 
-        if let Some(prompts) = &allowed_prompts {
+        if let Some(prompts) = &params.allowed_prompts {
             for prompt in prompts {
                 self.orm_storage
                     .add_permission(&token.id, "prompt", prompt)
@@ -163,7 +167,7 @@ impl TokenManager {
             }
         }
 
-        if let Some(prompt_templates) = &allowed_prompt_templates {
+        if let Some(prompt_templates) = &params.allowed_prompt_templates {
             for template in prompt_templates {
                 self.orm_storage
                     .add_permission(&token.id, "prompt_template", template)
