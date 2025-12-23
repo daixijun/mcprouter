@@ -65,8 +65,12 @@ pub async fn install_marketplace_service(
 
     // Persist into service manager
     let service_manager = {
-        let guard = SERVICE_MANAGER.lock().unwrap();
-        guard.as_ref().unwrap().clone()
+        let guard = SERVICE_MANAGER
+            .lock()
+            .expect("Failed to acquire SERVICE_MANAGER lock");
+        guard.as_ref()
+            .expect("SERVICE_MANAGER should be initialized")
+            .clone()
     };
     service_manager.add_server(&config).await?;
 

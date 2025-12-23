@@ -193,14 +193,14 @@ pub async fn toggle_mcp_server(name: String) -> Result<bool> {
         // 启用：尝试连接并同步
         if let Some(server) = mcp_manager.get_server_by_name(&name).await? {
             let server_config = McpServerConfig {
-                name: server.name.clone(),
-                description: server.description,
+                name: server.name.to_string(),
+                description: server.description.as_ref().map(|d| d.as_ref().to_string()),
                 transport: server.transport.parse().unwrap_or(ServiceTransport::Stdio),
                 command: server.command,
                 args: server.args,
                 url: server.url,
-                headers: server.headers,
-                env: server.env,
+                headers: server.headers.as_ref().map(|h| (**h).clone()),
+                env: server.env.as_ref().map(|e| (**e).clone()),
                 enabled: true,
             };
 

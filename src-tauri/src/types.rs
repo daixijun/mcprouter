@@ -1,6 +1,7 @@
 use rmcp::model::Tool as McpToolSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use strum::{Display, EnumString};
 
 // Use rmcp Tool model directly instead of custom struct
@@ -269,7 +270,7 @@ pub struct ServiceStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct McpServerInfo {
-    pub name: String,
+    pub name: Arc<str>,
     pub enabled: bool,
     pub status: String, // "connecting", "connected", "disconnected", "failed"
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -281,11 +282,11 @@ pub struct McpServerInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    pub description: Option<Arc<str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub env: Option<HashMap<String, String>>,
+    pub env: Option<Arc<HashMap<String, String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<HashMap<String, String>>,
+    pub headers: Option<Arc<HashMap<String, String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -815,13 +816,96 @@ pub struct ValidationResult {
 }
 
 /// 可用权限项 - 简化版本，使用 resource_path
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PermissionItem {
     pub id: String,                  // 保留 UUID 用于数据库主键
     pub resource_path: String,       // 格式：server__resource_name
     pub resource_type: String,       // 'tool' | 'resource' | 'prompt'
     pub description: Option<String>, // 权限描述
     pub server_name: String,         // 服务器名称
+}
+
+impl PermissionItem {
+    /// 重置 PermissionItem 的内容以便重用
+    pub fn reset(&mut self) {
+        self.id.clear();
+        self.resource_path.clear();
+        self.resource_type.clear();
+        self.description = None;
+        self.server_name.clear();
+    }
+
+    /// 创建新的 PermissionItem
+    pub fn new(
+        id: String,
+        resource_path: String,
+        resource_type: String,
+        description: Option<String>,
+        server_name: String,
+    ) -> Self {
+        Self {
+            id,
+            resource_path,
+            resource_type,
+            description,
+            server_name,
+        }
+    }
+}
+
+/// PermissionItem 对象池
+#[derive(Debug)]
+pub struct PermissionItemPool {
+    pool: Vec<PermissionItem>,
+    max_size: usize,
+}
+
+impl Default for PermissionItemPool {
+    fn default() -> Self {
+        Self::new(100) // 默认最大容量100
+    }
+}
+
+impl PermissionItemPool {
+    /// 创建新的对象池
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            pool: Vec::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    /// 获取 PermissionItem 实例
+    pub fn get(&mut self) -> PermissionItem {
+        self.pool.pop().unwrap_or_default()
+    }
+
+    /// 归还 PermissionItem 实例
+    pub fn return_item(&mut self, mut item: PermissionItem) {
+        if self.pool.len() < self.max_size {
+            item.reset();
+            self.pool.push(item);
+        }
+    }
+
+    /// 预分配一定数量的对象
+    pub fn pre_allocate(&mut self, count: usize) {
+        for _ in 0..count {
+            if self.pool.len() < self.max_size {
+                self.pool.push(PermissionItem::default());
+            }
+        }
+    }
+
+    /// 获取池中当前的对象数量
+    pub fn len(&self) -> usize {
+        self.pool.len()
+    }
+
+    /// 检查池是否为空
+    pub fn is_empty(&self) -> bool {
+        self.pool.is_empty()
+    }
 }
 
 /// 可用权限集合
@@ -838,7 +922,7 @@ pub struct AvailablePermissions {
 // ============================================================================
 
 /// 初始化状态枚举
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InitializationState {
     /// 未开始
     NotStarted,

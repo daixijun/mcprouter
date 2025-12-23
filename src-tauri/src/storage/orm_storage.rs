@@ -301,6 +301,25 @@ impl Storage {
         Ok(tools)
     }
 
+    /// 批量获取多个服务器的工具
+    pub async fn list_tools_by_server_ids(
+        &self,
+        server_ids: &[&str],
+    ) -> Result<Vec<(String, mcp_tool::Model)>, StorageError> {
+        let tools = McpTool::find()
+            .filter(McpToolColumn::ServerId.is_in(server_ids.to_vec()))
+            .filter(McpToolColumn::Enabled.eq(true))
+            .all(&self.db)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to batch query tools: {}", e)))?;
+
+        // 返回 (server_id, tool) 元组，方便后续处理
+        Ok(tools
+            .into_iter()
+            .map(|tool| (tool.server_id.clone(), tool))
+            .collect())
+    }
+
     /// 获取服务器的所有资源
     pub async fn list_server_resources(
         &self,
@@ -316,6 +335,25 @@ impl Storage {
         Ok(resources)
     }
 
+    /// 批量获取多个服务器的资源
+    pub async fn list_resources_by_server_ids(
+        &self,
+        server_ids: &[&str],
+    ) -> Result<Vec<(String, mcp_resource::Model)>, StorageError> {
+        let resources = McpResource::find()
+            .filter(McpResourceColumn::ServerId.is_in(server_ids.to_vec()))
+            .filter(McpResourceColumn::Enabled.eq(true))
+            .all(&self.db)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to batch query resources: {}", e)))?;
+
+        // 返回 (server_id, resource) 元组，方便后续处理
+        Ok(resources
+            .into_iter()
+            .map(|resource| (resource.server_id.clone(), resource))
+            .collect())
+    }
+
     /// 获取服务器的所有提示词
     pub async fn list_server_prompts(
         &self,
@@ -329,6 +367,25 @@ impl Storage {
             .map_err(|e| StorageError::Database(format!("Failed to query: {}", e)))?;
 
         Ok(prompts)
+    }
+
+    /// 批量获取多个服务器的提示词
+    pub async fn list_prompts_by_server_ids(
+        &self,
+        server_ids: &[&str],
+    ) -> Result<Vec<(String, mcp_prompt::Model)>, StorageError> {
+        let prompts = McpPrompt::find()
+            .filter(McpPromptColumn::ServerId.is_in(server_ids.to_vec()))
+            .filter(McpPromptColumn::Enabled.eq(true))
+            .all(&self.db)
+            .await
+            .map_err(|e| StorageError::Database(format!("Failed to batch query prompts: {}", e)))?;
+
+        // 返回 (server_id, prompt) 元组，方便后续处理
+        Ok(prompts
+            .into_iter()
+            .map(|prompt| (prompt.server_id.clone(), prompt))
+            .collect())
     }
 
     /// 批量更新服务器工具
@@ -717,7 +774,8 @@ impl Storage {
         {
             let mut active_model: token::ActiveModel = token_entity.into();
             active_model.last_used_at = Set(Some(now.into()));
-            active_model.usage_count = Set(active_model.usage_count.unwrap() + 1);
+            let current_count = active_model.usage_count.take().unwrap_or(0);
+            active_model.usage_count = Set(current_count + 1);
             active_model.updated_at = Set(now.into());
 
             active_model

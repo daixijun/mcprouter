@@ -107,7 +107,10 @@ async fn dynamic_bearer_auth_middleware(
                     // Create a session-like info object directly from the token
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("SystemTime calculation failed: {}", e);
+                            std::time::Duration::ZERO
+                        })
                         .as_secs();
                     let session_info = crate::auth_context::SessionInfo {
                         id: token_id.clone(), // Use token_id as session_id
@@ -398,7 +401,9 @@ impl McpAggregator {
 
         // Store cancellation token for later use in trigger_shutdown
         {
-            let mut shutdown_guard = self.shutdown_signal.lock().unwrap();
+            let mut shutdown_guard = self.shutdown_signal
+                .lock()
+                .expect("Failed to acquire shutdown_signal lock");
             *shutdown_guard = Some(ct.clone());
         }
 
@@ -503,15 +508,19 @@ impl McpAggregator {
         // 记录工具数量用于日志
         let original_count = tools.len();
 
+        // 优化：使用 HashSet 加速权限查找 O(n+m) 替代 O(n*m)
+        let allowed_tools_set: std::collections::HashSet<&str> = token_info
+            .allowed_tools
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
         // 真实的权限过滤（精确匹配 resource_path）
         let filtered_tools: Vec<McpTool> = tools
             .into_iter()
             .filter(|tool| {
                 let tool_name = &tool.name;
-                let has_permission = token_info.allowed_tools.iter().any(|allowed_tool| {
-                    // 只支持精确匹配
-                    allowed_tool == tool_name
-                });
+                let has_permission = allowed_tools_set.contains(tool_name.as_ref());
 
                 if has_permission {
                     tracing::debug!("✅ Tool {} allowed by permission", tool_name);
@@ -586,7 +595,9 @@ impl McpAggregator {
         tracing::info!("Triggering aggregator shutdown...");
 
         // Get the cancellation token and trigger shutdown
-        let shutdown_guard = self.shutdown_signal.lock().unwrap();
+        let shutdown_guard = self.shutdown_signal
+            .lock()
+            .expect("Failed to acquire shutdown_signal lock");
         if let Some(ct) = shutdown_guard.as_ref() {
             ct.cancel();
             tracing::info!("Shutdown signal sent to MCP Aggregator server");
@@ -611,7 +622,8 @@ impl McpAggregator {
 
         tracing::info!("📊 Retrieved {} tools from database", tools_data.len());
 
-        let mut mcp_tools = Vec::new();
+        // 优化：预分配 Vec 容量，避免多次重分配
+        let mut mcp_tools = Vec::with_capacity(tools_data.len());
 
         for (_tool_id, tool_name, description, input_schema_json, server_name) in tools_data {
             // 记录原始数据

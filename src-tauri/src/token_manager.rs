@@ -119,10 +119,10 @@ impl TokenManager {
             last_used_at: None,
             usage_count: 0,
             expires_at,
-            allowed_tools: params.allowed_tools.clone().or(Some(vec![])),
-            allowed_resources: params.allowed_resources.clone().or(Some(vec![])),
-            allowed_prompts: params.allowed_prompts.clone().or(Some(vec![])),
-            allowed_prompt_templates: params.allowed_prompt_templates.clone().or(Some(vec![])),
+            allowed_tools: params.allowed_tools.clone(),
+            allowed_resources: params.allowed_resources.clone(),
+            allowed_prompts: params.allowed_prompts.clone(),
+            allowed_prompt_templates: params.allowed_prompt_templates.clone(),
         };
 
         self.orm_storage
@@ -674,28 +674,28 @@ impl TokenManager {
                 McpError::ValidationError(format!("Failed to get token permissions: {}", e))
             })?;
 
-        // Group permissions by type
-        let mut allowed_tools = Vec::new();
-        let mut allowed_resources = Vec::new();
-        let mut allowed_prompts = Vec::new();
-        let mut allowed_prompt_templates = Vec::new();
-
-        for permission in permissions {
-            if permission.allowed {
-                match permission.resource_type.as_str() {
-                    "tool" => allowed_tools.push(permission.resource_path),
-                    "resource" => allowed_resources.push(permission.resource_path),
-                    "prompt" => allowed_prompts.push(permission.resource_path),
-                    "prompt_template" => allowed_prompt_templates.push(permission.resource_path),
-                    _ => {
-                        tracing::warn!(
-                            "Unknown resource type in permission: {}",
-                            permission.resource_type
-                        );
+        // Group permissions by type - 使用 fold 优化，减少中间分配
+        let (allowed_tools, allowed_resources, allowed_prompts, allowed_prompt_templates) = permissions
+            .into_iter()
+            .filter(|permission| permission.allowed)
+            .fold(
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+                |(mut t, mut r, mut p, mut pt), permission| {
+                    match permission.resource_type.as_str() {
+                        "tool" => t.push(permission.resource_path),
+                        "resource" => r.push(permission.resource_path),
+                        "prompt" => p.push(permission.resource_path),
+                        "prompt_template" => pt.push(permission.resource_path),
+                        _ => {
+                            tracing::warn!(
+                                "Unknown resource type in permission: {}",
+                                permission.resource_type
+                            );
+                        }
                     }
-                }
-            }
-        }
+                    (t, r, p, pt)
+                },
+            );
 
         Ok(TokenInfo {
             id: token.id.clone(),

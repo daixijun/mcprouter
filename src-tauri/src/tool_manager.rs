@@ -33,7 +33,7 @@ impl ToolManager {
             download_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
-                .unwrap(),
+                .expect("Failed to create HTTP client for downloads"),
             tools: RwLock::new(Vec::new()),
         }
     }
@@ -677,7 +677,7 @@ mod tests {
         // Test bun x command path
         let result = tool_manager.get_executable_path("bun x create-react-app").await;
         assert!(result.is_ok());
-        let path = result.unwrap();
+        let path = result.expect("Failed to get executable path for bun x command");
         assert!(path.to_string_lossy().contains("bun"));
     }
 
@@ -688,7 +688,7 @@ mod tests {
         // Test regular bun command path
         let result = tool_manager.get_executable_path("bun run script.js").await;
         assert!(result.is_ok());
-        let path = result.unwrap();
+        let path = result.expect("Failed to get executable path for bun run command");
         assert!(path.to_string_lossy().contains("bun"));
     }
 

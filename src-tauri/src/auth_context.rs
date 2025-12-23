@@ -14,7 +14,10 @@ impl SessionInfo {
         if let Some(expires_at) = self.expires_at {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_else(|e| {
+                    tracing::warn!("SystemTime calculation failed: {}", e);
+                    std::time::Duration::ZERO
+                })
                 .as_secs();
             expires_at < now
         } else {

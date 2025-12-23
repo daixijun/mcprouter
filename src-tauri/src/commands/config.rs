@@ -143,8 +143,12 @@ pub async fn import_mcp_servers_config(
                 // Add service
                 {
                     let service_manager = {
-                        let guard = SERVICE_MANAGER.lock().unwrap();
-                        guard.as_ref().unwrap().clone()
+                        let guard = SERVICE_MANAGER
+                            .lock()
+                            .expect("Failed to acquire SERVICE_MANAGER lock");
+                        guard.as_ref()
+                            .expect("SERVICE_MANAGER should be initialized")
+                            .clone()
                     };
                     tracing::info!("Importing service '{}': transport={:?}, command={:?}, url={:?}",
                         service_name, service_config.transport, service_config.command, service_config.url);
@@ -175,8 +179,12 @@ pub async fn import_mcp_servers_config(
 
         // Get service manager for auto-connect
         let service_manager = {
-            let guard = SERVICE_MANAGER.lock().unwrap();
-            guard.as_ref().unwrap().clone()
+            let guard = SERVICE_MANAGER
+                .lock()
+                .expect("Failed to acquire SERVICE_MANAGER lock");
+            guard.as_ref()
+                .expect("SERVICE_MANAGER should be initialized")
+                .clone()
         };
 
         if added_servers.is_empty() {

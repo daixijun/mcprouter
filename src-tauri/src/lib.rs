@@ -49,7 +49,7 @@ async fn get_initialization_state() -> std::sync::Arc<tokio::sync::RwLock<Initia
 /// Update initialization state
 async fn update_initialization_state(state: InitializationState) {
     if let Some(init_state) = INIT_STATE.get() {
-        *init_state.write().await = state.clone();
+        *init_state.write().await = state;
         tracing::info!("Initialization state updated: {:?}", state);
     }
 }
@@ -68,31 +68,26 @@ pub async fn wait_for_service_manager() -> Result<Arc<McpServerManager>, crate::
 pub async fn wait_for_service_manager_with_progress(
 ) -> Result<Arc<McpServerManager>, crate::error::McpError> {
     // 第一步：立即尝试获取（适用于热启动或已初始化完成的场景）
-    {
-        let guard = SERVICE_MANAGER.lock().map_err(|_| {
-            crate::error::McpError::Internal("Failed to acquire service manager lock".to_string())
-        })?;
-        if let Some(ref manager) = *guard {
-            // 快速路径：管理器已存在，直接返回
-            tracing::debug!("Service manager immediately available");
-            return Ok(manager.clone());
-        }
+    if let Some(manager) = get_service_manager_fast()? {
+        // 快速路径：管理器已存在，直接返回
+        tracing::debug!("Service manager immediately available");
+        return Ok(manager);
     }
 
     let mut last_state = InitializationState::NotStarted;
-    let mut progress_logged = std::collections::HashSet::new();
+    let mut progress_logged: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
 
     // 第二步：最多等待 3 秒（30次尝试 * 100ms）
     // 这比原来的 30 秒短得多，避免阻塞接口太久
     for attempt in 0..30 {
         // 检查初始化状态
         let init_state = get_initialization_state().await;
-        let current_state = (*init_state.read().await).clone();
+        let current_state = *init_state.read().await;
 
         // Log state changes
         if current_state != last_state {
             tracing::info!("Initialization progress: {:?}", current_state);
-            last_state = current_state.clone();
+            last_state = current_state;
         }
 
         // Provide different status feedback
@@ -101,45 +96,43 @@ pub async fn wait_for_service_manager_with_progress(
                 tracing::debug!("Waiting for initialization to start...");
             }
             InitializationState::DatabaseConnecting => {
-                if !progress_logged.contains("db_connecting") {
+                if !progress_logged.contains(&"db_connecting") {
                     tracing::info!("⏳ Database connecting...");
-                    progress_logged.insert("db_connecting".to_string());
+                    progress_logged.insert("db_connecting");
                 }
             }
             InitializationState::DatabaseMigrating => {
-                if !progress_logged.contains("db_migrating") {
+                if !progress_logged.contains(&"db_migrating") {
                     tracing::info!("⏳ Database migrating...");
-                    progress_logged.insert("db_migrating".to_string());
+                    progress_logged.insert("db_migrating");
                 }
             }
             InitializationState::ManagersCreated => {
-                if !progress_logged.contains("managers_created") {
+                if !progress_logged.contains(&"managers_created") {
                     tracing::info!("✅ Managers created, basic functions available");
-                    progress_logged.insert("managers_created".to_string());
+                    progress_logged.insert("managers_created");
                 }
             }
             InitializationState::ServicesLoading => {
-                if !progress_logged.contains("services_loading") {
+                if !progress_logged.contains(&"services_loading") {
                     tracing::info!("🔁 Config loading...");
-                    progress_logged.insert("services_loading".to_string());
+                    progress_logged.insert("services_loading");
                 }
             }
             InitializationState::ServicesConnecting => {
-                if !progress_logged.contains("services_connecting") {
+                if !progress_logged.contains(&"services_connecting") {
                     tracing::info!("🔌 Services connecting...");
-                    progress_logged.insert("services_connecting".to_string());
+                    progress_logged.insert("services_connecting");
                 }
             }
             InitializationState::Completed => {
-                if !progress_logged.contains("completed") {
+                if !progress_logged.contains(&"completed") {
                     tracing::info!("🎉 All services initialized");
-                    progress_logged.insert("completed".to_string());
+                    progress_logged.insert("completed");
                 }
                 // 完全初始化完成，安全返回
-                if let Ok(guard) = SERVICE_MANAGER.lock() {
-                    if let Some(ref manager) = *guard {
-                        return Ok(manager.clone());
-                    }
+                if let Some(manager) = get_service_manager_fast()? {
+                    return Ok(manager);
                 }
             }
         }
@@ -158,9 +151,9 @@ pub async fn wait_for_service_manager_with_progress(
                                 | InitializationState::NotStarted
                         ))
                 {
-                    if !progress_logged.contains("early_return") {
+                    if !progress_logged.contains(&"early_return") {
                         tracing::warn!("⚠️  Manager already exists, returning immediately (background tasks continue)");
-                        progress_logged.insert("early_return".to_string());
+                        progress_logged.insert("early_return");
                     }
                     return Ok(manager.clone());
                 }
@@ -173,16 +166,11 @@ pub async fn wait_for_service_manager_with_progress(
 
     // 第三步：3秒后仍然没有，检查是否 manager 已存在（部分可用）
     tracing::warn!("3 seconds timeout, checking for partially available manager");
-    {
-        let guard = SERVICE_MANAGER.lock().map_err(|_| {
-            crate::error::McpError::Internal("Failed to acquire service manager lock".to_string())
-        })?;
-        if let Some(ref manager) = *guard {
-            tracing::info!(
-                "✅ Got partially available service manager (some functions may be unavailable)"
-            );
-            return Ok(manager.clone());
-        }
+    if let Some(manager) = get_service_manager_fast()? {
+        tracing::info!(
+            "✅ Got partially available service manager (some functions may be unavailable)"
+        );
+        return Ok(manager);
     }
 
     // 第四步：完全失败
@@ -217,6 +205,18 @@ pub async fn wait_for_token_manager(
 // Global state - use MCP Server Manager
 static SERVICE_MANAGER: std::sync::Mutex<Option<Arc<McpServerManager>>> =
     std::sync::Mutex::new(None);
+
+/// Helper function to get service manager quickly (clone version)
+fn get_service_manager_fast() -> Result<Option<Arc<McpServerManager>>, crate::error::McpError> {
+    SERVICE_MANAGER
+        .lock()
+        .map_err(|_| {
+            crate::error::McpError::Internal("Failed to acquire service manager lock".to_string())
+        })?
+        .clone()
+        .map(Ok)
+        .transpose()
+}
 
 // Global initialization state tracking
 static INIT_STATE: std::sync::OnceLock<std::sync::Arc<tokio::sync::RwLock<InitializationState>>> =
@@ -419,7 +419,9 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     // Build tray icon with menu and event handlers
     let _tray = TrayIconBuilder::<_>::with_id("main_tray")
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(app.default_window_icon()
+            .expect("Application must have a default window icon")
+            .clone())
         .tooltip("MCP Router")
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -851,7 +853,9 @@ async fn initialize_managers(
 
     // Set global SERVICE_MANAGER for backward compatibility
     {
-        let mut service_manager_guard = SERVICE_MANAGER.lock().unwrap();
+        let mut service_manager_guard = SERVICE_MANAGER
+            .lock()
+            .expect("Failed to acquire SERVICE_MANAGER lock");
         *service_manager_guard = Some(mcp_server_manager.clone());
     }
 
@@ -943,14 +947,20 @@ async fn create_and_start_aggregator(
     // Store the aggregator in the global variable
     tracing::info!("💾 Storing aggregator instance in global state...");
     {
-        let mut aggregator_guard = AGGREGATOR.lock().unwrap();
+        let mut aggregator_guard = AGGREGATOR
+            .lock()
+            .expect("Failed to acquire AGGREGATOR lock");
         *aggregator_guard = Some(Arc::new(aggregator));
     }
 
     // Start the aggregator HTTP server
     let aggregator_for_start = {
-        let guard = AGGREGATOR.lock().unwrap();
-        guard.as_ref().unwrap().clone()
+        let guard = AGGREGATOR
+            .lock()
+            .expect("Failed to acquire AGGREGATOR lock");
+        guard.as_ref()
+            .expect("AGGREGATOR should contain a value after initialization")
+            .clone()
     };
 
     tracing::info!("🎯 Starting aggregator HTTP server...");

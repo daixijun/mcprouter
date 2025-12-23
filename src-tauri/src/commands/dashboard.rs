@@ -65,7 +65,9 @@ pub async fn get_dashboard_stats() -> Result<serde_json::Value> {
     // Get aggregator statistics
     // 获取聚合器的克隆，避免跨越 await 点持有锁
     let aggregator_clone = {
-        let aggregator_guard = AGGREGATOR.lock().unwrap();
+        let aggregator_guard = AGGREGATOR
+            .lock()
+            .expect("Failed to acquire AGGREGATOR lock");
         (*aggregator_guard).clone()
     };
 

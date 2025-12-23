@@ -19,7 +19,9 @@ pub async fn list_available_permissions(
 ) -> Result<AvailablePermissions> {
     // Use the global SERVICE_MANAGER to get actual cached data
     let mcp_manager = {
-        let guard = crate::SERVICE_MANAGER.lock().unwrap();
+        let guard = crate::SERVICE_MANAGER
+            .lock()
+            .expect("Failed to acquire SERVICE_MANAGER lock");
         guard.as_ref()
             .ok_or_else(|| crate::error::McpError::InternalError("MCP Server Manager not initialized".to_string()))?
             .clone()

@@ -169,7 +169,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                 command_paths: std::collections::HashMap::new(),
             });
         }
-        let settings_mut = config.settings.as_mut().unwrap();
+        let settings_mut = config.settings
+            .as_mut()
+            .expect("Settings should be initialized at this point");
 
         // Theme
         if let Some(Value::String(theme)) = settings_obj.get("theme") {
@@ -195,7 +197,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                     start_to_tray: Some(false),
                 });
             }
-            let tray_mut = settings_mut.system_tray.as_mut().unwrap();
+            let tray_mut = settings_mut.system_tray
+                .as_mut()
+                .expect("SystemTraySettings should be initialized at this point");
 
             // Handle enabled status first
             if let Some(Value::Bool(enabled)) = tray_obj.get("enabled") {
@@ -258,7 +262,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
                     sql_log: false,
                 });
             }
-            let logging_mut = config.logging.as_mut().unwrap();
+            let logging_mut = config.logging
+                .as_mut()
+                .expect("LoggingSettings should be initialized at this point");
 
             // level as string
             if let Some(Value::String(level)) = logging_obj.get("level") {
@@ -329,7 +335,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
 
         // Stop existing aggregator
         let aggregator_clone = {
-            let aggregator_guard = AGGREGATOR.lock().unwrap();
+            let aggregator_guard = AGGREGATOR
+                .lock()
+                .expect("Failed to acquire AGGREGATOR lock");
             (*aggregator_guard).clone()
         };
 
@@ -365,7 +373,9 @@ pub async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -
 
         // Update global aggregator state
         {
-            let mut aggregator_guard = AGGREGATOR.lock().unwrap();
+            let mut aggregator_guard = AGGREGATOR
+                .lock()
+                .expect("Failed to acquire AGGREGATOR lock");
             *aggregator_guard = Some(new_aggregator.clone());
         }
 
@@ -497,7 +507,10 @@ pub async fn save_language_preference(app: tauri::AppHandle, language: String) -
                 command_paths: Default::default(),
             });
         } else {
-            config.settings.as_mut().unwrap().language = Some(language.clone());
+            config.settings
+                .as_mut()
+                .expect("Settings should exist in else branch")
+                .language = Some(language.clone());
         }
     }
 

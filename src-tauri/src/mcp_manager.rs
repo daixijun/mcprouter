@@ -110,16 +110,16 @@ impl McpServerManager {
             let version = crate::MCP_CLIENT_MANAGER.get_server_version(&s.name).await;
 
             server_infos.push(McpServerInfo {
-                name: s.name,
+                name: Arc::from(s.name.as_str()),
                 enabled: s.enabled,
                 status,
                 version,
                 error_message,
                 transport,
                 url: s.url,
-                description: s.description,
-                env: Some(env),
-                headers: Some(headers),
+                description: s.description.map(|d| Arc::from(d.as_str())),
+                env: Some(Arc::new(env)),
+                headers: Some(Arc::new(headers)),
                 command: s.command,
                 args: Some(args),
                 tool_count: Some(tool_count),
@@ -196,16 +196,16 @@ impl McpServerManager {
             let version = crate::MCP_CLIENT_MANAGER.get_server_version(&s.name).await;
 
             Ok(Some(McpServerInfo {
-                name: s.name,
+                name: Arc::from(s.name.as_str()),
                 enabled: s.enabled,
                 status,
                 version,
                 error_message,
                 transport,
                 url: s.url,
-                description: s.description,
-                env: Some(env),
-                headers: Some(headers),
+                description: s.description.map(|d| Arc::from(d.as_str())),
+                env: Some(Arc::new(env)),
+                headers: Some(Arc::new(headers)),
                 command: s.command,
                 args: Some(args),
                 tool_count: Some(tool_count),
@@ -254,6 +254,7 @@ impl McpServerManager {
         let mut all_tools = Vec::new();
 
         for server_info in server_infos {
+            let server_name = server_info.name.clone();
             let tools = self
                 .orm_storage
                 .list_server_tools(&server_info.id)
@@ -271,7 +272,7 @@ impl McpServerManager {
                     tool.name,
                     tool.description.unwrap_or_default(),
                     tool.input_schema,
-                    server_info.name.clone(),
+                    server_name.clone(),
                 ));
             }
         }
@@ -293,6 +294,7 @@ impl McpServerManager {
         let mut all_resources = Vec::new();
 
         for server_info in server_infos {
+            let server_name = server_info.name.clone();
             let resources = self
                 .orm_storage
                 .list_server_resources(&server_info.id)
@@ -311,7 +313,7 @@ impl McpServerManager {
                     resource.name.unwrap_or_default(),
                     resource.description.unwrap_or_default(),
                     resource.mime_type,
-                    server_info.name.clone(),
+                    server_name.clone(),
                 ));
             }
         }
@@ -333,6 +335,7 @@ impl McpServerManager {
         let mut all_prompts = Vec::new();
 
         for server_info in server_infos {
+            let server_name = server_info.name.clone();
             let prompts = self
                 .orm_storage
                 .list_server_prompts(&server_info.id)
@@ -349,7 +352,7 @@ impl McpServerManager {
                     prompt.id,
                     prompt.name,
                     prompt.description,
-                    server_info.name.clone(),
+                    server_name.clone(),
                 ));
             }
         }
@@ -497,7 +500,7 @@ impl McpServerManager {
                                 resource_path,
                                 resource_type: "tool".to_string(),
                                 description: tool.description.clone(),
-                                server_name: server.name.clone(),
+                                server_name: server.name.to_string(),
                             });
                         }
                     }
@@ -529,7 +532,7 @@ impl McpServerManager {
                                 resource_path,
                                 resource_type: "resource".to_string(),
                                 description: resource.description.clone(),
-                                server_name: server.name.clone(),
+                                server_name: server.name.to_string(),
                             });
                         }
                     }
@@ -553,7 +556,7 @@ impl McpServerManager {
                                 resource_path,
                                 resource_type: "prompt".to_string(),
                                 description: prompt.description.clone(),
-                                server_name: server.name.clone(),
+                                server_name: server.name.to_string(),
                             });
                         }
                     }

@@ -100,7 +100,10 @@ mod tests {
             for var in &shell_vars {
                 if std::env::var(var).is_ok() {
                     assert!(env_vars.contains_key(*var), "Shell env should contain {}", var);
-                    println!("{}: {}", var, env_vars.get(*var).unwrap());
+                    println!("{}: {}", var,
+                        env_vars.get(*var)
+                            .expect("Key should exist based on previous assert")
+                    );
                 }
             }
         }
