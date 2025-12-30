@@ -163,28 +163,29 @@ impl Storage {
             updated_at: Set(now.into()),
         };
 
-        // 执行插入操作
-        let result = match server_model.insert(&self.db).await {
-            Ok(r) => {
-                info!("Successfully added MCP server: {}", config.name);
-                r
-            }
-            Err(e) => {
-                let error_str = e.to_string();
-                // 其他所有错误
-                tracing::error!(
-                    target: "orm_storage",
-                    "add_mcp_server failed for '{}': {}",
-                    config.name, error_str
-                );
-                return Err(StorageError::Database(format!(
-                    "Failed to add: {}",
-                    error_str
-                )));
-            }
-        };
+        // 执行插入操作，使用 Entity::insert + on_conflict_do_nothing 避免 RETURNING 子句导致的 RecordNotFound 错误
+        if let Err(e) = crate::entities::mcp_server::Entity::insert(server_model)
+            .on_conflict_do_nothing()
+            .exec(&self.db)
+            .await
+        {
+            let error_str = e.to_string();
+            // 其他所有错误
+            tracing::error!(
+                target: "orm_storage",
+                "add_mcp_server failed for '{}': {}",
+                config.name, error_str
+            );
+            return Err(StorageError::Database(format!(
+                "Failed to add: {}",
+                error_str
+            )));
+        }
+        info!("Successfully added MCP server: {}", config.name);
 
-        Ok(result.id)
+        // 直接返回预生成的 server_id，避免 SeaORM insert() 在 SQLite 上
+        // 使用 RETURNING 子句时可能出现的 RecordNotFound 错误
+        Ok(server_id)
     }
 
     /// 更新 MCP 服务器
