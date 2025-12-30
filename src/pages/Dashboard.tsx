@@ -211,7 +211,9 @@ const Dashboard: React.FC = () => {
       | 'claudecode'
       | 'cursor'
       | 'windsurf'
-      | 'vscode',
+      | 'vscode'
+      | 'trae'
+      | 'trae-cn',
   ) => {
     const endpoint = stats.aggregator?.endpoint || ''
     const authHeaders =
@@ -234,8 +236,8 @@ const Dashboard: React.FC = () => {
         return `cherrystudio://mcp/install?servers=${btoa(
           JSON.stringify(cherrystudioConfig),
         )}`
-      case 'claude':
-      case 'claudecode':
+      // case 'claude':
+      // case 'claudecode':
       case 'cursor':
         const cursorConfig = {
           name: 'mcprouter',
@@ -247,7 +249,7 @@ const Dashboard: React.FC = () => {
         return `cursor://anysphere.cursor-deeplink/mcp/install?name=mcprouter&config=${btoa(
           JSON.stringify(cursorConfig),
         )}`
-      case 'windsurf':
+      // case 'windsurf':
       case 'vscode':
         const vscodeConfig = {
           name: 'mcprouter',
@@ -259,6 +261,20 @@ const Dashboard: React.FC = () => {
         return `vscode:mcp/install?${encodeURIComponent(
           JSON.stringify(vscodeConfig),
         )}`
+      case 'trae':
+      case 'trae-cn': {
+        const scheme = client === 'trae-cn' ? 'trae-cn' : 'trae'
+        const traeConfig = {
+          name: 'mcprouter',
+          type: 'http',
+          url: endpoint,
+          ...(settings.server.auth &&
+            selectedToken && { headers: authHeaders }),
+        }
+        const configJson = JSON.stringify(traeConfig)
+        const configBase64 = btoa(configJson)
+        return `${scheme}://trae.ai-ide/mcp-import?type=http&name=mcprouter&config=${configBase64}`
+      }
       default:
         return ''
     }
@@ -551,6 +567,16 @@ const Dashboard: React.FC = () => {
                   installUrl: generateClientInstallConfig('vscode'),
                   iconUrl: '/vscode.ico',
                 },
+                {
+                  label: 'Trae',
+                  installUrl: generateClientInstallConfig('trae'),
+                  iconUrl: '/trae.png',
+                },
+                {
+                  label: 'Trae CN',
+                  installUrl: generateClientInstallConfig('trae-cn'),
+                  iconUrl: '/trae.png',
+                },
               ].map((c) => (
                 <div
                   key={c.label}
@@ -608,8 +634,8 @@ const Dashboard: React.FC = () => {
                         stats.aggregator?.status === 'running'
                           ? '#52c41a'
                           : stats.aggregator?.status === 'error'
-                          ? '#ff4d4f'
-                          : '#8c8c8c',
+                            ? '#ff4d4f'
+                            : '#8c8c8c',
                     }}
                   />
                   <Text
@@ -618,8 +644,8 @@ const Dashboard: React.FC = () => {
                         stats.aggregator?.status === 'running'
                           ? '#52c41a'
                           : stats.aggregator?.status === 'error'
-                          ? '#ff4d4f'
-                          : '#8c8c8c',
+                            ? '#ff4d4f'
+                            : '#8c8c8c',
                     }}>
                     {stats.aggregator?.status === 'running' &&
                       t('dashboard.aggregator.running')}

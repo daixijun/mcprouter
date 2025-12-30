@@ -168,6 +168,8 @@
   "dashboard.clients.cursor": "Cursor",
   "dashboard.clients.continue": "Continue",
   "dashboard.clients.windsurf": "Windsurf",
+  "dashboard.clients.trae": "Trae",
+  "dashboard.clients.trae_cn": "Trae 中国版",
   "dashboard.clients.custom": "自定义配置",
   "dashboard.errors.fetch_data_failed": "无法获取仪表盘数据，请在桌面应用中打开或检查后台服务",
   "dashboard.errors.event_listener_failed": "服务加载事件监听失败（非 Tauri 环境或 API 不可用）",

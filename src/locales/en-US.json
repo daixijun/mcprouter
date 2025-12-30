@@ -168,6 +168,8 @@
   "dashboard.clients.cursor": "Cursor",
   "dashboard.clients.continue": "Continue",
   "dashboard.clients.windsurf": "Windsurf",
+  "dashboard.clients.trae": "Trae",
+  "dashboard.clients.trae_cn": "Trae CN",
   "dashboard.clients.custom": "Custom Configuration",
   "dashboard.errors.fetch_data_failed": "Unable to fetch dashboard data, please open in desktop app or check background service",
   "dashboard.errors.event_listener_failed": "Failed to listen for service loading events (non-Tauri environment or API unavailable)",

@@ -35,7 +35,13 @@
           "url": "cursor://anysphere.cursor-deeplink/mcp/install*"
         },
         {
-          "url": "windsurf:"
+          "url": "windsurf://*"
+        },
+        {
+          "url": "trae://*"
+        },
+        {
+          "url": "trae-cn://*"
         }
       ]
     },
