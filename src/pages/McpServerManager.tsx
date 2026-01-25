@@ -99,7 +99,16 @@ const McpServerManager: React.FC<McpServerManagerProps> = ({
     setLoading(true)
     try {
       const result = await McpServerService.listMcpServers()
-      setMcpServers(result.servers)
+      // 按状态排序：启用的在前，禁用的在后；相同状态按名称排序
+      const sortedServers = result.servers.sort((a, b) => {
+        // 先按 enabled 状态排序（true在前）
+        if (a.enabled !== b.enabled) {
+          return a.enabled ? -1 : 1
+        }
+        // 如果 enabled 状态相同，按名称排序
+        return a.name.localeCompare(b.name)
+      })
+      setMcpServers(sortedServers)
     } catch (error) {
       console.error('Failed to fetch MCP servers:', error)
       message.error(t('mcp_server.messages.fetch_servers_failed'))
