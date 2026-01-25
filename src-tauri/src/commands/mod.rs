@@ -2,7 +2,6 @@
 pub mod app_info;
 pub mod config;
 pub mod dashboard;
-pub mod marketplace;
 pub mod mcp_server;
 pub mod permission_management;
 pub mod settings;
@@ -15,7 +14,6 @@ pub mod tool_manager;
 pub use app_info::*;
 pub use config::*;
 pub use dashboard::*;
-pub use marketplace::*;
 pub use mcp_server::*;
 pub use permission_management::*;
 // Re-enable settings with renamed commands

@@ -3,7 +3,6 @@ import {
   Activity,
   Key,
   Menu,
-  Package,
   Server,
   Settings as SettingsIcon,
   X,
@@ -17,7 +16,6 @@ import LanguageSelector from './components/LanguageSelector'
 import ThemeSelector from './components/ThemeSelector'
 import { AppProvider, useAppContext } from './contexts/AppContext'
 import Dashboard from './pages/Dashboard'
-import Marketplace from './pages/Marketplace'
 import McpServerManager from './pages/McpServerManager'
 import Settings from './pages/Settings'
 import TokenManagement from './pages/TokenManagement'
@@ -30,7 +28,6 @@ const AppContent = memo(() => {
   const tabs = [
     { id: 'overview', label: t('nav.overview'), icon: Activity },
     { id: 'servers', label: t('nav.server_management'), icon: Server },
-    { id: 'market', label: t('nav.marketplace'), icon: Package },
     { id: 'tokens', label: t('nav.token_management'), icon: Key },
     { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
   ]
@@ -165,7 +162,6 @@ const AppContent = memo(() => {
                   }`}>
                   {state.activeTab === 'overview' && <Dashboard />}
                   {state.activeTab === 'servers' && <McpServerManager />}
-                  {state.activeTab === 'market' && <Marketplace />}
                   {state.activeTab === 'tokens' && <TokenManagement />}
                   {state.activeTab === 'settings' && <Settings />}
                 </div>

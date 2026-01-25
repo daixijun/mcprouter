@@ -3,7 +3,6 @@ pub mod auth_context;
 pub mod commands;
 pub mod config;
 pub mod error;
-pub mod marketplace;
 pub mod mcp_client;
 pub mod mcp_manager;
 pub mod shell_environment;
@@ -259,8 +258,6 @@ fn get_tray_text(key: &str, language: &str) -> &'static str {
         ("show_window", _) => "Show Main Window",
         ("servers", "zh-CN") => "服务器管理",
         ("servers", _) => "Server Management",
-        ("marketplace", "zh-CN") => "市场",
-        ("marketplace", _) => "Marketplace",
         ("settings", "zh-CN") => "设置",
         ("settings", _) => "Settings",
 
@@ -353,11 +350,6 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<ta
                 .build(app)?,
         )
         .item(
-            &tauri::menu::MenuItemBuilder::new(get_tray_text("marketplace", language))
-                .id("marketplace")
-                .build(app)?,
-        )
-        .item(
             &tauri::menu::MenuItemBuilder::new(get_tray_text("settings", language))
                 .id("settings")
                 .build(app)?,
@@ -435,15 +427,6 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             "server_management" => {
                 let _ = app.emit("navigate-to", "servers");
-                let windows = app.webview_windows();
-                if let Some(window) = windows.values().next() {
-                    let _ = window.set_focus();
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                }
-            }
-            "marketplace" => {
-                let _ = app.emit("navigate-to", "marketplace");
                 let windows = app.webview_windows();
                 if let Some(window) = windows.values().next() {
                     let _ = window.set_focus();
@@ -776,9 +759,6 @@ Initialization process may be partially completed, set managers are still usable
             update_mcp_server,
             toggle_mcp_server,
             list_mcp_servers,
-            list_marketplace_services,
-            get_mcp_server_details,
-            install_marketplace_service,
             // Enhanced Service Management
             delete_mcp_server,
             // Tool DB Commands

@@ -104,76 +104,12 @@ export interface McpServer {
   tool_count?: number
 }
 
-export interface MarketplaceServiceListItem {
-  id: string
-  name: string
-  description: string
-  author: string
-  is_hosted?: boolean
-  is_verified?: boolean
-  tags: string[]
-  downloads: number
-  github_stars?: number
-  transport: 'stdio' | 'http'
-  category: string
-  last_updated: string
-  platform: string
-  logo_url?: string
-  license?: string
-}
-
-export interface EnvProperty {
-  description?: string
-  type: string
-  default?: any
-  enum?: any[]
-}
-
-export interface EnvSchema {
-  properties?: Record<string, EnvProperty>
-  required?: string[]
-  type: string
-}
-
-export interface MarketplaceService extends MarketplaceServiceListItem {
-  install_command?: {
-    command: string
-    args: string[]
-    package_manager:
-      | 'npm'
-      | 'npx'
-      | 'yarn'
-      | 'pnpm'
-      | 'cargo'
-      | 'pip'
-      | 'uvx'
-      | 'uv'
-      | 'custom'
-  }
-  requirements: string[]
-  readme?: string
-  server_config?: Array<Record<string, any>>
-  repository?: string
-  homepage?: string
-  env_schema?: EnvSchema
-}
-
-// Unified marketplace result type
-export interface MarketplaceServiceResult {
-  services: MarketplaceServiceListItem[]
-  total_count: number
-  has_more: boolean
-}
-
 // MCP server result type for pagination
 export interface McpServerResult {
   servers: McpServerInfo[]
   total_count: number
   has_more: boolean
 }
-
-// 便于单独引用安装命令类型
-export type InstallCommand = MarketplaceService['install_command']
 
 export interface AppConfig {
   server: {

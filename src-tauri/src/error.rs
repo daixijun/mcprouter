@@ -100,9 +100,6 @@ pub enum McpError {
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
-    #[error("Marketplace error: {0}")]
-    MarketplaceError(String),
-
     #[error("Process error: {0}")]
     ProcessError(String),
 

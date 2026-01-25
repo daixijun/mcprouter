@@ -1,68 +1,104 @@
+<div align="center">
+
 # MCPRouter - MCP 路由器
 
-基于 Tauri、React 和 TypeScript 构建的现代 MCP（Model Context Protocol）路由器，提供全面的 MCP 服务器管理、市场集成和智能请求路由功能。
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/daixijun/mcprouter)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/daixijun/mcprouter)
 
-## 功能特性
+</div>
 
-### 🚀 **高性能**
+🚀 **现代 MCP 协议路由器** - 无缝桥接 stdio 与 HTTP，提供企业级权限管理和智能路由功能
 
-- 多传输协议支持（stdio、SSE、HTTP）
-- 异步服务器生命周期管理
-- 实时连接监控和健康检查
-- 自动服务重连和故障恢复
+## ✨ 核心亮点
 
-### 🔍 **市场集成**
+### 🔄 **MCP 协议转换**
 
-- 浏览和搜索来自多个提供商的 MCP 服务
-- 一键安装，自动配置
-- 查看服务详情、文档和系统要求
-- 支持 ModelScope 等 MCP 注册中心
+- **stdio 到 HTTP 转换**：将标准 MCP 服务器通过 HTTP 接口暴露
+- **多传输协议支持**：stdio 和 HTTP 两种传输方式
+- **透明的协议适配**：无需修改现有 MCP 服务器
 
-### 📊 **智能仪表板**
+### 🔐 **细粒度权限管理**
 
-- 实时系统统计和健康监控
-- 活跃连接和服务器状态跟踪
-- 启动时间和性能指标
-- 可视化服务状态指示器
+- **基于 Token 的访问控制**：每个 Token 独立权限配置
+- **工具级授权**：对单个工具访问权限的精确控制
+- **安全 Token 验证**：常量时间比较增强安全性
 
-### 🎯 **全面管理**
+### ⚡ **高性能路由聚合**
 
-- 服务器生命周期管理（启动/停止/重启）
-- 工具、资源和提示的发现与管理
-- 配置导入/导出和迁移
-- 批量服务管理操作
+- **智能请求路由**：自动分发到对应 MCP 服务器
+- **异步并发处理**：支持高并发请求
+- **自动故障恢复**：服务异常时自动重连
+- **实时监控仪表板**：可视化系统状态
 
-### 🛡️ **系统集成**
+## 🖥️ 界面预览
 
-- 原生系统托盘,快速访问菜单
-- 自启动和后台服务支持
-- 多主题支持（自动/亮色/暗色）
-- 平台特定优化（macOS、Windows、Linux）
+### 实时监控仪表板
 
-### 🔐 **认证与安全**
+![仪表板界面](docs/screenshots/dashboard.png)
+_实时系统状态、活跃连接监控、性能指标展示_
 
-- 聚合器端点的可选 Bearer token 认证
-- 通过 `server.auth` 配置项控制认证
-- 动态 Token 管理系统，支持创建、删除和令牌使用统计
-- **细粒度 Token 权限**：控制对特定工具、资源和提示的访问权限
-- **权限模式匹配**：支持通配符模式（`*`、`server/*`、`server/tool`）
-- **会话级权限缓存**：高性能权限验证
-- 防时序攻击的常量时间 token 比较
-- 安全配置验证和弱 token 警告
-- 完全向后兼容（默认禁用认证）
+### 服务器管理界面
 
-### 📝 **灵活配置**
+![服务器管理](docs/screenshots/server-management.png)
+_MCP 服务器生命周期管理、批量操作、状态监控_
 
-- 灵活的配置管理
-- 环境变量支持
-- 网络接口和 IP 地址管理
-- 日志记录和调试支持
+### Token 权限管理
 
-## 快速开始
+![Token管理](docs/screenshots/token-management.png)
+_创建和管理 Token、配置细粒度权限、使用统计_
+
+### 系统设置页面
+
+![设置页面](docs/screenshots/settings.png)
+_网络配置、主题设置、系统偏好配置_
+
+## 🚀 功能特性
+
+### 🔄 协议转换与路由
+
+- **多传输协议支持**：stdio 和 HTTP
+- **协议转换**：MCP stdio 到 HTTP 接口
+- **智能请求路由**：自动识别请求目标并路由到对应服务器
+- **聚合服务**：将多个 MCP 服务器聚合为统一接口
+
+### 🔐 权限管理系统
+
+- **Token 管理**：动态创建、删除、更新 Token
+- **工具级授权**：对单个工具访问权限的精确控制
+- **访问控制**：
+  - `allowed_tools`：精确控制可访问的工具
+  - `allowed_resources`：控制资源访问权限
+  - `allowed_prompts`：控制提示模板访问权限
+- **安全特性**：
+  - 常量时间 Token 比较增强安全性
+  - 详细审计日志
+  - 向后兼容（默认禁用认证）
+
+### 🎯 服务管理与监控
+
+- **生命周期管理**：启动、停止、重启、配置 MCP 服务器
+- **自动发现**：自动识别服务器提供的工具、资源和提示
+- **健康检查**：实时监控服务状态
+- **性能指标**：请求统计、响应时间、错误率
+
+### 🛡️ 系统集成
+
+- **原生系统托盘**：快速访问菜单
+- **自启动**：后台服务支持
+- **多主题**：自动/亮色/暗色主题支持
+- **平台优化**：macOS、Windows、Linux 特定优化
+- **灵活配置**：基于 JSON 的配置，支持导入/导出
+- **网络管理**：本地 IP 地址发现和网络接口配置
+
+## 🚀 快速开始
 
 1. **安装依赖**：`pnpm install`
 2. **开发模式**：`pnpm tauri dev`
 3. **构建生产版**：`pnpm tauri build`
+
+启动后通过直观的 Web 界面配置您的 MCP 服务器和管理权限。
 
 ## 推荐 IDE 配置
 
@@ -80,7 +116,6 @@ src-tauri/src/
 │   ├── mod.rs
 │   ├── config.rs        # 配置管理
 │   ├── dashboard.rs     # 仪表板统计
-│   ├── marketplace.rs   # 市场集成
 │   ├── mcp_server.rs    # MCP 服务器操作
 │   ├── settings.rs      # 系统设置
 │   ├── token_management.rs  # Token 管理命令
@@ -96,11 +131,6 @@ src-tauri/src/
 ├── session_manager.rs   # 会话级权限缓存
 ├── auth_context.rs      # 认证上下文和权限验证
 ├── connection_mapper.rs # HTTP 到 MCP 连接映射
-├── marketplace/         # 市场提供商
-│   ├── mod.rs
-│   └── providers/
-│       ├── mod.rs
-│       └── modelscope.rs  # ModelScope 提供商
 ├── types.rs             # 共享类型定义
 └── error.rs             # 错误处理
 ```
@@ -114,19 +144,16 @@ src/
 │   ├── Layout.tsx             # 主布局包装器
 │   ├── ServiceDetail.tsx      # 服务器详情视图
 │   ├── ToolManager.tsx        # 工具管理界面
-│   ├── InstallConfirmModal.tsx # 安装确认对话框
 │   └── AboutModal.tsx         # 关于对话框
 ├── pages/               # 主应用页面
 │   ├── Dashboard.tsx          # 系统仪表板和统计
 │   ├── McpServerManager.tsx   # MCP 服务器管理
-│   ├── Marketplace.tsx        # 市场浏览器
 │   ├── Settings.tsx           # 应用设置
 │   └── TokenManagement.tsx    # Token 管理
 ├── services/            # API 服务层
 │   ├── api.ts                  # Tauri API 客户端
 │   ├── config-service.ts       # 配置管理
 │   ├── dashboard-service.ts    # 仪表板统计
-│   ├── marketplace-service.ts  # 市场操作
 │   ├── mcp-server-service.ts   # 服务器管理
 │   └── tool-service.ts         # 工具操作
 ├── types/               # TypeScript 类型定义
@@ -139,7 +166,6 @@ src/
 ### 核心功能
 
 - **仪表板分析**：实时系统统计、活跃连接和健康监控
-- **市场集成**：浏览、搜索和安装来自多个提供商的 MCP 服务
 - **服务器管理**：完整生命周期管理（创建、启动、停止、重启、配置）
 - **自动发现**：自动发现已连接服务器的工具、资源和提示
 - **配置管理**：基于 JSON 的灵活配置，支持导入/导出
@@ -218,12 +244,14 @@ MCPRouter 支持细粒度的权限控制，允许您限制对特定工具、资�
 ```
 
 **权限模式：**
+
 - `*` - 允许访问所有工具/资源/提示
 - `server/*` - 允许访问 `server` 命名空间下的所有工具
 - `server/tool` - 仅允许访问特定工具
 - `server/path/*` - 允许访问特定路径下的所有资源
 
 **权限验证：**
+
 - 权限在 HTTP 和 MCP 协议层均进行验证
 - 会话级缓存提供高性能验证
 - 详细的审计日志用于安全监控

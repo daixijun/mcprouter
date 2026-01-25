@@ -1,68 +1,99 @@
 # MCPRouter - MCP Router
 
-A modern MCP (Model Context Protocol) Router built with Tauri, React and TypeScript, providing comprehensive MCP server management, marketplace integration, and intelligent request routing.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/daixijun/mcprouter)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/daixijun/mcprouter)
 
-## Features
+🚀 **Modern MCP Protocol Router** - Seamlessly bridge stdio and HTTP with enterprise-grade permission management and intelligent routing
 
-### 🚀 **High Performance**
+## ✨ Core Highlights
 
-- Multi-transport protocol support (stdio, SSE, HTTP)
-- Asynchronous server lifecycle management
-- Real-time connection monitoring and health checks
-- Automatic service reconnection and recovery
+### 🔄 **MCP Protocol Conversion**
 
-### 🔍 **Marketplace Integration**
+- **stdio to HTTP Conversion**: Expose standard MCP servers via HTTP interface
+- **Multi-transport Protocol Support**: Both stdio and HTTP transport methods
+- **Transparent Protocol Adaptation**: No modifications required for existing MCP servers
 
-- Browse and search MCP services from multiple providers
-- One-click installation with automatic configuration
-- Service details view with documentation and requirements
-- Support for ModelScope and other MCP registries
+### 🔐 **Fine-grained Permission Management**
 
-### 📊 **Intelligent Dashboard**
+- **Token-based Access Control**: Independent permission configuration for each token
+- **Tool-level Authorization**: Granular control over individual tool access permissions
+- **Secure Token Validation**: Constant-time comparison for enhanced security
 
-- Real-time system statistics and health monitoring
-- Active connections and server status tracking
-- Startup time and performance metrics
-- Visual service status indicators
+### ⚡ **High-performance Routing Aggregation**
 
-### 🎯 **Comprehensive Management**
+- **Intelligent Request Routing**: Automatic distribution to corresponding MCP servers
+- **Asynchronous Concurrent Processing**: Support for high-concurrency requests
+- **Automatic Failure Recovery**: Automatic reconnection on service exceptions
+- **Real-time Monitoring Dashboard**: Visual system status display
 
-- Server lifecycle management (start/stop/restart)
-- Tool, resource, and prompt discovery and management
-- Configuration import/export and migration
-- Bulk operations for service management
+## 🖥️ Interface Preview
 
-### 🛡️ **System Integration**
+### Real-time Monitoring Dashboard
 
-- Native system tray with quick access menu
-- Auto-start and background service support
-- Multi-theme support (Auto/Light/Dark)
-- Platform-specific optimizations (macOS, Windows, Linux)
+![Dashboard Interface](docs/screenshots/dashboard.png)
+*Real-time system status, active connection monitoring, and performance metrics display*
 
-### 🔐 **Authentication & Security**
+### Server Management Interface
 
-- Optional Bearer token authentication for aggregator endpoints
-- Configurable authentication via `server.auth` setting
-- Dynamic Token Management system with creation, deletion, and usage statistics
-- **Fine-grained Token Permissions**: Control access to specific tools, resources, and prompts
-- **Permission Pattern Matching**: Support for wildcard patterns (`*`, `server/*`, `server/tool`)
-- **Session-level Permission Caching**: High-performance permission validation
-- Constant-time token comparison to prevent timing attacks
-- Secure configuration with validation and warnings for weak tokens
-- Full backward compatibility (authentication disabled by default)
+![Server Management](docs/screenshots/server-management.png)
+*MCP server lifecycle management, batch operations, and status monitoring*
 
-### 📝 **Rich Configuration**
+### Token Permission Management
 
-- Flexible configuration management
-- Environment variable support
-- Network interface and IP address management
-- Logging and debugging support
+![Token Management](docs/screenshots/token-management.png)
+*Create and manage tokens, configure fine-grained permissions, and view usage statistics*
 
-## Quick Start
+### System Settings Page
+
+![Settings Page](docs/screenshots/settings.png)
+*Network configuration, theme settings, and system preferences*
+
+## 🚀 Features
+
+### 🔄 Protocol Conversion & Routing
+
+- **Multi-transport Protocol Support**: Both stdio and HTTP
+- **Protocol Conversion**: MCP stdio to HTTP interface
+- **Intelligent Request Routing**: Automatic identification and routing to corresponding servers
+- **Aggregated Services**: Combine multiple MCP servers into a unified interface
+
+### 🔐 Permission Management System
+
+- **Token Management**: Dynamic creation, deletion, and updating of tokens
+- **Tool-level Authorization**: Granular control over individual tool access permissions
+- **Access Control**:
+  - `allowed_tools`: Precise control over which tools can be accessed
+  - `allowed_resources`: Control resource access permissions
+  - `allowed_prompts`: Control prompt template access permissions
+- **Security Features**:
+  - Constant-time token comparison for enhanced security
+  - Detailed audit logging
+  - Backward compatibility (authentication disabled by default)
+
+### 🎯 Service Management & Monitoring
+
+- **Lifecycle Management**: Start, stop, restart, and configure MCP servers
+- **Auto-discovery**: Automatic identification of tools, resources, and prompts provided by servers
+- **Health Checks**: Real-time monitoring of service status
+- **Performance Metrics**: Request statistics, response times, error rates
+
+### 🛡️ System Integration
+
+- **Native System Tray**: Quick access menu
+- **Auto-start**: Background service support
+- **Multi-theme**: Auto/Light/Dark theme support
+- **Platform Optimization**: macOS, Windows, Linux specific optimizations
+- **Flexible Configuration**: JSON-based configuration with import/export support
+- **Network Management**: Local IP address discovery and network interface configuration
+
+## 🚀 Quick Start
 
 1. **Install Dependencies**: `pnpm install`
 2. **Development Mode**: `pnpm tauri dev`
-3. **Build**: `pnpm tauri build`
+3. **Build Production**: `pnpm tauri build`
+
+Configure your MCP servers and manage permissions through the intuitive web interface after startup.
 
 ## Recommended IDE Setup
 
@@ -80,7 +111,6 @@ src-tauri/src/
 │   ├── mod.rs
 │   ├── config.rs        # Configuration management
 │   ├── dashboard.rs     # Dashboard statistics
-│   ├── marketplace.rs   # Marketplace integration
 │   ├── mcp_server.rs    # MCP server operations
 │   ├── settings.rs      # System settings
 │   ├── token_management.rs  # Token management commands
@@ -96,11 +126,6 @@ src-tauri/src/
 ├── session_manager.rs   # Session-level permission caching
 ├── auth_context.rs      # Authentication context and permission validation
 ├── connection_mapper.rs # HTTP to MCP connection mapping
-├── marketplace/         # Marketplace providers
-│   ├── mod.rs
-│   └── providers/
-│       ├── mod.rs
-│       └── modelscope.rs  # ModelScope provider
 ├── types.rs             # Shared type definitions
 └── error.rs             # Error handling
 ```
@@ -114,19 +139,16 @@ src/
 │   ├── Layout.tsx             # Main layout wrapper
 │   ├── ServiceDetail.tsx      # Server detail view
 │   ├── ToolManager.tsx        # Tool management interface
-│   ├── InstallConfirmModal.tsx # Installation confirmation
 │   └── AboutModal.tsx         # About dialog
 ├── pages/               # Main application pages
 │   ├── Dashboard.tsx          # System dashboard and statistics
 │   ├── McpServerManager.tsx   # MCP server management
-│   ├── Marketplace.tsx        # Marketplace browser
 │   ├── Settings.tsx           # Application settings
 │   └── TokenManagement.tsx    # Token management
 ├── services/            # API service layer
 │   ├── api.ts                  # Tauri API client
 │   ├── config-service.ts       # Configuration management
 │   ├── dashboard-service.ts    # Dashboard statistics
-│   ├── marketplace-service.ts  # Marketplace operations
 │   ├── mcp-server-service.ts   # Server management
 │   └── tool-service.ts         # Tool operations
 ├── types/               # TypeScript type definitions
@@ -139,7 +161,6 @@ src/
 ### Core Features
 
 - **Dashboard Analytics**: Real-time system statistics, active connections, and health monitoring
-- **Marketplace Integration**: Browse, search, and install MCP services from multiple providers
 - **Server Management**: Full lifecycle management (create, start, stop, restart, configure)
 - **Discovery & Discovery**: Automatic discovery of tools, resources, and prompts from connected servers
 - **Configuration Management**: Flexible JSON-based configuration with import/export support
@@ -218,12 +239,14 @@ MCPRouter supports fine-grained permission control for tokens, allowing you to r
 ```
 
 **Permission Patterns:**
+
 - `*` - Allows access to all tools/resources/prompts
 - `server/*` - Allows access to all tools under the `server` namespace
 - `server/tool` - Allows access to a specific tool only
 - `server/path/*` - Allows access to all resources under a specific path
 
 **Permission Validation:**
+
 - Permissions are validated at both HTTP and MCP protocol layers
 - Session-level caching provides high-performance validation
 - Detailed audit logging for security monitoring
