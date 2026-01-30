@@ -1,6 +1,7 @@
 use crate::auth_context::{AuthContext, SessionIdExtension, SessionInfoExtension};
 use crate::commands::app_info::get_mcp_server_info;
 use crate::mcp_client::McpClientManager;
+use crate::notification_callback::ManifestChangeCallback;
 // Primary implementations
 pub use crate::mcp_manager::McpServerManager;
 pub use crate::token_manager::TokenManager;
@@ -27,6 +28,7 @@ use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use async_trait::async_trait;
 
 /// Dynamic Bearer token authentication middleware using TokenManager
 /// Performs basic authentication and logs the token for auditing
@@ -821,6 +823,43 @@ impl McpAggregator {
 
         tracing::info!("✅ Successfully processed {} prompts", mcp_prompts.len());
         Ok(mcp_prompts)
+    }
+}
+
+/// ManifestChangeCallback trait 实现
+///
+/// 当后端服务器的清单发生变化时,通过 SSE 向客户端推送 listChanged 通知
+#[async_trait]
+impl ManifestChangeCallback for McpAggregator {
+    async fn tools_list_changed(&self, server_name: &str) {
+        tracing::info!(
+            "📢 Broadcasting tools/list_changed for server: {}",
+            server_name
+        );
+        // TODO: 实现 SSE 广播
+        // 需要研究 rmcp 的 API 来确定正确的调用方式
+        // 预期流程:
+        // 1. 构建 ClientNotification::ToolsListChanged
+        // 2. 通过 session_manager 向所有 SSE 连接广播
+        tracing::warn!("SSE broadcasting not yet implemented - notification logged only");
+    }
+
+    async fn resources_list_changed(&self, server_name: &str) {
+        tracing::info!(
+            "📢 Broadcasting resources/list_changed for server: {}",
+            server_name
+        );
+        // TODO: 实现 SSE 广播
+        tracing::warn!("SSE broadcasting not yet implemented - notification logged only");
+    }
+
+    async fn prompts_list_changed(&self, server_name: &str) {
+        tracing::info!(
+            "📢 Broadcasting prompts/list_changed for server: {}",
+            server_name
+        );
+        // TODO: 实现 SSE 广播
+        tracing::warn!("SSE broadcasting not yet implemented - notification logged only");
     }
 }
 
