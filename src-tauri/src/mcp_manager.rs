@@ -3,6 +3,7 @@
 use crate::error::Result;
 use crate::storage::orm_storage::Storage;
 use crate::types::{McpServerConfig, McpServerInfo};
+use crate::notification_callback::ManifestChangeCallback;
 use sea_orm::Set;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,12 +19,58 @@ fn should_ignore_mcp_error(error: &crate::error::McpError) -> bool {
 #[derive(Clone)]
 pub struct McpServerManager {
     orm_storage: Arc<Storage>,
+    callbacks: Arc<std::sync::RwLock<Vec<Arc<dyn ManifestChangeCallback>>>>,
 }
 
 impl McpServerManager {
     /// Create new MCP Server Manager with ORM backend
     pub fn new(orm_storage: Arc<Storage>) -> Self {
-        Self { orm_storage }
+        Self {
+            orm_storage,
+            callbacks: Arc::new(std::sync::RwLock::new(Vec::new())),
+        }
+    }
+
+    /// 注册清单变化回调
+    ///
+    /// 允许外部监听器注册以接收清单变化通知
+    ///
+    /// # Arguments
+    /// * `callback` - 实现了 ManifestChangeCallback trait 的对象
+    pub fn register_callback(&self, callback: Arc<dyn ManifestChangeCallback>) {
+        let mut callbacks = self.callbacks.write().unwrap();
+        callbacks.push(callback);
+        tracing::info!(
+            "Registered manifest change callback, total callbacks: {}",
+            callbacks.len()
+        );
+    }
+
+    /// 触发工具列表变化回调
+    #[allow(dead_code)]
+    async fn notify_tools_changed(&self, server_name: &str) {
+        let callbacks = self.callbacks.read().unwrap();
+        for callback in callbacks.iter() {
+            callback.tools_list_changed(server_name).await;
+        }
+    }
+
+    /// 触发资源列表变化回调
+    #[allow(dead_code)]
+    async fn notify_resources_changed(&self, server_name: &str) {
+        let callbacks = self.callbacks.read().unwrap();
+        for callback in callbacks.iter() {
+            callback.resources_list_changed(server_name).await;
+        }
+    }
+
+    /// 触发提示词列表变化回调
+    #[allow(dead_code)]
+    async fn notify_prompts_changed(&self, server_name: &str) {
+        let callbacks = self.callbacks.read().unwrap();
+        for callback in callbacks.iter() {
+            callback.prompts_list_changed(server_name).await;
+        }
     }
 
     /// Create with storage manager
@@ -32,6 +79,7 @@ impl McpServerManager {
     ) -> Result<Self> {
         Ok(Self {
             orm_storage: storage_manager.orm_storage(),
+            callbacks: Arc::new(std::sync::RwLock::new(Vec::new())),
         })
     }
 
