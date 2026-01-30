@@ -47,28 +47,37 @@ impl McpServerManager {
     }
 
     /// 触发工具列表变化回调
-    #[allow(dead_code)]
     async fn notify_tools_changed(&self, server_name: &str) {
-        let callbacks = self.callbacks.read().unwrap();
-        for callback in callbacks.iter() {
+        let callbacks_clone = {
+            let callbacks = self.callbacks.read().unwrap();
+            callbacks.iter().cloned().collect::<Vec<_>>()
+        }; // Lock released here
+
+        for callback in callbacks_clone.iter() {
             callback.tools_list_changed(server_name).await;
         }
     }
 
     /// 触发资源列表变化回调
-    #[allow(dead_code)]
     async fn notify_resources_changed(&self, server_name: &str) {
-        let callbacks = self.callbacks.read().unwrap();
-        for callback in callbacks.iter() {
+        let callbacks_clone = {
+            let callbacks = self.callbacks.read().unwrap();
+            callbacks.iter().cloned().collect::<Vec<_>>()
+        }; // Lock released here
+
+        for callback in callbacks_clone.iter() {
             callback.resources_list_changed(server_name).await;
         }
     }
 
     /// 触发提示词列表变化回调
-    #[allow(dead_code)]
     async fn notify_prompts_changed(&self, server_name: &str) {
-        let callbacks = self.callbacks.read().unwrap();
-        for callback in callbacks.iter() {
+        let callbacks_clone = {
+            let callbacks = self.callbacks.read().unwrap();
+            callbacks.iter().cloned().collect::<Vec<_>>()
+        }; // Lock released here
+
+        for callback in callbacks_clone.iter() {
             callback.prompts_list_changed(server_name).await;
         }
     }
@@ -1260,6 +1269,31 @@ impl McpServerManager {
                 crate::error::McpError::NotFound(format!("Server '{}' not found", server_name))
             })?;
 
+        // Record old counts for change detection
+        let old_tool_count = self
+            .orm_storage
+            .list_server_tools(&raw_server.id)
+            .await
+            .unwrap_or_default()
+            .len();
+        let old_resource_count = self
+            .orm_storage
+            .list_server_resources(&raw_server.id)
+            .await
+            .unwrap_or_default()
+            .len();
+        let old_prompt_count = self
+            .orm_storage
+            .list_server_prompts(&raw_server.id)
+            .await
+            .unwrap_or_default()
+            .len();
+
+        tracing::debug!(
+            "Old counts for server '{}': tools={}, resources={}, prompts={}",
+            server_name, old_tool_count, old_resource_count, old_prompt_count
+        );
+
         // Get tools from MCP client and save to database
         match crate::MCP_CLIENT_MANAGER.list_tools(server_name).await {
             Ok(tools) => {
@@ -1319,6 +1353,23 @@ impl McpServerManager {
                         tool_count,
                         server_name
                     );
+
+                    // Check if tool count changed and trigger callback
+                    if old_tool_count != tool_count {
+                        tracing::info!(
+                            "Tool list changed for server '{}': {} -> {}",
+                            server_name,
+                            old_tool_count,
+                            tool_count
+                        );
+                        self.notify_tools_changed(server_name).await;
+                    } else {
+                        tracing::debug!(
+                            "Tool count unchanged for server '{}': {}",
+                            server_name,
+                            tool_count
+                        );
+                    }
                 }
             }
             Err(e) => {
@@ -1391,6 +1442,23 @@ impl McpServerManager {
                         resource_count,
                         server_name
                     );
+
+                    // Check if resource count changed and trigger callback
+                    if old_resource_count != resource_count {
+                        tracing::info!(
+                            "Resource list changed for server '{}': {} -> {}",
+                            server_name,
+                            old_resource_count,
+                            resource_count
+                        );
+                        self.notify_resources_changed(server_name).await;
+                    } else {
+                        tracing::debug!(
+                            "Resource count unchanged for server '{}': {}",
+                            server_name,
+                            resource_count
+                        );
+                    }
                 }
             }
             Err(e) => {
@@ -1458,6 +1526,23 @@ impl McpServerManager {
                         prompt_count,
                         server_name
                     );
+
+                    // Check if prompt count changed and trigger callback
+                    if old_prompt_count != prompt_count {
+                        tracing::info!(
+                            "Prompt list changed for server '{}': {} -> {}",
+                            server_name,
+                            old_prompt_count,
+                            prompt_count
+                        );
+                        self.notify_prompts_changed(server_name).await;
+                    } else {
+                        tracing::debug!(
+                            "Prompt count unchanged for server '{}': {}",
+                            server_name,
+                            prompt_count
+                        );
+                    }
                 }
             }
             Err(e) => {
