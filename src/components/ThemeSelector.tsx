@@ -2,6 +2,7 @@ import { Badge, Button, Dropdown, Space, Tooltip } from 'antd'
 import { Info, Moon, Sun } from 'lucide-react'
 import React, { memo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invoke } from '@tauri-apps/api/core'
 import { useAppContext } from '../contexts/AppContext'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
@@ -22,7 +23,12 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = memo(({
 
   const handleThemeChange = async (mode: ThemeMode) => {
     setThemeMode(mode)
-    // 这里可以添加保存主题设置到后端的逻辑
+    // 保存主题设置到后端，这会更新配置文件和托盘菜单
+    try {
+      await invoke('set_theme', { theme: mode })
+    } catch (error) {
+      console.error('Failed to save theme:', error)
+    }
   }
 
   // 获取当前主题的信息

@@ -26,6 +26,25 @@ pub async fn get_theme() -> Result<String> {
 
 #[tauri::command]
 pub async fn set_theme(app: tauri::AppHandle, theme: String) -> Result<()> {
+    // Load current config
+    let mut config = config_mod::AppConfig::load()
+        .map_err(|e| crate::error::McpError::ConfigError(format!("Failed to load config: {}", e)))?;
+
+    // Update theme in config
+    if config.settings.is_none() {
+        config.settings = Some(crate::types::Settings::default());
+    }
+    let settings_mut = config.settings
+        .as_mut()
+        .ok_or_else(|| crate::error::McpError::ConfigError("Settings not initialized".to_string()))?;
+    settings_mut.theme = Some(theme.clone());
+
+    // Save config to file
+    config.save()
+        .map_err(|e| crate::error::McpError::ConfigError(format!("Failed to save config: {}", e)))?;
+
+    tracing::debug!("Theme updated and saved: {}", theme);
+
     // Update tray menu to reflect new theme (safe method)
     if let Err(e) = crate::update_tray_menu(&app) {
         tracing::error!("Failed to update tray menu after theme change: {}", e);

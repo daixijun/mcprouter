@@ -477,22 +477,15 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     "dark"
                 };
 
-                // TODO: 修复配置保存逻辑
-                // 暂时注释掉以避免编译错误
-                // tokio::spawn(async move {
-                //     // 配置处理逻辑需要修复
-                // });
-
-                // Update tray menu to reflect new theme
+                // Use set_theme command to save config and handle updates
                 let app_clone = app.clone();
+                let theme_str = theme.to_string();
                 tokio::spawn(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                    if let Err(e) = update_tray_menu(&app_clone) {
-                        tracing::error!("Failed to update tray menu after theme change: {}", e);
+                    // Call set_theme to save config and update tray menu
+                    if let Err(e) = crate::commands::config::set_theme(app_clone, theme_str).await {
+                        tracing::error!("Failed to set theme: {}", e);
                     }
                 });
-
-                let _ = app.emit("theme-changed", theme);
             }
             "language_zh_cn" | "language_en_us" => {
                 let language = if event.id.as_ref() == "language_zh_cn" {
@@ -501,23 +494,15 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     "en-US"
                 };
 
-                // TODO: 修复语言配置保存逻辑
-                // 暂时注释掉以避免编译错误
-                // tokio::spawn(async move {
-                //     // 语言配置处理逻辑需要修复
-                // });
-
-                // Update tray menu to reflect new language
+                // Use save_language_preference command to save config and handle updates
                 let app_clone = app.clone();
+                let language_str = language.to_string();
                 tokio::spawn(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                    if let Err(e) = update_tray_menu(&app_clone) {
-                        tracing::error!("Failed to update tray menu after language change: {}", e);
+                    // Call save_language_preference to save config and update tray menu
+                    if let Err(e) = crate::commands::settings::save_language_preference(app_clone, language_str).await {
+                        tracing::error!("Failed to save language preference: {}", e);
                     }
                 });
-
-                // Emit event to frontend
-                let _ = app.emit("language-changed", language);
             }
             "quit" => {
                 app.exit(0);
