@@ -1,5 +1,6 @@
 pub mod aggregator;
 pub mod auth_context;
+pub mod notification_callback;
 pub mod commands;
 pub mod config;
 pub mod error;
