@@ -1,6 +1,6 @@
 [package]
 name = "mcprouter"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP Router"
 authors = ["Xijun Dai <daixijun1990@gmail.com>"]
 edition = "2021"
