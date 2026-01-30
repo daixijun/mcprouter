@@ -840,12 +840,16 @@ impl ServerHandler for McpAggregator {
                 experimental: None,
                 logging: None,
                 completions: None,
-                prompts: Some(rmcp::model::PromptsCapability { list_changed: None }),
+                prompts: Some(rmcp::model::PromptsCapability {
+                    list_changed: Some(true),
+                }),
                 resources: Some(rmcp::model::ResourcesCapability {
                     subscribe: None,
-                    list_changed: None,
+                    list_changed: Some(true),
                 }),
-                tools: Some(rmcp::model::ToolsCapability { list_changed: None }),
+                tools: Some(rmcp::model::ToolsCapability {
+                    list_changed: Some(true),
+                }),
                 tasks: None,
             },
             server_info: get_mcp_server_info(&self.app),
