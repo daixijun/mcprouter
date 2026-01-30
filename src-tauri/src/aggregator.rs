@@ -13,9 +13,9 @@ use axum::{
 };
 use chrono;
 use rmcp::model::{
-    CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult,
-    InitializeRequestParam, InitializeResult, ListPromptsResult, ListResourcesResult,
-    ListToolsResult, PaginatedRequestParam, ProtocolVersion, ReadResourceRequestParam,
+    CallToolRequestParams, CallToolResult, ErrorCode, GetPromptRequestParams, GetPromptResult,
+    InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
+    ListToolsResult, PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams,
     ReadResourceResult, Resource, Tool as McpTool,
 };
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -205,7 +205,7 @@ impl McpAggregator {
     async fn apply_pagination_tools(
         &self,
         tools: Vec<McpTool>,
-        request: Option<PaginatedRequestParam>,
+        request: Option<PaginatedRequestParams>,
     ) -> Result<ListToolsResult, RmcpErrorData> {
         let mut offset = 0usize;
         if let Some(param) = request {
@@ -246,7 +246,7 @@ impl McpAggregator {
     async fn apply_pagination_resources(
         &self,
         resources: Vec<Resource>,
-        request: Option<PaginatedRequestParam>,
+        request: Option<PaginatedRequestParams>,
     ) -> Result<ListResourcesResult, RmcpErrorData> {
         let mut offset = 0usize;
         if let Some(param) = request {
@@ -287,7 +287,7 @@ impl McpAggregator {
     async fn apply_pagination_prompts(
         &self,
         prompts: Vec<rmcp::model::Prompt>,
-        request: Option<PaginatedRequestParam>,
+        request: Option<PaginatedRequestParams>,
     ) -> Result<ListPromptsResult, RmcpErrorData> {
         let mut offset = 0usize;
         if let Some(param) = request {
@@ -362,6 +362,7 @@ impl McpAggregator {
         // Create server config
         let server_info = StreamableHttpServerConfig {
             sse_keep_alive: Some(std::time::Duration::from_secs(self.config.timeout_seconds)),
+            sse_retry: None, // Use default SSE retry behavior
             stateful_mode: false, // Set to false to match client allow_stateless=true
             cancellation_token: tokio_util::sync::CancellationToken::new(),
         };
@@ -828,7 +829,7 @@ impl McpAggregator {
 impl ServerHandler for McpAggregator {
     async fn initialize(
         &self,
-        _request: InitializeRequestParam,
+        _request: InitializeRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, RmcpErrorData> {
         tracing::debug!("Initialize request received");
@@ -845,6 +846,7 @@ impl ServerHandler for McpAggregator {
                     list_changed: None,
                 }),
                 tools: Some(rmcp::model::ToolsCapability { list_changed: None }),
+                tasks: None,
             },
             server_info: get_mcp_server_info(&self.app),
             instructions: None,
@@ -853,7 +855,7 @@ impl ServerHandler for McpAggregator {
 
     async fn list_tools(
         &self,
-        request: Option<PaginatedRequestParam>,
+        request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, RmcpErrorData> {
         tracing::info!("=== List Tools Handler ===");
@@ -954,7 +956,7 @@ impl ServerHandler for McpAggregator {
     // Enhanced implementations for remaining methods
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, RmcpErrorData> {
         tracing::debug!("Call tool request received for name: {}", request.name);
@@ -1088,7 +1090,7 @@ impl ServerHandler for McpAggregator {
 
     async fn list_prompts(
         &self,
-        request: Option<PaginatedRequestParam>,
+        request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, RmcpErrorData> {
         tracing::debug!("List prompts request received");
@@ -1174,7 +1176,7 @@ impl ServerHandler for McpAggregator {
 
     async fn get_prompt(
         &self,
-        request: GetPromptRequestParam,
+        request: GetPromptRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, RmcpErrorData> {
         tracing::debug!("Get prompt request received for name: {}", request.name);
@@ -1328,7 +1330,7 @@ impl ServerHandler for McpAggregator {
 
     async fn list_resources(
         &self,
-        request: Option<PaginatedRequestParam>,
+        request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, RmcpErrorData> {
         tracing::debug!("List resources request received");
@@ -1414,7 +1416,7 @@ impl ServerHandler for McpAggregator {
 
     async fn read_resource(
         &self,
-        request: ReadResourceRequestParam,
+        request: ReadResourceRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, RmcpErrorData> {
         tracing::debug!("Read resource request received for URI: {}", request.uri);

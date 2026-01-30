@@ -438,8 +438,9 @@ impl McpClientManager {
 
             // Create list tools request with pagination support
             let request =
-                rmcp::model::ListToolsRequest::with_param(rmcp::model::PaginatedRequestParam {
+                rmcp::model::ListToolsRequest::with_param(rmcp::model::PaginatedRequestParams {
                     cursor: None,
+                    meta: None,
                 });
 
             let start_time = std::time::Instant::now();
@@ -512,8 +513,9 @@ impl McpClientManager {
             let peer = client_arc.peer();
 
             let request =
-                rmcp::model::ListResourcesRequest::with_param(rmcp::model::PaginatedRequestParam {
+                rmcp::model::ListResourcesRequest::with_param(rmcp::model::PaginatedRequestParams {
                     cursor: None,
+                    meta: None,
                 });
 
             let start_time = std::time::Instant::now();
@@ -577,8 +579,9 @@ impl McpClientManager {
             let peer = client_arc.peer();
 
             let request =
-                rmcp::model::ListPromptsRequest::with_param(rmcp::model::PaginatedRequestParam {
+                rmcp::model::ListPromptsRequest::with_param(rmcp::model::PaginatedRequestParams {
                     cursor: None,
+                    meta: None,
                 });
 
             let start_time = std::time::Instant::now();
@@ -652,8 +655,9 @@ impl McpClientManager {
             let peer = client_arc.peer();
 
             let request =
-                rmcp::model::Request::<_, _>::new(rmcp::model::ReadResourceRequestParam {
+                rmcp::model::Request::<_, _>::new(rmcp::model::ReadResourceRequestParams {
                     uri: uri.to_string(),
+                    meta: None,
                 });
 
             let start_time = std::time::Instant::now();
@@ -723,9 +727,10 @@ impl McpClientManager {
                         .collect::<serde_json::Map<_, _>>()
                 })
                 .unwrap_or_default();
-            let request = rmcp::model::Request::<_, _>::new(rmcp::model::GetPromptRequestParam {
+            let request = rmcp::model::Request::<_, _>::new(rmcp::model::GetPromptRequestParams {
                 name: name.to_string(),
                 arguments: Some(arguments_map),
+                meta: None,
             });
 
             let start_time = std::time::Instant::now();
@@ -791,9 +796,11 @@ impl McpClientManager {
             let arguments_map = arguments
                 .map(|args| args.into_iter().collect::<serde_json::Map<_, _>>())
                 .unwrap_or_default();
-            let request = rmcp::model::Request::<_, _>::new(rmcp::model::CallToolRequestParam {
+            let request = rmcp::model::Request::<_, _>::new(rmcp::model::CallToolRequestParams {
                 name: name.to_string().into(),
                 arguments: Some(arguments_map),
+                meta: None,
+                task: None,
             });
 
             let start_time = std::time::Instant::now();
