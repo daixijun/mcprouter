@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 
 // 状态类型定义
 export type ThemeMode = 'light' | 'dark' | 'auto'
-export type TabType = 'overview' | 'servers' | 'settings' | 'tokens'
+export type TabType = 'overview' | 'servers' | 'market' | 'tokens' | 'settings'
 
 interface AppState {
   themeMode: ThemeMode
@@ -22,6 +22,8 @@ interface AppState {
   isTransitioning: boolean
   loading: boolean
   error: string | null
+  // 服务详情页状态
+  marketServiceId: string | null
 }
 
 // Action 类型定义
@@ -35,6 +37,7 @@ type AppAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'CLEAR_ERROR' }
+  | { type: 'SET_MARKET_SERVICE_ID'; payload: string | null }
 
 // 初始状态
 const initialState: AppState = {
@@ -46,6 +49,7 @@ const initialState: AppState = {
   isTransitioning: false,
   loading: false,
   error: null,
+  marketServiceId: null,
 }
 
 // Reducer
@@ -56,7 +60,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'SET_IS_DARK_MODE':
       return { ...state, isDarkMode: action.payload }
     case 'SET_ACTIVE_TAB':
-      return { ...state, activeTab: action.payload }
+      return { ...state, activeTab: action.payload, marketServiceId: null }
     case 'SET_IS_MENU_OPEN':
       return { ...state, isMenuOpen: action.payload }
     case 'SET_IS_ABOUT_OPEN':
@@ -69,6 +73,8 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, error: action.payload }
     case 'CLEAR_ERROR':
       return { ...state, error: null }
+    case 'SET_MARKET_SERVICE_ID':
+      return { ...state, marketServiceId: action.payload }
     default:
       return state
   }
@@ -85,6 +91,9 @@ interface AppContextType {
   toggleAbout: () => void
   setError: (error: string | null) => void
   clearError: () => void
+  // 服务详情页方法
+  openMarketService: (serviceId: string) => void
+  closeMarketService: () => void
 }
 
 // 创建 Context
@@ -128,6 +137,17 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   const clearError = () => {
     dispatch({ type: 'CLEAR_ERROR' })
+  }
+
+  const openMarketService = (serviceId: string) => {
+    dispatch({ type: 'SET_MARKET_SERVICE_ID', payload: serviceId })
+    if (state.activeTab !== 'market') {
+      setActiveTab('market')
+    }
+  }
+
+  const closeMarketService = () => {
+    dispatch({ type: 'SET_MARKET_SERVICE_ID', payload: null })
   }
 
   // 主题管理副作用
@@ -239,6 +259,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
             const targetTab = event.payload
             if (targetTab === 'servers') {
               setActiveTab('servers')
+            } else if (targetTab === 'market') {
+              setActiveTab('market')
             } else if (targetTab === 'tokens') {
               setActiveTab('tokens')
             } else if (targetTab === 'settings') {
@@ -273,6 +295,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     toggleAbout,
     setError,
     clearError,
+    openMarketService,
+    closeMarketService,
   }
 
   return (

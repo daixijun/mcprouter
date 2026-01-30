@@ -56,11 +56,26 @@
   .markdown-content h4,
   .markdown-content h5,
   .markdown-content h6 {
-    @apply font-semibold text-gray-800 dark:text-gray-200 mt-4 mb-2;
+    @apply font-semibold mt-4 mb-2;
+    color: var(--card-title-color, #1f2937);
+  }
+
+  .dark .markdown-content h1,
+  .dark .markdown-content h2,
+  .dark .markdown-content h3,
+  .dark .markdown-content h4,
+  .dark .markdown-content h5,
+  .dark .markdown-content h6 {
+    color: var(--card-title-color, #f9fafb);
   }
 
   .markdown-content p {
-    @apply leading-relaxed mb-3 text-gray-900 dark:text-gray-100;
+    @apply leading-relaxed mb-3;
+    color: var(--card-text-color, #4b5563);
+  }
+
+  .dark .markdown-content p {
+    color: var(--card-text-color, #d1d5db);
   }
 
   .markdown-content ul,
@@ -69,16 +84,36 @@
   }
 
   .markdown-content li {
-    @apply list-disc text-gray-900 dark:text-gray-100;
+    @apply list-disc;
+    color: var(--card-text-color, #4b5563);
+  }
+
+  .dark .markdown-content li {
+    color: var(--card-text-color, #d1d5db);
   }
 
   .markdown-content code {
-    @apply bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5 text-sm text-gray-900 dark:text-gray-100;
-    border: 1px solid #e5e7eb;
+    @apply px-1 py-0.5 text-sm;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    background: #f3f4f6;
+    color: #1f2937;
+    border-radius: 0.25rem;
+  }
+
+  .dark .markdown-content code {
+    background: rgba(55, 65, 81, 0.5);
+    color: #e5e7eb;
   }
 
   .markdown-content pre {
-    @apply bg-gray-100 dark:bg-gray-800 rounded p-3 overflow-x-auto text-sm border border-gray-200 dark:border-gray-700;
+    @apply rounded p-3 overflow-x-auto text-sm;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+  }
+
+  .dark .markdown-content pre {
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.1);
   }
 
   .markdown-content a {
@@ -94,22 +129,23 @@
   /* Highlight.js 语法高亮样式 */
   .markdown-content pre code.hljs,
   .markdown-content pre.hljs {
-    background: #f8fafc;
+    background: #f1f5f9;
     display: block;
     overflow-x: auto;
     padding: 1rem;
     border-radius: 0.5rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e2e8f0;
   }
 
   .dark .markdown-content pre code.hljs,
   .dark .markdown-content pre.hljs {
-    background: #1f2937;
-    border-color: #374151;
+    background: #1e293b;
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.15);
   }
 
   .markdown-content .hljs {
-    color: #111827;
+    color: #1f2937;
   }
 
   .dark .markdown-content .hljs {
@@ -203,6 +239,28 @@
   .dark .markdown-content .hljs-link {
     color: #38bdf8;
   }
+}
+
+/* MCP Market 服务卡片样式优化 */
+:root {
+  --card-title-color: #1f2937;
+  --card-text-color: #4b5563;
+  --card-text-secondary: #6b7280;
+}
+
+.dark {
+  --card-title-color: #f9fafb;
+  --card-text-color: #d1d5db;
+  --card-text-secondary: #9ca3af;
+}
+
+.service-card .ant-card-body {
+  padding: 16px;
+}
+
+.service-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
 }
 
 /* 主题切换相关样式 - 新增 */
@@ -390,6 +448,17 @@
   background-color: rgba(96, 165, 250, 0.25) !important;
 }
 
+/* 深色模式下的 Layout.Sider 样式 */
+.dark-sider {
+  background: #111827 !important;
+  border-right-color: #374151 !important;
+}
+
+/* 深色模式下的 Layout.Content 样式 */
+.dark-content {
+  background: #111827 !important;
+}
+
 /* 分页组件过渡效果 */
 .ant-pagination {
   transition: var(--theme-transition);
@@ -451,3 +520,70 @@
     margin-top: 0.5rem;
   }
 }
+
+/* 服务详情标签页样式 */
+.service-detail-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.service-detail-tabs .ant-tabs-nav {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.service-detail-tabs .ant-tabs-content-holder {
+  flex: 1;
+  overflow: hidden;
+}
+
+.service-detail-tabs .ant-tabs-content {
+  height: 100%;
+}
+
+.service-detail-tabs .ant-tabs-tabpane {
+  height: 100%;
+}
+
+.service-detail-tabs .ant-tabs-tabpane > div {
+  height: 100%;
+  overflow: auto;
+}
+
+/* 确保 Table 不会撑开容器 */
+.service-detail-tabs .ant-table-wrapper {
+  width: 100%;
+}
+
+.service-detail-tabs .ant-table {
+  width: 100%;
+}
+
+.service-detail-tabs .ant-table-container {
+  width: 100%;
+}
+
+/* 确保 pre/code 不会撑开容器 */
+.service-detail-tabs pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.service-detail-tabs code {
+  max-width: 100%;
+}
+
+/* 暗色主题下的 Server Config 样式 */
+.dark .service-detail-tabs div[class*="rounded"][style*="background"] {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+.dark .service-detail-tabs div[class*="rounded"][style*="background"] pre {
+  color: #e5e7eb !important;
+}
+

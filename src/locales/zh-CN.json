@@ -89,6 +89,7 @@
   "common.about.description": "现代化 MCP 聚合管理工具，帮助你统一管理和使用多种 MCP 服务。",
   "common.about.features.title": "功能特性",
   "common.about.features.server_management": "MCP 服务器管理与监控",
+  "common.about.features.marketplace": "MCP 服务市场",
   "common.about.features.system_tray": "系统托盘支持与快捷导航",
   "common.about.features.auto_start": "自动启动与跨平台支持",
   "common.about.version_info.title": "版本与版权",
@@ -111,6 +112,7 @@
   "common.about.service_errors.get_local_ip_failed": "获取本地IP地址失败",
   "nav.overview": "概览",
   "nav.server_management": "服务管理",
+  "nav.market": "市场",
   "nav.token_management": "Token管理",
   "nav.settings": "设置",
   "dashboard.app.subtitle": "现代化 MCP 聚合管理工具",
@@ -621,6 +623,7 @@
     "features": {
       "title": "功能特性",
       "server_management": "MCP 服务器管理与监控",
+      "marketplace": "MCP 服务市场",
       "system_tray": "系统托盘支持与快捷导航",
       "autostart": "自动启动与跨平台支持"
     },
@@ -631,6 +634,44 @@
     },
     "actions": {
       "ok": "确定"
+    },
+    "nav": {
+      "market": "市场"
+    },
+    "market": {
+      "title": "MCP 市场",
+      "subtitle": "从多个供应商浏览和部署 MCP 服务",
+      "provider": {
+        "title": "供应商",
+        "modelscope": "魔搭社区",
+        "modelscope_desc": "ModelScope - 阿里巴巴开源模型社区"
+      },
+      "search": {
+        "placeholder": "搜索服务...",
+        "no_results": "未找到匹配的服务",
+        "no_services": "暂无服务"
+      },
+      "service": {
+        "hosted": "已托管",
+        "version": "版本"
+      },
+      "stats": {
+        "downloads": "下载量",
+        "likes": "点赞数"
+      },
+      "detail": {
+        "back": "返回",
+        "readme": "README",
+        "env_vars": "环境变量",
+        "env_name": "变量名",
+        "env_type": "类型",
+        "env_required": "必填",
+        "env_default": "默认值",
+        "env_description": "描述",
+        "transports": "传输方式",
+        "no_details": "暂无详情"
+      },
+      "load_more": "加载更多"
     }
   }
 }

@@ -89,6 +89,7 @@
   "common.about.description": "A modern MCP aggregation management tool that helps you uniformly manage and use multiple MCP services.",
   "common.about.features.title": "Features",
   "common.about.features.server_management": "MCP server management and monitoring",
+  "common.about.features.marketplace": "MCP service marketplace",
   "common.about.features.system_tray": "System tray support and quick navigation",
   "common.about.features.auto_start": "Auto-start and cross-platform support",
   "common.about.version_info.title": "Version & Copyright",
@@ -111,6 +112,7 @@
   "common.about.service_errors.get_local_ip_failed": "Failed to get local IP addresses",
   "nav.overview": "Overview",
   "nav.server_management": "Service",
+  "nav.market": "Marketplace",
   "nav.token_management": "Token",
   "nav.settings": "Settings",
   "dashboard.app.subtitle": "Modern MCP Aggregation Management Tool",
@@ -621,6 +623,7 @@
     "features": {
       "title": "Features",
       "server_management": "MCP Server Management & Monitoring",
+      "marketplace": "MCP Service Marketplace",
       "system_tray": "System Tray Support & Quick Navigation",
       "autostart": "Auto-start & Cross-platform Support"
     },
@@ -631,6 +634,44 @@
     },
     "actions": {
       "ok": "OK"
+    },
+    "nav": {
+      "market": "Marketplace"
+    },
+    "market": {
+      "title": "MCP Marketplace",
+      "subtitle": "Discover and deploy MCP services from multiple providers",
+      "provider": {
+        "title": "Providers",
+        "modelscope": "ModelScope",
+        "modelscope_desc": "ModelScope - Alibaba Open Source Model Community"
+      },
+      "search": {
+        "placeholder": "Search services...",
+        "no_results": "No matching services found",
+        "no_services": "No services available"
+      },
+      "service": {
+        "hosted": "Hosted",
+        "version": "Version"
+      },
+      "stats": {
+        "details": "Downloads",
+        "likes": "Likes"
+      },
+      "detail": {
+        "back": "Back",
+        "readme": "README",
+        "env_vars": "Environment Variables",
+        "env_name": "Variable Name",
+        "env_type": "Type",
+        "env_required": "Required",
+        "env_default": "Default",
+        "env_description": "Description",
+        "transports": "Transport Types",
+        "no_details": "No details available"
+      },
+      "load_more": "Load more"
     }
   }
 }

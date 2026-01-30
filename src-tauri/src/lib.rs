@@ -258,6 +258,8 @@ fn get_tray_text(key: &str, language: &str) -> &'static str {
         ("show_window", _) => "Show Main Window",
         ("servers", "zh-CN") => "服务器管理",
         ("servers", _) => "Server Management",
+        ("market", "zh-CN") => "MCP 市场",
+        ("market", _) => "MCP Marketplace",
         ("settings", "zh-CN") => "设置",
         ("settings", _) => "Settings",
 
@@ -350,6 +352,11 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<ta
                 .build(app)?,
         )
         .item(
+            &tauri::menu::MenuItemBuilder::new(get_tray_text("market", language))
+                .id("market")
+                .build(app)?,
+        )
+        .item(
             &tauri::menu::MenuItemBuilder::new(get_tray_text("settings", language))
                 .id("settings")
                 .build(app)?,
@@ -427,6 +434,15 @@ fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             "server_management" => {
                 let _ = app.emit("navigate-to", "servers");
+                let windows = app.webview_windows();
+                if let Some(window) = windows.values().next() {
+                    let _ = window.set_focus();
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                }
+            }
+            "market" => {
+                let _ = app.emit("navigate-to", "market");
                 let windows = app.webview_windows();
                 if let Some(window) = windows.values().next() {
                     let _ = window.set_focus();
