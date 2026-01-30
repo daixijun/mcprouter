@@ -918,13 +918,17 @@ async fn create_and_start_aggregator(
 
     // Create the aggregator instance
     tracing::info!("🔧 Creating aggregator instance...");
-    let aggregator = aggregator::McpAggregator::new(
-        mcp_server_manager,
+    let aggregator = Arc::new(aggregator::McpAggregator::new(
+        mcp_server_manager.clone(), // Clone since we need it for callback registration
         mcp_client_manager,
         server_config,
         token_manager,
         app,
-    );
+    ));
+
+    // 注册清单变化回调
+    mcp_server_manager.register_callback(aggregator.clone());
+    tracing::info!("✅ Registered aggregator as manifest change callback");
 
     // Store the aggregator in the global variable
     tracing::info!("💾 Storing aggregator instance in global state...");
@@ -932,7 +936,7 @@ async fn create_and_start_aggregator(
         let mut aggregator_guard = AGGREGATOR
             .lock()
             .expect("Failed to acquire AGGREGATOR lock");
-        *aggregator_guard = Some(Arc::new(aggregator));
+        *aggregator_guard = Some(aggregator);
     }
 
     // Start the aggregator HTTP server
