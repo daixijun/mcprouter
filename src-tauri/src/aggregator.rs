@@ -19,6 +19,7 @@ use rmcp::model::{
     ListToolsResult, PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams,
     ReadResourceResult, Resource, Tool as McpTool,
 };
+use serde_json::json;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
 use rmcp::transport::streamable_http_server::tower::StreamableHttpService;
@@ -183,6 +184,7 @@ pub struct McpAggregator {
     token_manager: Arc<TokenManager>,
     shutdown_signal: Arc<std::sync::Mutex<Option<CancellationToken>>>,
     app: tauri::AppHandle,
+    session_manager: Arc<std::sync::Mutex<Option<Arc<LocalSessionManager>>>>,
 }
 
 impl McpAggregator {
@@ -200,6 +202,7 @@ impl McpAggregator {
             token_manager,
             shutdown_signal: Arc::new(std::sync::Mutex::new(None)),
             app,
+            session_manager: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -357,6 +360,12 @@ impl McpAggregator {
 
         // Create session manager
         let session_manager = Arc::new(LocalSessionManager::default());
+
+        // Save session manager for broadcasting notifications
+        {
+            let mut sm = self.session_manager.lock().unwrap();
+            *sm = Some(session_manager.clone());
+        }
 
         // Create service factory that returns aggregator handler directly
         let service_factory = move || Ok(aggregator_for_service.as_ref().clone());
@@ -824,6 +833,83 @@ impl McpAggregator {
         tracing::info!("✅ Successfully processed {} prompts", mcp_prompts.len());
         Ok(mcp_prompts)
     }
+
+    /// 广播通知到所有 SSE 连接
+    async fn broadcast_notification(&self, notification: &serde_json::Value, notification_type: &str) {
+        let session_manager = {
+            let sm = self.session_manager.lock().unwrap();
+            sm.clone()
+        };
+
+        if let Some(session_mgr) = session_manager {
+            // 获取所有 session
+            let sessions = session_mgr.sessions.read().await;
+            let session_count = sessions.len();
+
+            if session_count == 0 {
+                tracing::debug!(
+                    "No active SSE sessions to broadcast {} notification",
+                    notification_type
+                );
+                return;
+            }
+
+            tracing::info!(
+                "Broadcasting {} notification to {} active session(s)",
+                notification_type,
+                session_count
+            );
+
+            // 将 JSON 转换为字符串
+            let notification_str = notification.to_string();
+
+            // 向每个 session 发送通知
+            let mut success_count = 0;
+            let mut error_count = 0;
+
+            for (session_id, session_handle) in sessions.iter() {
+                // 解析 JSON 字符串为 ClientJsonRpcMessage
+                if let Ok(msg) = serde_json::from_str(&notification_str) {
+                    match session_handle.push_message(msg, None).await {
+                        Ok(_) => {
+                            success_count += 1;
+                            tracing::debug!(
+                                "Successfully sent {} notification to session {}",
+                                notification_type,
+                                session_id
+                            );
+                        }
+                        Err(e) => {
+                            error_count += 1;
+                            tracing::warn!(
+                                "Failed to send {} notification to session {}: {}",
+                                notification_type,
+                                session_id,
+                                e
+                            );
+                        }
+                    }
+                } else {
+                    error_count += 1;
+                    tracing::error!(
+                        "Failed to serialize {} notification",
+                        notification_type
+                    );
+                }
+            }
+
+            tracing::info!(
+                "✅ Broadcast complete: {} succeeded, {} failed",
+                success_count,
+                error_count
+            );
+        } else {
+            tracing::warn!(
+                "Session manager not initialized, cannot broadcast {} notification",
+                notification_type
+            );
+        }
+    }
 }
 
 /// ManifestChangeCallback trait 实现
@@ -836,12 +922,11 @@ impl ManifestChangeCallback for McpAggregator {
             "📢 Broadcasting tools/list_changed for server: {}",
             server_name
         );
-        // TODO: 实现 SSE 广播
-        // 需要研究 rmcp 的 API 来确定正确的调用方式
-        // 预期流程:
-        // 1. 构建 ClientNotification::ToolsListChanged
-        // 2. 通过 session_manager 向所有 SSE 连接广播
-        tracing::warn!("SSE broadcasting not yet implemented - notification logged only");
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/tools/list_changed"
+        });
+        self.broadcast_notification(&notification, "tools/list_changed").await;
     }
 
     async fn resources_list_changed(&self, server_name: &str) {
@@ -849,8 +934,11 @@ impl ManifestChangeCallback for McpAggregator {
             "📢 Broadcasting resources/list_changed for server: {}",
             server_name
         );
-        // TODO: 实现 SSE 广播
-        tracing::warn!("SSE broadcasting not yet implemented - notification logged only");
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/list_changed"
+        });
+        self.broadcast_notification(&notification, "resources/list_changed").await;
     }
 
     async fn prompts_list_changed(&self, server_name: &str) {
@@ -858,8 +946,11 @@ impl ManifestChangeCallback for McpAggregator {
             "📢 Broadcasting prompts/list_changed for server: {}",
             server_name
         );
-        // TODO: 实现 SSE 广播
-        tracing::warn!("SSE broadcasting not yet implemented - notification logged only");
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/prompts/list_changed"
+        });
+        self.broadcast_notification(&notification, "prompts/list_changed").await;
     }
 }
 
