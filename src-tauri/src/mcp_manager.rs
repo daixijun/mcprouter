@@ -5,6 +5,7 @@ use crate::storage::orm_storage::Storage;
 use crate::types::{McpServerConfig, McpServerInfo};
 use crate::notification_callback::ManifestChangeCallback;
 use sea_orm::Set;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
@@ -1737,5 +1738,18 @@ impl McpServerManager {
         });
 
         Ok(())
+    }
+
+    /// 获取所有已连接的服务名称列表
+    ///
+    /// 返回当前连接状态为 "connected" 的所有 MCP 服务名称的集合
+    /// 用于过滤聚合接口中的 tools/resources/prompts
+    pub async fn get_connected_server_names(&self) -> HashSet<String> {
+        let (servers, _) = self.list_servers(None, None).await.unwrap_or_default();
+        servers
+            .into_iter()
+            .filter(|s| s.status == "connected")
+            .map(|s| s.name.to_string())
+            .collect()
     }
 }
