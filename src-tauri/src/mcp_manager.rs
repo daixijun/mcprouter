@@ -408,6 +408,9 @@ impl McpServerManager {
     pub async fn get_all_prompts_for_aggregation(
         &self,
     ) -> Result<Vec<(String, String, Option<String>, String)>> {
+        // 获取已连接的服务列表（第一层过滤）
+        let connected_servers = self.get_connected_server_names().await;
+
         // Get all prompts from database and return with server information
         let (server_infos, _) = self
             .orm_storage
@@ -420,6 +423,16 @@ impl McpServerManager {
 
         for server_info in server_infos {
             let server_name = server_info.name.clone();
+
+            // 检查服务是否已连接，跳过未连接的服务
+            if !connected_servers.contains(&server_name) {
+                tracing::debug!(
+                    "Skipping prompts from disconnected server: {}",
+                    server_name
+                );
+                continue;
+            }
+
             let prompts = self
                 .orm_storage
                 .list_server_prompts(&server_info.id)
