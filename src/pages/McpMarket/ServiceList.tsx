@@ -17,7 +17,7 @@ interface ServiceListProps {
 export default function ServiceList({
   services,
   loading = false,
-  onServiceClick,
+  onServiceClick: _onServiceClick,
   onLoadMore,
   onSearch,
   hasMore,
