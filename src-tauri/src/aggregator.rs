@@ -754,6 +754,12 @@ impl McpAggregator {
     async fn fetch_resources_from_database(&self) -> Result<Vec<Resource>, RmcpErrorData> {
         tracing::info!("🔍 Getting resources directly from database");
 
+        // 获取已连接的服务列表（第二层过滤）
+        let connected_servers = self
+            .mcp_server_manager
+            .get_connected_server_names()
+            .await;
+
         // 通过 McpServerManager 的公共方法获取完整的资源信息
         let resources_data = self
             .mcp_server_manager
@@ -770,8 +776,20 @@ impl McpAggregator {
         );
 
         let mut mcp_resources = Vec::new();
+        let mut filtered_count = 0;
 
         for (_resource_id, uri, name, description, mime_type, server_name) in resources_data {
+            // 二次验证：检查服务是否仍然连接
+            if !connected_servers.contains(&server_name) {
+                filtered_count += 1;
+                tracing::debug!(
+                    "🚫 Filtering out resource '{}' from disconnected server '{}'",
+                    uri,
+                    server_name
+                );
+                continue;
+            }
+
             // 记录原始数据
             tracing::debug!(
                 "🔧 Processing resource: {} from server: {}",
@@ -802,6 +820,13 @@ impl McpAggregator {
             };
 
             mcp_resources.push(resource);
+        }
+
+        if filtered_count > 0 {
+            tracing::info!(
+                "🔍 Filtered {} resources from disconnected servers",
+                filtered_count
+            );
         }
 
         tracing::info!(
