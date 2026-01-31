@@ -840,6 +840,12 @@ impl McpAggregator {
     async fn fetch_prompts_from_database(&self) -> Result<Vec<rmcp::model::Prompt>, RmcpErrorData> {
         tracing::info!("🔍 Getting prompts directly from database");
 
+        // 获取已连接的服务列表（第二层过滤）
+        let connected_servers = self
+            .mcp_server_manager
+            .get_connected_server_names()
+            .await;
+
         // 通过 McpServerManager 的公共方法获取完整的提示词信息
         let prompts_data = self
             .mcp_server_manager
@@ -853,8 +859,20 @@ impl McpAggregator {
         tracing::info!("📊 Retrieved {} prompts from database", prompts_data.len());
 
         let mut mcp_prompts = Vec::new();
+        let mut filtered_count = 0;
 
         for (_prompt_id, name, description, server_name) in prompts_data {
+            // 二次验证：检查服务是否仍然连接
+            if !connected_servers.contains(&server_name) {
+                filtered_count += 1;
+                tracing::debug!(
+                    "🚫 Filtering out prompt '{}' from disconnected server '{}'",
+                    name,
+                    server_name
+                );
+                continue;
+            }
+
             // 记录原始数据
             tracing::debug!(
                 "🔧 Processing prompt: {} from server: {}",
@@ -878,6 +896,13 @@ impl McpAggregator {
             };
 
             mcp_prompts.push(prompt);
+        }
+
+        if filtered_count > 0 {
+            tracing::info!(
+                "🔍 Filtered {} prompts from disconnected servers",
+                filtered_count
+            );
         }
 
         tracing::info!("✅ Successfully processed {} prompts", mcp_prompts.len());
