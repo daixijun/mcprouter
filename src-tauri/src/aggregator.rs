@@ -622,6 +622,12 @@ impl McpAggregator {
     async fn fetch_tools_from_database(&self) -> Result<Vec<McpTool>, RmcpErrorData> {
         tracing::info!("🔍 Getting tools directly from database");
 
+        // 获取已连接的服务列表（第二层过滤）
+        let connected_servers = self
+            .mcp_server_manager
+            .get_connected_server_names()
+            .await;
+
         // 通过 McpServerManager 的公共方法获取完整的工具信息，包含 input_schema
         let tools_data = self
             .mcp_server_manager
@@ -636,8 +642,20 @@ impl McpAggregator {
 
         // 优化：预分配 Vec 容量，避免多次重分配
         let mut mcp_tools = Vec::with_capacity(tools_data.len());
+        let mut filtered_count = 0;
 
         for (_tool_id, tool_name, description, input_schema_json, server_name) in tools_data {
+            // 二次验证：检查服务是否仍然连接
+            if !connected_servers.contains(&server_name) {
+                filtered_count += 1;
+                tracing::debug!(
+                    "🚫 Filtering out tool '{}' from disconnected server '{}'",
+                    tool_name,
+                    server_name
+                );
+                continue;
+            }
+
             // 记录原始数据
             tracing::debug!(
                 "🔧 Processing tool: {} from server: {}",
@@ -716,6 +734,13 @@ impl McpAggregator {
             });
 
             tracing::debug!("✅ Processed tool: {} -> {}", tool_name, resource_path);
+        }
+
+        if filtered_count > 0 {
+            tracing::info!(
+                "🔍 Filtered {} tools from disconnected servers",
+                filtered_count
+            );
         }
 
         tracing::info!(
