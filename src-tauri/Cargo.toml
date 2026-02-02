@@ -73,7 +73,7 @@ tauri-plugin-shell = "2.3.1"
 base64 = "0.22.1"
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
-colored = "2.1"
+colored = "3.1"
 tabled = "0.15"
 
 # Tool management dependencies
